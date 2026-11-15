@@ -41,5 +41,15 @@ assert.equal(
   isOwner({ key: { participant: '199998888777@lid' } }, ['628123456']),
   false
 )
+// owner with + / spaces in .env still matches (digits normalized)
+assert.equal(
+  isOwner({ key: { remoteJid: '628123456@s.whatsapp.net' } }, ['+62 812-3456']),
+  true
+)
+// device-prefixed jid strips :device
+assert.equal(
+  isOwner({ key: { remoteJid: '628123456:12@s.whatsapp.net' } }, ['628123456']),
+  true
+)
 
 console.log('utils self-check passed')

@@ -43,9 +43,14 @@ export function isOwner(event, owners) {
     event.key.remoteJid,
     event.key.remoteJidAlt,
   ].filter(Boolean)
+  const wanted = owners.map(digitsOnly)
   return jids.some((jid) => {
     if (jid.endsWith('@lid')) return false
-    const number = jid.split('@')[0].split(':')[0]
-    return owners.includes(number)
+    return wanted.includes(digitsOnly(jid))
   })
+}
+
+// "628123456:12@s.whatsapp.net" -> "628123456"; "+62 812-3456" -> "628123456"
+function digitsOnly(value) {
+  return value.split('@')[0].split(':')[0].replace(/\D/g, '')
 }
