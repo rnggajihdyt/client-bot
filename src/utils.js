@@ -33,9 +33,19 @@ export function mentionFromJid(jid) {
 
 // Owner check: match the sender's phone number against OWNERS (comma-separated).
 // Fails closed — empty OWNERS means nobody is owner.
+// Prefer the alternate (PN) form: in LID chats the primary JID is an opaque @lid
+// with no phone number, so the number only exists on participantAlt/remoteJidAlt.
 export function isOwner(event, owners) {
   if (!owners?.length) return false
-  const jid = event.key.participant ?? event.key.remoteJid
-  const number = jid?.split('@')[0].split(':')[0]
-  return Boolean(number) && owners.includes(number)
+  const jids = [
+    event.key.participant,
+    event.key.participantAlt,
+    event.key.remoteJid,
+    event.key.remoteJidAlt,
+  ].filter(Boolean)
+  return jids.some((jid) => {
+    if (jid.endsWith('@lid')) return false
+    const number = jid.split('@')[0].split(':')[0]
+    return owners.includes(number)
+  })
 }
