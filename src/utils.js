@@ -46,6 +46,20 @@ export async function markRead(client, event) {
   }
 }
 
+// All candidate phone numbers for the sender, digits only. In LID chats the
+// primary JID is opaque, so the PN only exists on the *Alt fields.
+export function senderNumbers(event) {
+  return [
+    event.key.participant,
+    event.key.participantAlt,
+    event.key.remoteJid,
+    event.key.remoteJidAlt,
+  ]
+    .filter((jid) => jid && !jid.endsWith('@lid'))
+    .map((jid) => jid.split('@')[0].split(':')[0].replace(/\D/g, ''))
+    .filter(Boolean)
+}
+
 // Owner check: match the sender's phone number against OWNERS (comma-separated).
 // Fails closed — empty OWNERS means nobody is owner.
 // Prefer the alternate (PN) form: in LID chats the primary JID is an opaque @lid

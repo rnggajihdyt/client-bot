@@ -34,6 +34,8 @@ npm install
 | `LOG_LEVEL` | `info` | Pino level |
 | `AUTOREAD` | `false` | `true` = mark incoming messages read (blue ticks) |
 | `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
+| `PPOB_DB_PATH` | `.data/ppob.sqlite` | PPOB data DB (agen/produk/transaksi) |
+| `OWNER_PIN` | `1234` | Initial PIN for the seeded owner/root mitra |
 
 ## Run
 
@@ -60,6 +62,28 @@ Default prefix comes from `COMMAND_PREFIX`. To change it per session at runtime,
 - `OWNERS` env must list the owner's phone number(s) without `@s.whatsapp.net` (e.g. `OWNERS=628123456,6287654321`)
 - Prefix persisted to `SETTINGS_PATH` (`.auth/settings.json`), survives restart
 - Max 3 chars, no whitespace. Empty/absent `OWNERS` → nobody can change it.
+
+## PPOB core commands
+
+Active (non-stub) commands:
+
+| Command | Format | Keterangan |
+|---|---|---|
+| `SAL` | `SAL` | Cek saldo, komisi, dalam proses |
+| `CH` | `CH.KODE` | Cek harga produk (modal + markup rantai) |
+| `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline |
+| `LDL` | `LDL` | List downline langsung |
+| `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
+| `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
+| `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
+| `CS` | `CS.PESAN` | Hubungi admin |
+| `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
+| `UN` | `UN.NAMA.PIN` | Ubah nama |
+| `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel |
+
+`BELI`, `TIKET`, `LAP`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
+
+Harga efektif mitra = `produk.harga_modal` + total markup sepanjang jalur root→mitra (query `WITH RECURSIVE`).
 
 ## PPOB menu (demo)
 
