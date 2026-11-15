@@ -38,6 +38,12 @@ npm install
 npm start
 ```
 
+For auto-restart on file changes (dev):
+
+```bash
+npm run dev
+```
+
 First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
 
 ## Adding a command
