@@ -31,6 +31,16 @@ export function mentionFromJid(jid) {
   return `@${jid.split('@')[0]}`
 }
 
+// Auto-read: mark an incoming message as read (blue ticks). Never throws —
+// a failed receipt must not block command dispatch.
+export async function markRead(client, event) {
+  try {
+    await client.message.sendReceipt(event, { type: 'read' })
+  } catch {
+    // best-effort; ignore
+  }
+}
+
 // Owner check: match the sender's phone number against OWNERS (comma-separated).
 // Fails closed — empty OWNERS means nobody is owner.
 // Prefer the alternate (PN) form: in LID chats the primary JID is an opaque @lid

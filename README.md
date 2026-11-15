@@ -32,6 +32,7 @@ npm install
 | `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` |
 | `PAIRING_PHONE` | (empty) | Phone number (digits, w/ country code) for the code flow |
 | `LOG_LEVEL` | `info` | Pino level |
+| `AUTOREAD` | `false` | `true` = mark incoming messages read (blue ticks) |
 | `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
 
 ## Run

@@ -1,5 +1,5 @@
 import { config } from './config.js'
-import { parseCommand, extractText } from './utils.js'
+import { parseCommand, extractText, markRead } from './utils.js'
 import { getCommand, unknownCommandText } from './commands/registry.js'
 import { getPrefix } from './settings.js'
 
@@ -31,6 +31,8 @@ export function attachHandlers(client, sessionId, logger) {
     const selectedId = extractSelectedId(event.message)
     const text = selectedId ?? extractText(event.message)
     if (!text) return
+
+    if (config.autoRead) await markRead(client, event)
 
     const prefix = prefixFor()
 

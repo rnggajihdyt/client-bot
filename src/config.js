@@ -6,4 +6,5 @@ export const config = {
   pairingPhone: process.env.PAIRING_PHONE ?? '',
   logLevel: process.env.LOG_LEVEL ?? 'info',
   storePath: process.env.STORE_PATH ?? '.auth/state.sqlite',
+  autoRead: process.env.AUTOREAD === 'true',
 }
