@@ -24,6 +24,11 @@ export function attachHandlers(client, sessionId, logger) {
   const log = logger.child({ sessionId })
   const prefixFor = () => getPrefix(sessionId, commandPrefix)
 
+  log.info(
+    { prefix: prefixFor(), effective: prefixFor() === '' ? 'none' : prefixFor() },
+    'command prefix resolved'
+  )
+
   client.on('message', async (event) => {
     if (event.key.fromMe) return
     if (!event.key.remoteJid) return

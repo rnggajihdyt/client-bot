@@ -29,3 +29,12 @@ export function setPrefix(sessionId, prefix) {
   write(data)
   return prefix
 }
+
+// Drop the runtime override so the env default applies again.
+export function clearPrefix(sessionId) {
+  const data = read()
+  if (data.prefix?.[sessionId] !== undefined) {
+    delete data.prefix[sessionId]
+    write(data)
+  }
+}
