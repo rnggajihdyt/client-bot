@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "zapo-js": {
+        "type": "remote",
+        "url": "https://zapo.to/mcp"
+      }
+    }
+  }
+}

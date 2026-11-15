@@ -1,0 +1,19 @@
+{
+  "name": "bot-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@zapo-js/store-sqlite": "latest",
+    "pino": "latest",
+    "pino-pretty": "latest",
+    "qrcode-terminal": "latest",
+    "zapo-js": "latest"
+  }
+}
