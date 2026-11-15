@@ -15,8 +15,8 @@ register({
 register({
   name: 'menu',
   description: 'List all commands',
-  async handler({ client, event }) {
-    const lines = listCommands().map((c) => `• !${c.name} — ${c.description}`)
+  async handler({ client, event, prefix }) {
+    const lines = listCommands().map((c) => `• ${prefix}${c.name} — ${c.description}`)
     await client.message.send(event.key.remoteJid, `*Available commands:*\n${lines.join('\n')}`)
   },
 })
@@ -24,11 +24,11 @@ register({
 register({
   name: 'help',
   description: 'Explain a command, e.g. !help ping',
-  async handler({ client, event, args }) {
+  async handler({ client, event, args, prefix }) {
     if (!args.length) {
       await client.message.send(
         event.key.remoteJid,
-        `Usage: !help <command> — e.g. !help ping\nSend !menu to list all commands.`
+        `Usage: ${prefix}help <command> — e.g. ${prefix}help ping\nSend ${prefix}menu to list all commands.`
       )
       return
     }
@@ -37,6 +37,6 @@ register({
       await client.message.send(event.key.remoteJid, `Unknown command: ${args[0]}`)
       return
     }
-    await client.message.send(event.key.remoteJid, `!${cmd.name} — ${cmd.description}`)
+    await client.message.send(event.key.remoteJid, `${prefix}${cmd.name} — ${cmd.description}`)
   },
 })

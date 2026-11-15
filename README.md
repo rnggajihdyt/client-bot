@@ -26,7 +26,9 @@ npm install
 |---|---|---|
 | `DEFAULT_SESSION` | `default` | Session id for the single-session mode |
 | `SESSIONS` | `DEFAULT_SESSION` | Comma-separated session ids for multi-session |
-| `COMMAND_PREFIX` | `!` | Command prefix |
+| `COMMAND_PREFIX` | `!` | Default command prefix (overridable per session at runtime) |
+| `OWNERS` | (empty) | Comma-separated phone numbers (digits) allowed to change the prefix |
+| `SETTINGS_PATH` | `.auth/settings.json` | Where per-session runtime settings live |
 | `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` |
 | `PAIRING_PHONE` | (empty) | Phone number (digits, w/ country code) for the code flow |
 | `LOG_LEVEL` | `info` | Pino level |
@@ -45,6 +47,18 @@ npm run dev
 ```
 
 First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
+
+## Custom prefix at runtime
+
+Default prefix comes from `COMMAND_PREFIX`. To change it per session at runtime, an owner sends:
+
+```
+!setprefix #
+```
+
+- `OWNERS` env must list the owner's phone number(s) without `@s.whatsapp.net` (e.g. `OWNERS=628123456,6287654321`)
+- Prefix persisted to `SETTINGS_PATH` (`.auth/settings.json`), survives restart
+- Max 3 chars, no whitespace. Empty/absent `OWNERS` → nobody can change it.
 
 ## Adding a command
 

@@ -1,4 +1,4 @@
-import { parseCommand, extractText, splitArgs } from '../src/utils.js'
+import { parseCommand, extractText, splitArgs, isOwner } from '../src/utils.js'
 import assert from 'node:assert'
 
 // parseCommand
@@ -21,5 +21,12 @@ assert.equal(extractText({}), undefined)
 
 // splitArgs
 assert.deepEqual(splitArgs('  a   b  '), ['a', 'b'])
+
+// isOwner: own phone matches
+assert.equal(isOwner({ key: { remoteJid: '628123456@s.whatsapp.net' } }, ['628123456']), true)
+// not owner
+assert.equal(isOwner({ key: { remoteJid: '999@s.whatsapp.net' } }, ['628123456']), false)
+// empty owners => nobody
+assert.equal(isOwner({ key: { remoteJid: '628123456@s.whatsapp.net' } }, []), false)
 
 console.log('utils self-check passed')

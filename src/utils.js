@@ -30,3 +30,12 @@ export function formatLatency(startMs) {
 export function mentionFromJid(jid) {
   return `@${jid.split('@')[0]}`
 }
+
+// Owner check: match the sender's phone number against OWNERS (comma-separated).
+// Fails closed — empty OWNERS means nobody is owner.
+export function isOwner(event, owners) {
+  if (!owners?.length) return false
+  const jid = event.key.participant ?? event.key.remoteJid
+  const number = jid?.split('@')[0].split(':')[0]
+  return Boolean(number) && owners.includes(number)
+}
