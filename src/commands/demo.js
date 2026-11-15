@@ -1,5 +1,10 @@
 import { register, listCommands } from './registry.js'
 
+// With an empty prefix, show bare command names; otherwise prefix them.
+function label(prefix, name) {
+  return prefix ? `${prefix}${name}` : name
+}
+
 register({
   name: 'ping',
   description: 'Check bot latency',
@@ -16,19 +21,19 @@ register({
   name: 'menu',
   description: 'List all commands',
   async handler({ client, event, prefix }) {
-    const lines = listCommands().map((c) => `• ${prefix}${c.name} — ${c.description}`)
+    const lines = listCommands().map((c) => `• ${label(prefix, c.name)} — ${c.description}`)
     await client.message.send(event.key.remoteJid, `*Available commands:*\n${lines.join('\n')}`)
   },
 })
 
 register({
   name: 'help',
-  description: 'Explain a command, e.g. !help ping',
+  description: 'Explain a command, e.g. help ping',
   async handler({ client, event, args, prefix }) {
     if (!args.length) {
       await client.message.send(
         event.key.remoteJid,
-        `Usage: ${prefix}help <command> — e.g. ${prefix}help ping\nSend ${prefix}menu to list all commands.`
+        `Usage: ${label(prefix, 'help')} <command>\nSend ${label(prefix, 'menu')} to list all commands.`
       )
       return
     }
@@ -37,6 +42,9 @@ register({
       await client.message.send(event.key.remoteJid, `Unknown command: ${args[0]}`)
       return
     }
-    await client.message.send(event.key.remoteJid, `${prefix}${cmd.name} — ${cmd.description}`)
+    await client.message.send(
+      event.key.remoteJid,
+      `${label(prefix, cmd.name)} — ${cmd.description}`
+    )
   },
 })

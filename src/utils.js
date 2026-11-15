@@ -13,12 +13,17 @@ export function splitArgs(text) {
   return text.trim().split(/\s+/).filter(Boolean)
 }
 
-// Parse "!cmd arg1 arg2" -> { cmd, args }
+// Parse "!cmd arg1 arg2" -> { cmd, args }. Empty prefix => every text is a
+// command (bot menu style). Non-empty prefix => must start with it.
 export function parseCommand(text, prefix) {
   if (!text) return null
-  const t = text.trim()
-  if (!t.startsWith(prefix)) return null
-  const [cmd, ...args] = splitArgs(t.slice(prefix.length))
+  let t = text.trim()
+  if (!t) return null
+  if (prefix) {
+    if (!t.startsWith(prefix)) return null
+    t = t.slice(prefix.length).trim()
+  }
+  const [cmd, ...args] = splitArgs(t)
   if (!cmd) return null
   return { cmd: cmd.toLowerCase(), args }
 }

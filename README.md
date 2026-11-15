@@ -26,7 +26,7 @@ npm install
 |---|---|---|
 | `DEFAULT_SESSION` | `default` | Session id for the single-session mode |
 | `SESSIONS` | `DEFAULT_SESSION` | Comma-separated session ids for multi-session |
-| `COMMAND_PREFIX` | `!` | Default command prefix (overridable per session at runtime) |
+| `COMMAND_PREFIX` | *(empty)* | Command prefix. Empty = no prefix (every text is a command, bot-menu style) |
 | `OWNERS` | (empty) | Comma-separated phone numbers (digits) allowed to change the prefix |
 | `SETTINGS_PATH` | `.auth/settings.json` | Where per-session runtime settings live |
 | `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` |
@@ -60,6 +60,12 @@ Default prefix comes from `COMMAND_PREFIX`. To change it per session at runtime,
 - `OWNERS` env must list the owner's phone number(s) without `@s.whatsapp.net` (e.g. `OWNERS=628123456,6287654321`)
 - Prefix persisted to `SETTINGS_PATH` (`.auth/settings.json`), survives restart
 - Max 3 chars, no whitespace. Empty/absent `OWNERS` → nobody can change it.
+
+## PPOB menu (demo)
+
+Registered commands: `info`, `format1`–`format4`, `ping`, `menu`, `help`, `setprefix`.
+
+With `COMMAND_PREFIX=` (empty), no prefix is needed — typing `info` or `format2` directly replies with the menu. Unknown text is ignored (no noisy "unknown command" reply).
 
 ## Adding a command
 

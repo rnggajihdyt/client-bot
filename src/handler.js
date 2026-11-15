@@ -43,6 +43,9 @@ export function attachHandlers(client, sessionId, logger) {
 
     const command = getCommand(parsed.cmd)
     if (!command) {
+      // No prefix => every text looks like a command; stay silent instead of
+      // replying to ordinary chat traffic.
+      if (!prefix) return
       await client.message.send(event.key.remoteJid, unknownCommandText(prefix), {
         quote: event,
       })

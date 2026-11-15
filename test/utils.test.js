@@ -22,6 +22,19 @@ assert.equal(extractText({}), undefined)
 // splitArgs
 assert.deepEqual(splitArgs('  a   b  '), ['a', 'b'])
 
+// parseCommand with empty prefix => every text is a command
+{
+  const r = parseCommand('Info', '')
+  assert.ok(r && r.cmd === 'info')
+  assert.deepEqual(r.args, [])
+  const r2 = parseCommand('TUKAR 100', '')
+  assert.ok(r2 && r2.cmd === 'tukar')
+  assert.deepEqual(r2.args, ['100'])
+}
+// empty prefix: empty/whitespace text => null
+assert.equal(parseCommand('   ', ''), null)
+assert.equal(parseCommand('', ''), null)
+
 // isOwner: own phone matches (PN remoteJid)
 assert.equal(isOwner({ key: { remoteJid: '628123456@s.whatsapp.net' } }, ['628123456']), true)
 // not owner

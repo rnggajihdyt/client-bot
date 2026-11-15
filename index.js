@@ -4,7 +4,8 @@ import { config } from './src/config.js'
 import { store } from './src/store.js'
 import { attachHandlers } from './src/handler.js'
 import './src/commands/demo.js' // registers the demo commands
-import './src/commands/prefix.js' // !setprefix (owner only)
+import './src/commands/ppob.js' // info / format1..4 menus
+import './src/commands/prefix.js' // setprefix (owner only)
 
 const logger = await createPinoLogger({ level: config.logLevel, pretty: true })
 

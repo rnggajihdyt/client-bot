@@ -1,6 +1,6 @@
 export const config = {
   sessionId: process.env.DEFAULT_SESSION ?? 'default',
-  commandPrefix: process.env.COMMAND_PREFIX ?? '!',
+  commandPrefix: process.env.COMMAND_PREFIX ?? '', // '' = no prefix, every text is a command
   pairingMode: process.env.PAIRING_MODE ?? 'both', // 'qr' | 'code' | 'both'
   // Phone number (digits, with country code) used for the pairing-code flow.
   pairingPhone: process.env.PAIRING_PHONE ?? '',
