@@ -69,9 +69,16 @@ test('menu info tetap jalan', async () => {
   assert.match(r, /PANDUAN TRANSAKSI/)
 })
 
-test('DAFTAR bikin downline RS00001', async () => {
+test('DAFTAR bikin downline RS00001 + kirim welcome ke downline', async () => {
   const r = await say('628111', 'DAFTAR.Ani.Bandung.628222.500.1234')
   assert.match(r, /RS00001/)
+  // welcome goes to the new downline's number, not the uplink
+  const welcome = sent.find((s) => s.jid === '628222@s.whatsapp.net')
+  assert.ok(welcome, 'welcome message sent to downline')
+  assert.equal(
+    welcome.text,
+    'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.'
+  )
 })
 
 test('CH untuk downline: modal + markup', async () => {

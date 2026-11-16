@@ -77,7 +77,7 @@ register({
 register({
   name: 'daftar',
   description: 'Tambah downline: DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, log }) {
     if (args.length < 5) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN')
       return
@@ -109,10 +109,22 @@ register({
       await client.message.send(event.key.remoteJid, 'Gagal menyimpan, coba lagi')
       return
     }
+
     await client.message.send(
       event.key.remoteJid,
-      `Mitra baru: ${nama} (${created.kode})${nohpD} berhasil ditambahkan sebagai downline Anda.`
+      `Mitra baru: ${nama} (${created.kode}) ${nohpD} berhasil ditambahkan sebagai downline Anda.`
     )
+
+    // Welcome the new downline directly. Best-effort: a failed send must not
+    // undo the registration.
+    try {
+      await client.message.send(
+        `${nohpD}@s.whatsapp.net`,
+        `Yth. ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.`
+      )
+    } catch (err) {
+      log?.warn({ err, nohp: nohpD }, 'welcome downline failed')
+    }
   },
 })
 
