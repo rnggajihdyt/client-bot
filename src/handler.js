@@ -27,6 +27,16 @@ function extractSelectedId(message) {
   )
 }
 
+// `send` that never throws: a failed publish must not crash the process.
+async function safeSend(client, jid, text, opts, log) {
+  try {
+    return await client.message.send(jid, text, opts)
+  } catch (err) {
+    log?.warn({ err, jid }, 'send failed')
+    return undefined
+  }
+}
+
 export function attachHandlers(client, sessionId, logger) {
   const log = logger.child({ sessionId })
   const prefixFor = () => getPrefix(sessionId, commandPrefix)
@@ -37,6 +47,15 @@ export function attachHandlers(client, sessionId, logger) {
   )
 
   client.on('message', async (event) => {
+    try {
+      await handleMessage(event)
+    } catch (err) {
+      // Last-resort guard: never let one bad message crash the bot.
+      log.error({ err, remoteJid: event.key?.remoteJid }, 'unhandled message error')
+    }
+  })
+
+  async function handleMessage(event) {
     if (event.key.fromMe) return
     if (!event.key.remoteJid) return
 
@@ -57,7 +76,7 @@ export function attachHandlers(client, sessionId, logger) {
     }
     const isAdmin = owners.some((o) => numbers.includes(o)) || (mitra && mitra.senior_id == null)
     if (!mitra && !isAdmin) {
-      await client.message.send(event.key.remoteJid, NOT_MITRA)
+      await safeSend(client, event.key.remoteJid, NOT_MITRA, undefined, log)
       return
     }
 
@@ -72,14 +91,12 @@ export function attachHandlers(client, sessionId, logger) {
     const command = getCommand(parsed.cmd)
     if (!command) {
       if (!prefix) return
-      await client.message.send(event.key.remoteJid, unknownCommandText(prefix), {
-        quote: event,
-      })
+      await safeSend(client, event.key.remoteJid, unknownCommandText(prefix), { quote: event }, log)
       return
     }
 
     if (mitra && !mitra.aktif && !isAdmin && !ALLOWED_WHEN_INACTIVE.has(parsed.cmd)) {
-      await client.message.send(event.key.remoteJid, 'Akun Anda nonaktif')
+      await safeSend(client, event.key.remoteJid, 'Akun Anda nonaktif', undefined, log)
       return
     }
 
@@ -88,13 +105,9 @@ export function attachHandlers(client, sessionId, logger) {
       await command.handler(ctx)
     } catch (err) {
       log.error({ err, cmd: parsed.cmd }, 'command failed')
-      await client.message
-        .send(event.key.remoteJid, `Command failed: ${prefix}${parsed.cmd}`, {
-          quote: event,
-        })
-        .catch(() => {})
+      await safeSend(client, event.key.remoteJid, `Command failed: ${prefix}${parsed.cmd}`, { quote: event }, log)
     }
-  })
+  }
 
   client.on('group', (event) => {
     log.info({ action: event.action, groupJid: event.groupJid }, 'group event')

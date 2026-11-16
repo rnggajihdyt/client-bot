@@ -108,6 +108,29 @@ test('PIN salah ditolak', async () => {
   assert.equal(r, 'PIN salah')
 })
 
+test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
+  const orig = client.message.send
+  client.message.send = async () => {
+    throw new Error('negative publish ack: error=401')
+  }
+  // nomor asing: handler harus menelan error & diam, bukan throw
+  sent.length = 0
+  await handlers.message({
+    key: { remoteJid: '629999@s.whatsapp.net', fromMe: false },
+    message: { conversation: 'SAL' },
+  })
+  assert.equal(sent.length, 0) // nothing pushed (send swallowed)
+
+  // command valid: juga tidak boleh throw
+  await assert.doesNotReject(
+    handlers.message({
+      key: { remoteJid: '628111@s.whatsapp.net', fromMe: false },
+      message: { conversation: 'SAL' },
+    })
+  )
+  client.message.send = orig
+})
+
 after(() => {
   closeDb()
   rmSync(dir, { recursive: true, force: true })

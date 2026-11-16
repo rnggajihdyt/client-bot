@@ -126,3 +126,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     process.exit(0)
   })
 }
+
+// Staying alive beats dying: a failed send or a stray rejection must not kill
+// every session. Log and continue.
+process.on('unhandledRejection', (err) => {
+  logger.error({ err }, 'unhandledRejection')
+})
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'uncaughtException')
+})
