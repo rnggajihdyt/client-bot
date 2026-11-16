@@ -46,3 +46,12 @@ for (const [name, text] of Object.entries(FORMATS)) {
     },
   })
 }
+
+// "all" dumps every menu in one message.
+register({
+  name: 'all',
+  description: 'Kirim semua format sekaligus',
+  handler({ client, event }) {
+    return client.message.send(event.key.remoteJid, Object.values(FORMATS).join('\n\n'))
+  },
+})

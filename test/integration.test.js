@@ -69,6 +69,16 @@ test('menu info tetap jalan', async () => {
   assert.match(r, /PANDUAN TRANSAKSI/)
 })
 
+test('all: semua format dalam satu pesan', async () => {
+  const r = await say('628111', 'all')
+  assert.match(r, /PANDUAN TRANSAKSI/)
+  assert.match(r, /FORMAT 1 \(TRANSAKSI & CEK SALDO\)/)
+  assert.match(r, /FORMAT 2 \(DEPOSIT & TAMBAH AGEN\)/)
+  assert.match(r, /FORMAT 3 \(KELOLA DOWNLINE & MARKUP\)/)
+  assert.match(r, /FORMAT 4 \(PENGATURAN AKUN & PIN\)/)
+  assert.equal(sent.length, 1) // one single message
+})
+
 test('DAFTAR bikin downline RS00001 + kirim welcome ke downline', async () => {
   const r = await say('628111', 'DAFTAR.Ani.Bandung.628222.500.1234')
   assert.match(r, /RS00001/)
