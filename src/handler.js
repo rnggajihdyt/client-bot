@@ -12,9 +12,7 @@ const owners = (process.env.OWNERS ?? '')
   .filter(Boolean)
 
 const NOT_MITRA = 'Anda bukan mitra kami'
-
-// Commands a deactivated mitra may still run.
-const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'ldl', 'lno', 'cs', 'gp', 'un', 'menu', 'help'])
+const INACTIVE = 'Akun Anda nonaktif'
 
 // Incoming button/list replies arrive as ordinary `message` events with a
 // buttonsResponseMessage / listResponseMessage payload — not a separate event.
@@ -80,6 +78,12 @@ export function attachHandlers(client, sessionId, logger) {
       return
     }
 
+    // Deactivated mitra is blocked entirely — before any command parsing.
+    if (mitra && !mitra.aktif && !isAdmin) {
+      await safeSend(client, event.key.remoteJid, INACTIVE, undefined, log)
+      return
+    }
+
     const prefix = prefixFor()
 
     let parsed
@@ -92,11 +96,6 @@ export function attachHandlers(client, sessionId, logger) {
     if (!command) {
       if (!prefix) return
       await safeSend(client, event.key.remoteJid, unknownCommandText(prefix), { quote: event }, log)
-      return
-    }
-
-    if (mitra && !mitra.aktif && !isAdmin && !ALLOWED_WHEN_INACTIVE.has(parsed.cmd)) {
-      await safeSend(client, event.key.remoteJid, 'Akun Anda nonaktif', undefined, log)
       return
     }
 

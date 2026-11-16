@@ -125,6 +125,21 @@ test('PIN salah ditolak', async () => {
   assert.equal(r, 'PIN salah')
 })
 
+test('downline nonaktif diblokir total', async () => {
+  const off = await say('628111', 'NA.RS00001.1234')
+  assert.match(off, /dinonaktifkan/)
+
+  // even menu / sal blocked
+  assert.equal(await say('628222', 'SAL'), 'Akun Anda nonaktif')
+  assert.equal(await say('628222', 'info'), 'Akun Anda nonaktif')
+  assert.equal(await say('628222', 'all'), 'Akun Anda nonaktif')
+
+  const on = await say('628111', 'AKTIF.RS00001.1234')
+  assert.match(on, /diaktifkan/)
+  // back to normal
+  assert.match(await say('628222', 'SAL'), /^Yth\. Mitra Ani ID: RS00001/)
+})
+
 test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
   const orig = client.message.send
   client.message.send = async () => {
