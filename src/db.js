@@ -200,6 +200,37 @@ export function setSaldoKomisi(id, saldo, komisi) {
   db.prepare(`UPDATE agen SET saldo = ?, komisi = ? WHERE id = ?`).run(saldo, komisi, id)
 }
 
+// Atomic increments — avoids read-modify-write races.
+export function addSaldo(id, delta) {
+  db.prepare(`UPDATE agen SET saldo = saldo + ? WHERE id = ?`).run(delta, id)
+}
+
+export function addKomisi(id, delta) {
+  db.prepare(`UPDATE agen SET komisi = komisi + ? WHERE id = ?`).run(delta, id)
+}
+
+// Every ancestor of `agenId` (excluding itself), nearest first, with saldo.
+export function ancestors(agenId) {
+  return db
+    .prepare(
+      `WITH RECURSIVE anc(id, senior_id, kode, markup, saldo) AS (
+         SELECT id, senior_id, kode, markup, saldo FROM agen WHERE id = ?
+         UNION ALL
+         SELECT a.id, a.senior_id, a.kode, a.markup, a.saldo
+         FROM agen a JOIN anc ON a.id = anc.senior_id
+       )
+       SELECT * FROM anc WHERE id != ?`
+    )
+    .all(agenId, agenId)
+}
+
+export function insertTransaksi({ idTrx, agenId, produkId, tujuan, hargaEfektif, komisiDibagikan, status }) {
+  db.prepare(
+    `INSERT INTO transaksi (id_trx, agen_id, produk_id, tujuan, harga_efektif, komisi_dibagikan, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(idTrx, agenId, produkId, tujuan, hargaEfektif, JSON.stringify(komisiDibagikan), status, new Date().toISOString())
+}
+
 export function deleteAgen(id) {
   db.prepare(`DELETE FROM agen_nomor WHERE agen_id = ?`).run(id)
   db.prepare(`DELETE FROM agen WHERE id = ?`).run(id)

@@ -76,12 +76,13 @@ Active (non-stub) commands:
 | `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
 | `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
+| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Beli produk (potong saldo + distribusi komisi) |
 | `CS` | `CS.PESAN` | Hubungi admin |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel |
 
-`BELI`, `TIKET`, `LAP`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
+`TIKET`, `LAP`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
 
 Harga efektif mitra = `produk.harga_modal` + total markup sepanjang jalur root→mitra (query `WITH RECURSIVE`).
 

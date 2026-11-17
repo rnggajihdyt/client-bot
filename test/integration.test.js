@@ -140,6 +140,47 @@ test('downline nonaktif diblokir total', async () => {
   assert.match(await say('628222', 'SAL'), /^Yth\. Mitra Ani ID: RS00001/)
 })
 
+test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async () => {
+  // A (RS00001 / 628222, markup 1000) mendaftarkan B
+  const r = await say('628222', 'DAFTAR.Budi.Solo.628444.500.1234')
+  assert.match(r, /RS00002/)
+
+  // beri saldo B
+  db.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
+
+  // A dinonaktifkan oleh uplink (admin)
+  assert.match(await say('628111', 'NA.RS00001.1234'), /dinonaktifkan/)
+
+  // A terkunci total
+  assert.equal(await say('628222', 'SAL'), 'Akun Anda nonaktif')
+
+  // B tetap bisa transaksi dengan harga penuh (modal 9500 + 1000 + 500 = 11000)
+  const beli = await say('628444', 'BELI.PULSA10.081234567')
+  assert.match(beli, /Transaksi berhasil/)
+  assert.match(beli, /Harga: 11\.000/)
+  assert.match(beli, /Saldo: 39\.000/)
+
+  // komisi A bertambah walau nonaktif (markup A = 1000)
+  const a = db.prepare(`SELECT komisi FROM agen WHERE nohp = '628222'`).get()
+  assert.equal(a.komisi, 1000)
+
+  // A tidak bisa mencairkan komisi
+  assert.equal(await say('628222', 'TUKAR'), 'Akun Anda nonaktif')
+
+  // aktifkan lagi -> komisi bisa dicairkan
+  assert.match(await say('628111', 'AKTIF.RS00001.1234'), /diaktifkan/)
+  const tukar = await say('628222', 'TUKAR')
+  assert.match(tukar, /1\.000/)
+  const a2 = db.prepare(`SELECT komisi, saldo FROM agen WHERE nohp = '628222'`).get()
+  assert.equal(a2.komisi, 0)
+  assert.equal(a2.saldo, 1000)
+})
+
+test('BELI ditolak saat saldo kurang', async () => {
+  db.prepare(`UPDATE agen SET saldo = 100 WHERE nohp = '628444'`).run()
+  assert.equal(await say('628444', 'BELI.PULSA10.0812'), 'Saldo tidak cukup')
+})
+
 test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
   const orig = client.message.send
   client.message.send = async () => {

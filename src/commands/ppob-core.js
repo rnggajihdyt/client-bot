@@ -17,6 +17,10 @@ import {
   effectivePrice,
   transaksiStats,
   addMutasi,
+  addSaldo,
+  addKomisi,
+  ancestors,
+  insertTransaksi,
   tx,
 } from '../db.js'
 import { formatRupiah, parseNumber } from '../money.js'
@@ -348,8 +352,65 @@ register({
   },
 })
 
+// ---- BELI ----
+register({
+  name: 'beli',
+  description: 'Beli produk: BELI.KODE.TUJUAN[.PIN]',
+  async handler({ client, event, mitra, args }) {
+    const [kode, tujuan, pin] = args
+    if (!kode || !tujuan) {
+      await client.message.send(event.key.remoteJid, 'Gunakan format: BELI.KODE.TUJUAN.PIN')
+      return
+    }
+    // PIN optional per FORMAT 1 ("bisa tanpa PIN"), but verified when supplied.
+    if (pin && !verifyPin(pin, mitra.pin_hash)) {
+      await client.message.send(event.key.remoteJid, PIN_SALAH)
+      return
+    }
+
+    const p = effectivePrice(mitra.id, String(kode).toUpperCase())
+    if (!p) {
+      await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
+      return
+    }
+    if (mitra.saldo < p.hargaEfektif) {
+      await client.message.send(event.key.remoteJid, 'Saldo tidak cukup')
+      return
+    }
+
+    // Commission: every ancestor keeps its own markup, inactive or not.
+    // A deactivated uplink still accrues commission; it just cannot TUKAR
+    // while inactive (the auth gate blocks it). Root/admin takes no commission.
+    const chain = ancestors(mitra.id).filter((a) => a.senior_id != null && a.markup > 0)
+    const idTrx = `T${Date.now()}${Math.floor(Math.random() * 900 + 100)}`
+
+    tx(() => {
+      addSaldo(mitra.id, -p.hargaEfektif)
+      addMutasi(mitra.id, 'debit', p.hargaEfektif, mitra.saldo - p.hargaEfektif, `Beli ${p.kode}`)
+      for (const a of chain) {
+        addKomisi(a.id, a.markup)
+        addMutasi(a.id, 'komisi_masuk', a.markup, a.saldo, `Komisi ${p.kode} dari ${mitra.kode}`)
+      }
+      insertTransaksi({
+        idTrx,
+        agenId: mitra.id,
+        produkId: p.id,
+        tujuan,
+        hargaEfektif: p.hargaEfektif,
+        komisiDibagikan: chain.map((a) => ({ agen_id: a.id, kode: a.kode, nominal: a.markup })),
+        status: 'sukses',
+      })
+    })
+
+    await client.message.send(
+      event.key.remoteJid,
+      `Transaksi berhasil\nID: ${idTrx}\nProduk: ${p.nama}\nTujuan: ${tujuan}\nHarga: ${formatRupiah(p.hargaEfektif)}\nSaldo: ${formatRupiah(mitra.saldo - p.hargaEfektif)}`
+    )
+  },
+})
+
 // ---- stubs for not-yet-built features ----
-const STUBS = { beli: 'Beli', tiket: 'Tiket Deposit', lap: 'Laporan', rek: 'Mutasi', cek: 'Cek Trx', btl: 'Batal Trx' }
+const STUBS = { tiket: 'Tiket Deposit', lap: 'Laporan', rek: 'Mutasi', cek: 'Cek Trx', btl: 'Batal Trx' }
 for (const [name, label] of Object.entries(STUBS)) {
   register({
     name,
