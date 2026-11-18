@@ -128,6 +128,8 @@ Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepo
 
 Registered commands: `info`, `format1`–`format4`, `ping`, `menu`, `help`, `setprefix`.
 
+`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `PRDK`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa hanya melihat panduan standar. `format1`–`format4` tetap verbatim.
+
 With `COMMAND_PREFIX=` (empty), no prefix is needed — typing `info` or `format2` directly replies with the menu. Unknown text is ignored (no noisy "unknown command" reply).
 
 ## Adding a command

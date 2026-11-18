@@ -80,21 +80,27 @@ test('SAL format', async () => {
 })
 
 test('menu info tetap jalan', async () => {
+  const r = await say('628111', 'format1')
+  assert.match(r, /FORMAT 1 \(TRANSAKSI & CEK SALDO\)/)
+})
+
+test('info admin & super admin dapat section khusus', async () => {
+  // 628111 = admin session DAN super admin (OWNERS)
   const r = await say('628111', 'info')
   assert.match(r, /PANDUAN TRANSAKSI/)
+  assert.match(r, /KHUSUS ADMIN/)
+  assert.match(r, /PRDK\.KODE\.NAMA\.MODAL/)
+  assert.match(r, /KHUSUS SUPER ADMIN/)
+  assert.match(r, /SESIBUAT\.ID\.NOMORADMIN/)
+
+  // dump semua format juga dapat section
+  const all = await say('628111', 'all')
+  assert.match(all, /KHUSUS ADMIN/)
+  assert.match(all, /LAPTRX\.ID/)
 })
 
-test('all: semua format dalam satu pesan', async () => {
-  const r = await say('628111', 'all')
-  assert.match(r, /PANDUAN TRANSAKSI/)
-  assert.match(r, /FORMAT 1 \(TRANSAKSI & CEK SALDO\)/)
-  assert.match(r, /FORMAT 2 \(DEPOSIT & TAMBAH AGEN\)/)
-  assert.match(r, /FORMAT 3 \(KELOLA DOWNLINE & MARKUP\)/)
-  assert.match(r, /FORMAT 4 \(PENGATURAN AKUN & PIN\)/)
-  assert.equal(sent.length, 1) // one single message
-})
-
-test('DAFTAR admin -> uplink RS00001 + welcome ke downline', async () => {
+test('info uplink/mitra tanpa section admin', async () => {
+  // DAFTAR admin → uplink RS00001 + welcome ke downline (butuh 628222 jadi mitra)
   sent.length = 0
   await say('628111', 'DAFTAR.Ani.Bandung.628222.500.1234')
   const ack = sent.find((s) => s.jid === '628111@s.whatsapp.net')
@@ -107,6 +113,12 @@ test('DAFTAR admin -> uplink RS00001 + welcome ke downline', async () => {
     welcome.text,
     'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.'
   )
+
+  // uplink biasa: tidak ada section admin/super admin
+  const up = await say('628222', 'all')
+  assert.match(up, /FORMAT 4/)
+  assert.doesNotMatch(up, /KHUSUS ADMIN/)
+  assert.doesNotMatch(up, /KHUSUS SUPER ADMIN/)
 })
 
 test('CH untuk downline: modal + markup', async () => {

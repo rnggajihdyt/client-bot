@@ -37,7 +37,10 @@ const FORMATS = {
 • Tukar Komisi : TUKAR`,
 }
 
+// FORMAT1..4 stay verbatim (reference bot text). Only the overview ("info")
+// and the "all" dump carry the role-specific admin sections.
 for (const [name, text] of Object.entries(FORMATS)) {
+  if (name === 'info') continue
   register({
     name,
     description: `Menu ${name.toUpperCase()}`,
@@ -47,11 +50,45 @@ for (const [name, text] of Object.entries(FORMATS)) {
   })
 }
 
+// Role-specific sections appended to INFO/ALL. Admin commands are meaningless
+// to a mitra, so only show them to admins and the super admin.
+const ADMIN_EXTRA = `*KHUSUS ADMIN*
+• Laporan Sesi : LAP[HARI|BULAN|YYYY-MM-DD]
+• Tambah/Ubah Produk : PRDK.KODE.NAMA.MODAL
+• List Produk : LPRDK
+• Markup General : MKP.NOMINAL
+• Markup per Produk : MKP.KODE.NOMINAL`
+
+const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
+• Daftar Session : SESI
+• Buat Session : SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]
+• Nyalakan/Matikan : SESION.ID / SESIOFF.ID
+• Hapus Session : SESIHAPUS.ID
+• Transaksi Session : LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]`
+
+function extrasFor({ isAdmin, isSuper }) {
+  return [isAdmin && ADMIN_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')
+}
+
+function withExtras(text, ctx) {
+  const extra = extrasFor(ctx)
+  return extra ? `${text}\n\n${extra}` : text
+}
+
+// "info" = panduan + command khusus sesuai role.
+register({
+  name: 'info',
+  description: 'Panduan transaksi (+ command admin/owner bila berhak)',
+  handler({ client, event, ...ctx }) {
+    return client.message.send(event.key.remoteJid, withExtras(FORMATS.info, ctx))
+  },
+})
+
 // "all" dumps every menu in one message.
 register({
   name: 'all',
   description: 'Kirim semua format sekaligus',
-  handler({ client, event }) {
-    return client.message.send(event.key.remoteJid, Object.values(FORMATS).join('\n\n'))
+  handler({ client, event, ...ctx }) {
+    return client.message.send(event.key.remoteJid, withExtras(Object.values(FORMATS).join('\n\n'), ctx))
   },
 })
