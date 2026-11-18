@@ -151,9 +151,13 @@ Harga efektif mitra = `produk.harga_modal` + markup admin (per produk jika ada, 
 | `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (langsung connect/disconnect, tanpa restart) |
 | `SESIHAPUS` | `SESIHAPUS.ID` | Hapus session + DB-nya (permanen) |
 | `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Lihat transaksi session mana pun |
+| `STATUS` | `STATUS` | Status proses & server: uptime, RSS/heap, RAM, Node |
+| `SESSIONS` | `SESSIONS` | Daftar session + status live (🟢 live / 🟡 on / ⚪ off) |
+| `RESTART` | `RESTART.ID` | Connect ulang session (pairing kode dikirim ulang kalau perlu) |
+| `ENV` | `ENV` | Ringkasan config aktif (nilai sensitif dimasking) |
+| `CMD` | `CMD` | Daftar semua command terdaftar |
 
 ### Pairing kode
-
 Setiap session baru memakai **kode pairing** (bukan QR): begitu `SESIBUAT` dijalankan, runtime langsung connect dan zapo memicu `auth_pairing_required` → bot minta kode 8 karakter ke WhatsApp lalu mengirimkannya balik ke chat super admin:
 
 ```
@@ -173,7 +177,7 @@ Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepo
 
 Registered commands: `info`, `format1`–`format4`, `ping`, `menu`, `help`, `setprefix`.
 
-`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `PRDK`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa hanya melihat panduan standar. `format1`–`format4` tetap verbatim.
+`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `PRDK`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`, `STATUS`, `SESSIONS`, `RESTART`, `ENV`, `CMD`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa hanya melihat panduan standar. `format1`–`format4` tetap verbatim.
 
 With `COMMAND_PREFIX=` (empty), no prefix is needed — typing `info` or `format2` directly replies with the menu. Unknown text is ignored (no noisy "unknown command" reply).
 
@@ -226,6 +230,7 @@ src/handler.js           message → auth gate → command dispatch + super admi
 src/commands/registry.js command map
 src/commands/demo.js     ping / menu / help
 src/commands/ppob-core.js SAL/CH/DAFTAR/BELI/LAP/PRDK/MKP/dll
+src/commands/owner.js    STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/report.js            parseRange (HARI/BULAN/tanggal) untuk LAP
 src/helpers.js           send helpers
 src/utils.js             text/parse/format helpers

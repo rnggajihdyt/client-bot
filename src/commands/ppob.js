@@ -64,7 +64,12 @@ const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 • Buat Session : SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]
 • Nyalakan/Matikan : SESION.ID / SESIOFF.ID
 • Hapus Session : SESIHAPUS.ID
-• Transaksi Session : LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]`
+• Transaksi Session : LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]
+• Status Server : STATUS
+• Session Live : SESSIONS
+• Restart Session : RESTART.ID
+• Config Aktif : ENV
+• Semua Command : CMD`
 
 function extrasFor({ isAdmin, isSuper }) {
   return [isAdmin && ADMIN_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')

@@ -15,7 +15,7 @@ const { attachHandlers } = await import('../src/handler.js')
 await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
 await import('../src/commands/ppob-core.js')
-
+await import('../src/commands/owner.js')
 openRegistry(join(dir, 'registry.sqlite'))
 
 const dbPath = join(dir, 'sessions', 'default.sqlite')
@@ -51,7 +51,9 @@ const fakeRuntime = {
   stopSession: async (id) => {
     runtimeCalls.push({ id, stop: true })
   },
+  clients: new Map(),
 }
+globalThis.__waRuntime = fakeRuntime
 
 attachHandlers(client, 'default', logger, fakeRuntime)
 
@@ -348,6 +350,43 @@ test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
 test('super admin nomor asing tetap ditolak', async () => {
   const r = await say('628999', 'SESI')
   assert.equal(r, 'Anda bukan mitra kami')
+})
+
+test('utilitas owner: STATUS / CMD / ENV', async () => {
+  const st = await say('628111', 'STATUS')
+  assert.match(st, /\*Status Server\*/)
+  assert.match(st, /Uptime proses:/)
+  assert.match(st, /Node: v\d+/)
+
+  const cmd = await say('628111', 'CMD')
+  assert.match(cmd, /• status — Owner: status proses & server/)
+  assert.match(cmd, /• beli — /)
+  assert.match(cmd, /• restart — /)
+
+  const env = await say('628111', 'ENV')
+  assert.match(env, /\*Config\*/)
+  assert.match(env, /Owners: 6281\*\*\*/) // masked
+  assert.doesNotMatch(env, /628111/)
+})
+
+test('utilitas owner: SESSIONS + RESTART memakai runtime', async () => {
+  fakeRuntime.clients.set('toko2', {})
+  const s = await say('628111', 'SESSIONS')
+  assert.match(s, /\*Sessions:\*/)
+  assert.match(s, /• toko2 — 🟢 live/)
+  assert.match(s, /admin 628555/)
+
+  runtimeCalls.length = 0
+  const r = await say('628111', 'RESTART.toko2')
+  assert.match(r, /di-restart/)
+  assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && c.stop), 'stopSession dipanggil')
+  assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && !c.stop), 'startSession dipanggil')
+})
+
+test('utilitas owner ditolak untuk mitra', async () => {
+  assert.equal(await say('628222', 'STATUS'), 'Khusus owner')
+  assert.equal(await say('628222', 'ENV'), 'Khusus owner')
+  assert.equal(await say('628222', 'RESTART.toko2'), 'Khusus owner')
 })
 
 after(() => {
