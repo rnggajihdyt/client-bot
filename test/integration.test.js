@@ -10,10 +10,13 @@ process.env.COMMAND_PREFIX = ''
 process.env.SESSION_DIR = join(dir, 'sessions')
 
 const { openDb } = await import('../src/db.js')
+const { openRegistry } = await import('../src/registry.js')
 const { attachHandlers } = await import('../src/handler.js')
 await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
 await import('../src/commands/ppob-core.js')
+
+openRegistry(join(dir, 'registry.sqlite'))
 
 const dbPath = join(dir, 'sessions', 'default.sqlite')
 const db = openDb(dbPath)
@@ -39,7 +42,18 @@ const logger = {
   error: () => {},
 }
 
-attachHandlers(client, 'default', logger)
+const runtimeCalls = []
+const fakeRuntime = {
+  startSession: async (id, opts) => {
+    runtimeCalls.push({ id, opts })
+    await opts?.notify?.(`KODE PAIRING ${id}`)
+  },
+  stopSession: async (id) => {
+    runtimeCalls.push({ id, stop: true })
+  },
+}
+
+attachHandlers(client, 'default', logger, fakeRuntime)
 
 const last = () => sent[sent.length - 1]?.text
 
@@ -275,8 +289,13 @@ test('LAP uplink: jaringannya sendiri', async () => {
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
-  const mk = await say('628111', 'SESIBUAT.toko2.628555.Toko Dua')
+  await say('628111', 'SESIBUAT.toko2.628555.628555.Toko Dua')
+  const mk = sent.find((s) => /terdaftar/.test(s.text))?.text ?? ''
   assert.match(mk, /Session \*toko2\* terdaftar/)
+  assert.match(mk, /Menyambungkan/)
+  // pairing code diumumkan balik ke chat super admin via notify
+  assert.ok(runtimeCalls.some((c) => c.id === 'toko2'), 'runtime.startSession dipanggil')
+  assert.ok(sent.some((s) => /KODE PAIRING toko2/.test(s.text)), 'kode pairing dikirim balik')
 
   const list = await say('628111', 'SESI')
   assert.match(list, /toko2/)

@@ -5,6 +5,7 @@ import { getCommand, unknownCommandText } from './commands/registry.js'
 import { getPrefix } from './settings.js'
 import { parsePpob } from './parse.js'
 import { openDb } from './db.js'
+import * as registry from './registry.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
 
@@ -46,27 +47,13 @@ async function safeSend(client, jid, text, opts, log) {
   }
 }
 
-// Session directory lives in the default session's DB so the super admin has
-// one place to manage every session.
-function sessionDb() {
-  return openDb(sessionPath(config.sessionId))
-}
-
-function readSessions(raw) {
-  raw.exec(`CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    label TEXT NOT NULL DEFAULT '',
-    admin_nohp TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'off'
-  )`)
-  return raw.prepare(`SELECT * FROM sessions ORDER BY id`).all()
-}
-
-export function attachHandlers(client, sessionId, logger) {
+// Session directory lives in `.data/sessions/_registry.sqlite` so the super
+// admin manages every session from any connected number. `runtime` lets a
+// super admin connect a new session without restarting the process.
+export function attachHandlers(client, sessionId, logger, runtime = null) {
   const log = logger.child({ sessionId })
   const prefixFor = () => getPrefix(sessionId, commandPrefix)
   const db = openDb(sessionPath(sessionId))
-  const isDefaultSession = sessionId === config.sessionId
 
   log.info(
     { prefix: prefixFor(), effective: prefixFor() === '' ? 'none' : prefixFor() },
@@ -178,7 +165,7 @@ export function attachHandlers(client, sessionId, logger) {
     }
     const fn = commands[parsed.cmd]
     if (!fn) {
-      await reply('*Super admin*\n• SESI — daftar session\n• SESIBUAT.ID.NOMORADMIN[LABEL]\n• SESION.ID / SESIOFF.ID\n• SESIHAPUS.ID\n• LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]')
+      await reply('*Super admin*\n• SESI — daftar session\n• SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]\n• SESION.ID / SESIOFF.ID\n• SESIHAPUS.ID\n• LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]')
       return
     }
     try {
@@ -190,70 +177,68 @@ export function attachHandlers(client, sessionId, logger) {
   }
 
   async function listSessions(reply) {
-    if (!isDefaultSession) {
-      await reply(`Kelola session dari session utama (${config.sessionId}).`)
+    const rows = registry.listSessions()
+    if (!rows.length) {
+      await reply('Belum ada session. Buat: SESIBUAT.ID.NOMORADMIN')
       return
     }
-    const meta = sessionDb()
-    try {
-      const rows = readSessions(meta.raw)
-      if (!rows.length) {
-        await reply('Belum ada session. Buat: SESIBUAT.ID.NOMORADMIN')
-        return
-      }
-      const lines = rows.map((s) => `• ${s.id} — admin ${s.admin_nohp || '-'} — ${s.status}`)
-      await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
-    } finally {
-      meta.close()
-    }
+    const lines = rows.map(
+      (s) =>
+        `• ${s.id} — admin ${s.admin_nohp || '-'} — WA ${s.pairing_phone || '-'} — ${s.status}${s.label ? ` — ${s.label}` : ''}`
+    )
+    await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
   }
 
+  // SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]
+  // Registers the session, seeds its admin, then connects it right away so the
+  // pairing code is requested automatically.
   async function registerSession(reply, args) {
-    if (!isDefaultSession) {
-      await reply(`Kelola session dari session utama (${config.sessionId}).`)
-      return
-    }
-    const [id, adminNohp, ...rest] = args
-    if (!id || !adminNohp) {
-      await reply('Gunakan format: SESIBUAT.ID.NOMORADMIN[LABEL]')
+    const [id, adminRaw, waRaw, ...rest] = args
+    if (!id || !adminRaw) {
+      await reply('Gunakan format: SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]\nNomor WA default = nomor admin.')
       return
     }
     if (!/^[a-z0-9_-]+$/i.test(id)) {
       await reply('ID hanya huruf/angka/-/_')
       return
     }
-    const nohp = String(adminNohp).replace(/\D/g, '')
-    if (!nohp) {
+    const adminNohp = String(adminRaw).replace(/\D/g, '')
+    if (!adminNohp) {
       await reply('Nomor admin tidak valid')
       return
     }
-    const meta = sessionDb()
-    try {
-      readSessions(meta.raw)
-      try {
-        meta.raw
-          .prepare(`INSERT INTO sessions (id, label, admin_nohp, status) VALUES (?, ?, ?, 'off')`)
-          .run(id, rest.join(' '), nohp)
-      } catch {
-        await reply(`Session ${id} sudah ada`)
-        return
-      }
-    } finally {
-      meta.close()
+    // 4th token is the WA number only when it looks like a phone number.
+    const isPhone = waRaw && /^\+?\d{8,15}$/.test(waRaw)
+    const pairingPhone = isPhone ? waRaw.replace(/\D/g, '') : adminNohp
+    const label = (isPhone ? rest : [waRaw, ...rest].filter(Boolean)).join(' ')
+
+    const row = registry.createSession({ id, label, adminNohp, pairingPhone })
+    if (!row) {
+      await reply(`Session ${id} sudah ada`)
+      return
     }
+
     // Seed the new session with its admin (root) so DAFTAR/CH work immediately.
     const sdb = openDb(sessionPath(id))
     try {
-      if (!sdb.findAgenByNohp(nohp)) {
-        sdb.createAgen({ nama: 'Admin', kota: '', nohp, seniorId: null, markup: 0, pin: config.ownerPin })
+      if (!sdb.findAgenByNohp(adminNohp)) {
+        sdb.createAgen({ nama: 'Admin', kota: '', nohp: adminNohp, seniorId: null, markup: 0, pin: config.ownerPin })
       }
     } finally {
       sdb.close()
     }
-    await reply(
-      `Session *${id}* terdaftar (admin ${nohp}), status off.\n` +
-        `Tambahkan ${id} ke env SESSIONS lalu restart bot untuk menyambungkan WhatsApp.`
-    )
+
+    await reply(`Session *${id}* terdaftar (admin ${adminNohp}, WA ${pairingPhone}). Menyambungkan + minta kode pairing…`)
+    await startRuntimeSession(reply, id)
+  }
+
+  // Connects a session now; the pairing code comes back through the notify hook.
+  async function startRuntimeSession(reply, id) {
+    if (!runtime) {
+      await reply(`Runtime belum siap, restart bot lalu SESION.${id}`)
+      return
+    }
+    await runtime.startSession(id, { notify: (msg) => reply(msg) })
   }
 
   async function setSessionStatus(reply, args, status) {
@@ -262,18 +247,22 @@ export function attachHandlers(client, sessionId, logger) {
       await reply(`Gunakan format: ${status === 'on' ? 'SESION' : 'SESIOFF'}.ID`)
       return
     }
-    const meta = sessionDb()
-    try {
-      readSessions(meta.raw)
-      const r = meta.raw.prepare(`UPDATE sessions SET status = ? WHERE id = ?`).run(status, id)
-      if (!r.changes) {
-        await reply('Session tidak ditemukan')
-        return
-      }
-    } finally {
-      meta.close()
+    if (!registry.getSession(id)) {
+      await reply('Session tidak ditemukan')
+      return
     }
-    await reply(`Session ${id} ${status === 'on' ? 'ON' : 'OFF'}.`)
+    if (status === 'on') {
+      await reply(`Session ${id} dinyalakan. Menyambungkan + minta kode pairing…`)
+      await startRuntimeSession(reply, id)
+      return
+    }
+    await stopRuntimeSession(id)
+    await reply(`Session ${id} OFF.`)
+  }
+
+  async function stopRuntimeSession(id) {
+    if (runtime) await runtime.stopSession(id)
+    else registry.setSessionStatus(id, 'off')
   }
 
   async function deleteSession(reply, args) {
@@ -282,17 +271,12 @@ export function attachHandlers(client, sessionId, logger) {
       await reply('Gunakan format: SESIHAPUS.ID')
       return
     }
-    const meta = sessionDb()
-    try {
-      readSessions(meta.raw)
-      const r = meta.raw.prepare(`DELETE FROM sessions WHERE id = ?`).run(id)
-      if (!r.changes) {
-        await reply('Session tidak ditemukan')
-        return
-      }
-    } finally {
-      meta.close()
+    if (!registry.getSession(id)) {
+      await reply('Session tidak ditemukan')
+      return
     }
+    await stopRuntimeSession(id)
+    registry.removeSession(id)
     // Irreversible: the session DB is wiped.
     try {
       rmSync(sessionPath(id), { force: true })
@@ -309,14 +293,7 @@ export function attachHandlers(client, sessionId, logger) {
       await reply('Gunakan format: LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]')
       return
     }
-    const meta = sessionDb()
-    let known
-    try {
-      known = readSessions(meta.raw).some((s) => s.id === id)
-    } finally {
-      meta.close()
-    }
-    if (!known) {
+    if (!registry.getSession(id)) {
       await reply('Session tidak ditemukan')
       return
     }

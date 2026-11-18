@@ -29,8 +29,8 @@ npm install
 | `COMMAND_PREFIX` | *(empty)* | Command prefix. Empty = no prefix (every text is a command, bot-menu style) |
 | `OWNERS` | (empty) | Comma-separated phone numbers (digits) = **super admin**: kelola session + lihat transaksi semua session |
 | `SETTINGS_PATH` | `.auth/settings.json` | Where per-session runtime settings live |
-| `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` |
-| `PAIRING_PHONE` | (empty) | Phone number (digits, w/ country code) for the code flow |
+| `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` (runtime: kode pairing per session, QR hanya fallback) |
+| `PAIRING_PHONE` | (empty) | Nomor WA default kalau session tidak punya nomor sendiri |
 | `LOG_LEVEL` | `info` | Pino level |
 | `AUTOREAD` | `false` | `true` = mark incoming messages read (blue ticks) |
 | `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
@@ -101,13 +101,28 @@ Harga efektif mitra = `produk.harga_modal` + markup admin (per produk jika ada, 
 
 | Command | Format | Fungsi |
 |---|---|---|
-| `SESI` | `SESI` | Daftar session terdaftar |
-| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN[LABEL]` | Daftarkan session + seed admin-nya (status off) |
-| `SESION` / `SESIOFF` | `SESION.ID` | Aktifkan/nonaktifkan session |
+| `SESI` | `SESI` | Daftar session terdaftar + nomor WA + status |
+| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing** |
+| `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (langsung connect/disconnect, tanpa restart) |
 | `SESIHAPUS` | `SESIHAPUS.ID` | Hapus session + DB-nya (permanen) |
 | `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Lihat transaksi session mana pun |
 
-Session baru diaktifkan dengan menambahkan id-nya ke env `SESSIONS` lalu restart (WhatsApp pairing butuh koneksi nyata per nomor).
+### Pairing kode
+
+Setiap session baru memakai **kode pairing** (bukan QR): begitu `SESIBUAT` dijalankan, runtime langsung connect dan zapo memicu `auth_pairing_required` → bot minta kode 8 karakter ke WhatsApp lalu mengirimkannya balik ke chat super admin:
+
+```
+*Pairing toko2*
+Nomor: 628555123456
+Kode: ABCD-EFGH
+
+Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.
+```
+
+- Nomor WA = token ke-3 (`SESIBUAT.toko2.628555.628555`), default nomor admin.
+- Kode juga dicetak di console log (`Enter on phone ...`).
+- QR di terminal hanya muncul kalau nomor WA tidak diketahui (fallback).
+- Daftar session disimpan di `.data/sessions/_registry.sqlite`; semua session di registry otomatis di-connect saat start (kredensial tersimpan, jadi tidak pairing ulang).
 
 ## PPOB menu (demo)
 
@@ -156,6 +171,8 @@ node test/utils.test.js
 index.js                 entry: sessions, pairing, reconnect, shutdown
 src/config.js            env config
 src/store.js             shared store (SQLite), one store for all sessions
+src/registry.js          daftar session (id, admin, nomor WA) — .data/sessions/_registry.sqlite
+src/runtime.js           connect/pairing kode/reconnect per session saat runtime
 src/db.js                per-session SQLite (agen/produk/transaksi/mutasi) + openDb()
 src/handler.js           message → auth gate → command dispatch + super admin
 src/commands/registry.js command map
