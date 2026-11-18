@@ -9,7 +9,7 @@ process.env.OWNERS = '628111'
 process.env.COMMAND_PREFIX = ''
 process.env.PPOB_DB_PATH = join(dir, 'int.sqlite')
 
-const { initDb, closeDb, createAgen } = await import('../src/db.js')
+const { initDb, closeDb, createAgen, profitSummary } = await import('../src/db.js')
 const { attachHandlers } = await import('../src/handler.js')
 await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
@@ -195,6 +195,29 @@ test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
 
   // bersihkan: aktifkan lagi
   await say('628111', 'AKTIF.RS00001.1234')
+})
+
+test('transaksi menyimpan harga modal saat itu', async () => {
+  db.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
+  assert.match(await say('628444', 'BELI.PULSA10.08123'), /Transaksi berhasil/)
+
+  const trx = db.prepare(`SELECT * FROM transaksi WHERE tujuan = '08123' ORDER BY id DESC`).get()
+  assert.equal(trx.produk_kode, 'PULSA10')
+  assert.equal(trx.harga_modal, 9500)
+  assert.equal(trx.harga_efektif, 11000)
+  assert.equal(trx.markup_total, 1500)
+
+  // ubah harga modal produk — transaksi lama tidak boleh berubah
+  db.prepare(`UPDATE produk SET harga_modal = 12000 WHERE kode = 'PULSA10'`).run()
+  const after = db.prepare(`SELECT * FROM transaksi WHERE id = ?`).get(trx.id)
+  assert.equal(after.harga_modal, 9500)
+
+  const sum = profitSummary({ agenId: null, from: '2000-01-01', to: '2100-01-01' })
+  assert.equal(sum.trx, 2)
+  assert.equal(sum.modal, 19000) // 9500 x 2
+  assert.equal(sum.markup, 3000) // 1500 x 2
+
+  db.prepare(`UPDATE produk SET harga_modal = 9500 WHERE kode = 'PULSA10'`).run()
 })
 
 test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {

@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS transaksi (
   id_trx TEXT UNIQUE NOT NULL,
   agen_id INTEGER NOT NULL REFERENCES agen(id),
   produk_id INTEGER REFERENCES produk(id),
+  produk_kode TEXT NOT NULL DEFAULT '',
   tujuan TEXT NOT NULL DEFAULT '',
+  harga_modal INTEGER NOT NULL DEFAULT 0,
+  markup_total INTEGER NOT NULL DEFAULT 0,
   harga_efektif INTEGER NOT NULL DEFAULT 0,
   komisi_dibagikan TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL,
@@ -64,10 +67,25 @@ CREATE INDEX IF NOT EXISTS idx_mutasi_agen ON mutasi(agen_id);
 
 let db = null
 
+// Additive migrations for DBs created before a column existed. SQLite has no
+// "ADD COLUMN IF NOT EXISTS", so check pragma first.
+function migrate(database) {
+  const cols = database.prepare(`PRAGMA table_info(transaksi)`).all().map((c) => c.name)
+  const add = {
+    produk_kode: `ALTER TABLE transaksi ADD COLUMN produk_kode TEXT NOT NULL DEFAULT ''`,
+    harga_modal: `ALTER TABLE transaksi ADD COLUMN harga_modal INTEGER NOT NULL DEFAULT 0`,
+    markup_total: `ALTER TABLE transaksi ADD COLUMN markup_total INTEGER NOT NULL DEFAULT 0`,
+  }
+  for (const [name, sql] of Object.entries(add)) {
+    if (!cols.includes(name)) database.exec(sql)
+  }
+}
+
 export function initDb(path) {
   mkdirSync(dirname(path), { recursive: true })
   db = new DatabaseSync(path)
   db.exec(SCHEMA)
+  migrate(db)
   return db
 }
 
@@ -224,11 +242,52 @@ export function ancestors(agenId) {
     .all(agenId, agenId)
 }
 
-export function insertTransaksi({ idTrx, agenId, produkId, tujuan, hargaEfektif, komisiDibagikan, status }) {
+export function insertTransaksi({
+  idTrx,
+  agenId,
+  produkId,
+  produkKode,
+  tujuan,
+  hargaModal,
+  markupTotal,
+  hargaEfektif,
+  komisiDibagikan,
+  status,
+}) {
   db.prepare(
-    `INSERT INTO transaksi (id_trx, agen_id, produk_id, tujuan, harga_efektif, komisi_dibagikan, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(idTrx, agenId, produkId, tujuan, hargaEfektif, JSON.stringify(komisiDibagikan), status, new Date().toISOString())
+    `INSERT INTO transaksi (id_trx, agen_id, produk_id, produk_kode, tujuan, harga_modal, markup_total, harga_efektif, komisi_dibagikan, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    idTrx,
+    agenId,
+    produkId,
+    produkKode,
+    tujuan,
+    hargaModal,
+    markupTotal,
+    hargaEfektif,
+    JSON.stringify(komisiDibagikan),
+    status,
+    new Date().toISOString()
+  )
+}
+
+// Profit = sum of markup over successful transactions in [from, to) ISO dates.
+// `agenId` scopes to a mitra, null = whole network (admin view).
+export function profitSummary({ agenId = null, from, to }) {
+  const scope = agenId ? 'AND agen_id = ?' : ''
+  const params = agenId ? [from, to, agenId] : [from, to]
+  const r = db
+    .prepare(
+      `SELECT COUNT(*) AS trx,
+              COALESCE(SUM(harga_efektif), 0) AS omzet,
+              COALESCE(SUM(harga_modal), 0) AS modal,
+              COALESCE(SUM(markup_total), 0) AS markup
+       FROM transaksi
+       WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${scope}`
+    )
+    .get(...params)
+  return r
 }
 
 export function deleteAgen(id) {
