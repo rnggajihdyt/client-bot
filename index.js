@@ -1,5 +1,5 @@
 import { createPinoLogger } from 'zapo-js'
-import { config } from './config.js'
+import { config } from './src/config.js'
 import { openRegistry, listSessions } from './src/registry.js'
 import { createRuntime } from './src/runtime.js'
 import './src/commands/demo.js' // registers the demo commands
@@ -38,10 +38,17 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 // Staying alive beats dying: a failed send or a stray rejection must not kill
-// every session. Log and continue.
+// every session. Log and continue. A genuinely wedged process exits non-zero so
+// the supervisor restarts it instead of serving a dead loop.
 process.on('unhandledRejection', (err) => {
   logger.error({ err }, 'unhandledRejection')
 })
+let uncaught = 0
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaughtException')
+  uncaught += 1
+  if (uncaught >= 5) {
+    logger.error('too many uncaught exceptions — exiting for supervisor restart')
+    process.exit(1)
+  }
 })

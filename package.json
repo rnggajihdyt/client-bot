@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env index.js",
+    "start:safe": "node supervisor.js",
     "dev": "node --watch --env-file-if-exists=.env index.js",
     "test": "node --test \"test/*.test.js\""
   },

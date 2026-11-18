@@ -36,6 +36,7 @@ npm install
 | `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
 | `SESSION_DIR` | `.data/sessions` | Satu file DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` |
 | `OWNER_PIN` | `1234` | PIN awal admin session yang di-seed oleh `SESIBUAT` |
+| `CYCLE_HOURS` | `10` | (supervisor) restart otomatis tiap N jam; `0` = tanpa cycle restart |
 
 ## Run
 
@@ -47,6 +48,50 @@ For auto-restart on file changes (dev):
 
 ```bash
 npm run dev
+```
+
+## Uptime / auto-restart
+
+```bash
+npm run start:safe
+```
+
+`supervisor.js` menjalankan `index.js` sebagai child process dan:
+
+- **Restart saat crash** — child mati (exit non-zero) → start ulang. Backoff 1s → 2s → 4s … maksimum 60s, dan balik ke 1s kalau run terakhir sehat >5 menit.
+- **Cycle restart** — child di-restart sendiri setiap `CYCLE_HOURS` jam (default 10) supaya proses tidak menumpuk memori koneksi. Kredensial tersimpan di `STORE_PATH`, jadi tidak pairing ulang.
+- **Log supervisor** — `logs/supervisor.log` (rotasi manual / pakai logrotate), selain output console.
+- `SIGINT`/`SIGTERM` diteruskan ke child supaya `disconnect()` sempat jalan.
+
+Supaya hidup setelah terminal/SSH ditutup, jalankan sebagai service:
+
+```bash
+# Linux (systemd)
+sudo tee /etc/systemd/system/wa-bot.service >/dev/null <<'EOF'
+[Unit]
+Description=WA PPOB bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/bot_client
+ExecStart=/usr/bin/node supervisor.js
+Restart=always
+RestartSec=5
+User=bot
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now wa-bot
+```
+
+Windows (PowerShell, auto-start saat login):
+
+```powershell
+# jalankan sekali; service akan restart sendiri kalau proses mati
+nssm install WABot "C:\Program Files\nodejs\node.exe" "supervisor.js"
+nssm set WABot AppDirectory D:\code\bot_client
+nssm start WABot
 ```
 
 First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
@@ -171,6 +216,7 @@ node test/utils.test.js
 
 ```
 index.js                 entry: sessions, pairing, reconnect, shutdown
+supervisor.js            auto-restart + cycle restart (npm run start:safe)
 src/config.js            env config
 src/store.js             shared store (SQLite), one store for all sessions
 src/registry.js          daftar session (id, admin, nomor WA) — .data/sessions/_registry.sqlite
