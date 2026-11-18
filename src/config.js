@@ -7,6 +7,6 @@ export const config = {
   logLevel: process.env.LOG_LEVEL ?? 'info',
   storePath: process.env.STORE_PATH ?? '.auth/state.sqlite',
   autoRead: process.env.AUTOREAD === 'true',
-  ppobDbPath: process.env.PPOB_DB_PATH ?? '.data/ppob.sqlite',
+  sessionDir: process.env.SESSION_DIR ?? '.data/sessions',
   ownerPin: process.env.OWNER_PIN ?? '1234',
 }

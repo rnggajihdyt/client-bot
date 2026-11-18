@@ -3,7 +3,6 @@ import qrcode from 'qrcode-terminal'
 import { config } from './src/config.js'
 import { store } from './src/store.js'
 import { attachHandlers } from './src/handler.js'
-import { initDb, createAgen, findAgenByNohp } from './src/db.js'
 import './src/commands/demo.js' // registers the demo commands
 import './src/commands/ppob.js' // info / format1..4 menus
 import './src/commands/ppob-core.js' // SAL/CH/DAFTAR/TUKAR/dll
@@ -11,18 +10,8 @@ import './src/commands/prefix.js' // setprefix (owner only)
 
 const logger = await createPinoLogger({ level: config.logLevel, pretty: true })
 
-// PPOB data layer.
-initDb(config.ppobDbPath)
-const owners = (process.env.OWNERS ?? '')
-  .split(',')
-  .map((s) => s.replace(/\D/g, ''))
-  .filter(Boolean)
-for (const nomor of owners) {
-  if (!findAgenByNohp(nomor)) {
-    createAgen({ nama: 'Admin', kota: '', nohp: nomor, seniorId: null, markup: 0, pin: config.ownerPin })
-    logger.info({ nomor }, 'seeded root mitra')
-  }
-}
+// PPOB data is per session (.data/sessions/<id>.sqlite), opened by the handler.
+// Each session's root admin is seeded by SESIBUAT, so nothing to seed here.
 
 const sessions = (process.env.SESSIONS ?? config.sessionId)
   .split(',')

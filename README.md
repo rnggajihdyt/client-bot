@@ -27,15 +27,15 @@ npm install
 | `DEFAULT_SESSION` | `default` | Session id for the single-session mode |
 | `SESSIONS` | `DEFAULT_SESSION` | Comma-separated session ids for multi-session |
 | `COMMAND_PREFIX` | *(empty)* | Command prefix. Empty = no prefix (every text is a command, bot-menu style) |
-| `OWNERS` | (empty) | Comma-separated phone numbers (digits) allowed to change the prefix |
+| `OWNERS` | (empty) | Comma-separated phone numbers (digits) = **super admin**: kelola session + lihat transaksi semua session |
 | `SETTINGS_PATH` | `.auth/settings.json` | Where per-session runtime settings live |
 | `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` |
 | `PAIRING_PHONE` | (empty) | Phone number (digits, w/ country code) for the code flow |
 | `LOG_LEVEL` | `info` | Pino level |
 | `AUTOREAD` | `false` | `true` = mark incoming messages read (blue ticks) |
 | `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
-| `PPOB_DB_PATH` | `.data/ppob.sqlite` | PPOB data DB (agen/produk/transaksi) |
-| `OWNER_PIN` | `1234` | Initial PIN for the seeded owner/root mitra |
+| `SESSION_DIR` | `.data/sessions` | Satu file DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` |
+| `OWNER_PIN` | `1234` | PIN awal admin session yang di-seed oleh `SESIBUAT` |
 
 ## Run
 
@@ -77,14 +77,37 @@ Active (non-stub) commands:
 | `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
 | `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Beli produk (potong saldo + distribusi komisi) |
+| `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringan sendiri. Mitra: dirinya |
+| `PRDK` | `PRDK.KODE.NAMA.MODAL` | Admin: tambah/ubah produk (nama boleh berspasi) |
+| `LPRDK` | `LPRDK` | Admin: list produk + modal + markup |
+| `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Admin: markup general (fallback) / markup per produk (menimpa general) |
 | `CS` | `CS.PESAN` | Hubungi admin |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel |
 
-`TIKET`, `LAP`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
+`TIKET`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
 
-Harga efektif mitra = `produk.harga_modal` + total markup sepanjang jalur root→mitra (query `WITH RECURSIVE`).
+Harga efektif mitra = `produk.harga_modal` + markup admin (per produk jika ada, jika tidak: markup root/general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
+
+## Multi-session PPOB
+
+- Satu proses, banyak nomor WhatsApp (`SESSIONS=a,b,c`).
+- **DB terpisah per session**: `.data/sessions/<sessionId>.sqlite`. Tidak ada data yang bocor antar admin.
+- **Admin session** = root di DB session itu (`senior_id IS NULL`), nomornya didaftarkan super admin via `SESIBUAT`. Kelola markup (general + per produk), produk, downline, dan lihat `LAP` seluruh session-nya.
+- **Admin mendaftarkan uplink langsung** dengan `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` — senior otomatis admin session.
+- **Uplink** (anak langsung admin) bisa transaksi seperti mitra + `LAP` jaringannya sendiri.
+- **Super admin** (`OWNERS`, tanpa perlu jadi mitra):
+
+| Command | Format | Fungsi |
+|---|---|---|
+| `SESI` | `SESI` | Daftar session terdaftar |
+| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN[LABEL]` | Daftarkan session + seed admin-nya (status off) |
+| `SESION` / `SESIOFF` | `SESION.ID` | Aktifkan/nonaktifkan session |
+| `SESIHAPUS` | `SESIHAPUS.ID` | Hapus session + DB-nya (permanen) |
+| `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Lihat transaksi session mana pun |
+
+Session baru diaktifkan dengan menambahkan id-nya ke env `SESSIONS` lalu restart (WhatsApp pairing butuh koneksi nyata per nomor).
 
 ## PPOB menu (demo)
 
@@ -133,9 +156,12 @@ node test/utils.test.js
 index.js                 entry: sessions, pairing, reconnect, shutdown
 src/config.js            env config
 src/store.js             shared store (SQLite), one store for all sessions
-src/handler.js           message → command dispatch
+src/db.js                per-session SQLite (agen/produk/transaksi/mutasi) + openDb()
+src/handler.js           message → auth gate → command dispatch + super admin
 src/commands/registry.js command map
 src/commands/demo.js     ping / menu / help
+src/commands/ppob-core.js SAL/CH/DAFTAR/BELI/LAP/PRDK/MKP/dll
+src/report.js            parseRange (HARI/BULAN/tanggal) untuk LAP
 src/helpers.js           send helpers
 src/utils.js             text/parse/format helpers
 test/utils.test.js       parser + extract self-check

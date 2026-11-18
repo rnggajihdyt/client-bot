@@ -1,41 +1,20 @@
 import { register } from './registry.js'
 import { verifyPin, hashPin } from '../auth.js'
-import {
-  findAgenByNohp,
-  findAgenById,
-  findAgenByKode,
-  downlines,
-  countDownlines,
-  createAgen,
-  updateAgen,
-  setSaldoKomisi,
-  deleteAgen,
-  addNomor,
-  removeNomor,
-  nomorOf,
-  nomorTaken,
-  effectivePrice,
-  transaksiStats,
-  addMutasi,
-  addSaldo,
-  addKomisi,
-  ancestors,
-  insertTransaksi,
-  tx,
-} from '../db.js'
 import { formatRupiah, parseNumber } from '../money.js'
+import { parseRange } from '../report.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'
+const ADMIN_ONLY = 'Khusus admin'
 
 function requirePin(ctx) {
   const pin = ctx.args[ctx.args.length - 1]
-  if (!verifyPin(pin, ctx.mitra.pin_hash)) return null
+  if (!verifyPin(pin, ctx.mitra?.pin_hash)) return null
   return pin
 }
 
 function requireDownline(ctx, kode) {
-  const target = findAgenByKode(String(kode).toUpperCase())
+  const target = ctx.db.findAgenByKode(String(kode).toUpperCase())
   if (!target || target.senior_id !== ctx.mitra.id) return null
   return target
 }
@@ -44,8 +23,8 @@ function requireDownline(ctx, kode) {
 register({
   name: 'sal',
   description: 'Cek saldo',
-  async handler({ client, event, mitra, deactivated }) {
-    const st = transaksiStats(mitra.id)
+  async handler({ client, event, mitra, deactivated, db }) {
+    const st = db.transaksiStats(mitra.id)
     const text =
       `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
       `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
@@ -60,13 +39,13 @@ register({
 register({
   name: 'ch',
   description: 'Cek harga produk, e.g. CH.PULSA10',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     const kode = args[0]
     if (!kode) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: CH.KODE')
       return
     }
-    const p = effectivePrice(mitra.id, kode.toUpperCase())
+    const p = db.effectivePrice(mitra.id, kode.toUpperCase())
     if (!p) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
       return
@@ -79,10 +58,11 @@ register({
 })
 
 // ---- DAFTAR ----
+// Issued by the session admin it creates an uplink (direct child of the root).
 register({
   name: 'daftar',
-  description: 'Tambah downline: DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN',
-  async handler({ client, event, mitra, args, log }) {
+  description: 'Tambah downline/uplink: DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN',
+  async handler({ client, event, mitra, args, log, db }) {
     if (args.length < 5) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN')
       return
@@ -98,7 +78,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Nomor HP tidak valid')
       return
     }
-    if (nomorTaken(nohpD)) {
+    if (db.nomorTaken(nohpD)) {
       await client.message.send(event.key.remoteJid, 'Nomor sudah terdaftar')
       return
     }
@@ -109,15 +89,16 @@ register({
     }
     let created
     try {
-      created = createAgen({ nama, kota, nohp: nohpD, seniorId: mitra.id, markup, pin: '1234' })
-    } catch (e) {
+      created = db.createAgen({ nama, kota, nohp: nohpD, seniorId: mitra.id, markup, pin: '1234' })
+    } catch {
       await client.message.send(event.key.remoteJid, 'Gagal menyimpan, coba lagi')
       return
     }
 
+    const isUplink = mitra.senior_id == null
     await client.message.send(
       event.key.remoteJid,
-      `Mitra baru: ${nama} (${created.kode}) ${nohpD} berhasil ditambahkan sebagai downline Anda.`
+      `Mitra baru: ${nama} (${created.kode}) ${nohpD} berhasil ditambahkan sebagai ${isUplink ? 'uplink' : 'downline'} Anda.`
     )
 
     // Welcome the new downline directly. Best-effort: a failed send must not
@@ -137,8 +118,8 @@ register({
 register({
   name: 'ldl',
   description: 'List downline langsung',
-  async handler({ client, event, mitra }) {
-    const dl = downlines(mitra.id)
+  async handler({ client, event, mitra, db }) {
+    const dl = db.downlines(mitra.id)
     if (!dl.length) {
       await client.message.send(event.key.remoteJid, 'Belum ada downline')
       return
@@ -152,7 +133,7 @@ register({
 register({
   name: 'mp',
   description: 'Ubah markup downline: MP.KODE.MARKUP.PIN',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     if (args.length < 3) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: MP.KODE.MARKUP.PIN')
       return
@@ -162,7 +143,7 @@ register({
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
     }
-    const target = requireDownline({ mitra }, kode)
+    const target = requireDownline({ mitra, db }, kode)
     if (!target) {
       await client.message.send(event.key.remoteJid, NOT_DOWNLINE)
       return
@@ -172,7 +153,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Markup harus bilangan bulat >= 0')
       return
     }
-    updateAgen(target.id, { markup })
+    db.updateAgen(target.id, { markup })
     await client.message.send(event.key.remoteJid, `Markup ${target.kode} diubah menjadi ${formatRupiah(markup)}.`)
   },
 })
@@ -188,7 +169,7 @@ function downlineNotice(target, active) {
 }
 
 function statusHandler(action, text) {
-  return async function handler({ client, event, mitra, args, log }) {
+  return async function handler({ client, event, mitra, args, log, db }) {
     const kode = args[0]
     if (!kode) {
       await client.message.send(event.key.remoteJid, `Gunakan format: ${action}.KODE.PIN`)
@@ -198,22 +179,22 @@ function statusHandler(action, text) {
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
     }
-    const target = requireDownline({ mitra }, kode)
+    const target = requireDownline({ mitra, db }, kode)
     if (!target) {
       await client.message.send(event.key.remoteJid, NOT_DOWNLINE)
       return
     }
     if (action === 'HAPUS') {
-      if (countDownlines(target.id) > 0) {
+      if (db.countDownlines(target.id) > 0) {
         await client.message.send(event.key.remoteJid, 'Tidak bisa dihapus: masih memiliki downline')
         return
       }
-      deleteAgen(target.id)
+      db.deleteAgen(target.id)
       await client.message.send(event.key.remoteJid, `${target.kode} dihapus.`)
       return
     }
     const active = action === 'AKTIF'
-    updateAgen(target.id, { aktif: active ? 1 : 0 })
+    db.updateAgen(target.id, { aktif: active ? 1 : 0 })
     await client.message.send(event.key.remoteJid, `${target.kode} ${text}.`)
 
     // Same style as the DAFTAR welcome. PIN is never included (it is hashed).
@@ -232,16 +213,16 @@ register({ name: 'hapus', description: 'Hapus downline', handler: statusHandler(
 register({
   name: 'tukar',
   description: 'Tukar komisi ke saldo',
-  async handler({ client, event, mitra }) {
+  async handler({ client, event, mitra, db }) {
     if (mitra.komisi <= 0) {
       await client.message.send(event.key.remoteJid, 'Komisi Anda 0')
       return
     }
-    tx(() => {
+    db.tx(() => {
       const newSaldo = mitra.saldo + mitra.komisi
-      addMutasi(mitra.id, 'komisi_masuk', -mitra.komisi, mitra.saldo, 'TUKAR komisi')
-      addMutasi(mitra.id, 'kredit', mitra.komisi, newSaldo, 'TUKAR komisi ke saldo')
-      setSaldoKomisi(mitra.id, newSaldo, 0)
+      db.addMutasi(mitra.id, 'komisi_masuk', -mitra.komisi, mitra.saldo, 'TUKAR komisi')
+      db.addMutasi(mitra.id, 'kredit', mitra.komisi, newSaldo, 'TUKAR komisi ke saldo')
+      db.setSaldoKomisi(mitra.id, newSaldo, 0)
     })
     await client.message.send(event.key.remoteJid, `Sejumlah ${formatRupiah(mitra.komisi)} telah ditambahkan ke saldo Anda.`)
   },
@@ -251,18 +232,25 @@ register({
 register({
   name: 'cs',
   description: 'Hubungi admin: CS.PESAN',
-  async handler({ client, event, mitra, args, owners, log }) {
+  async handler({ client, event, mitra, args, log, db }) {
     const pesan = args.join(' ')
     if (!pesan) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: CS.PESAN')
       return
     }
-    for (const o of owners) {
-      try {
-        await client.message.send(`${o}@s.whatsapp.net`, `*CS dari Mitra*\nID: ${mitra.kode}\nNama: ${mitra.nama}\nPesan: "${pesan}"`)
-      } catch (e) {
-        log.error({ err: e, owner: o }, 'cs forward failed')
-      }
+    // Per-session admin is the recipient, not the global OWNERS list.
+    const root = db.root()
+    if (!root) {
+      await client.message.send(event.key.remoteJid, 'Admin session belum terdaftar')
+      return
+    }
+    try {
+      await client.message.send(
+        `${root.nohp}@s.whatsapp.net`,
+        `*CS dari Mitra*\nID: ${mitra.kode}\nNama: ${mitra.nama}\nPesan: "${pesan}"`
+      )
+    } catch (e) {
+      log.error({ err: e, admin: root.nohp }, 'cs forward failed')
     }
     await client.message.send(
       event.key.remoteJid,
@@ -275,7 +263,7 @@ register({
 register({
   name: 'gp',
   description: 'Ganti PIN: GP.PINBARU.PINLAMA',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     const [pinBaru, pinLama] = args
     if (!verifyPin(pinLama, mitra.pin_hash)) {
       await client.message.send(event.key.remoteJid, PIN_SALAH)
@@ -285,8 +273,7 @@ register({
       await client.message.send(event.key.remoteJid, 'PIN baru minimal 4 digit angka')
       return
     }
-    const { hashPin } = await import('../auth.js')
-    updateAgen(mitra.id, { pin_hash: hashPin(pinBaru) })
+    db.updateAgen(mitra.id, { pin_hash: hashPin(pinBaru) })
     await client.message.send(event.key.remoteJid, 'PIN berhasil diganti.')
   },
 })
@@ -294,7 +281,7 @@ register({
 register({
   name: 'un',
   description: 'Ubah nama: UN.NAMA.PIN',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     if (args.length < 2) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: UN.NAMA.PIN')
       return
@@ -305,7 +292,7 @@ register({
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
     }
-    updateAgen(mitra.id, { nama })
+    db.updateAgen(mitra.id, { nama })
     await client.message.send(event.key.remoteJid, `Nama diubah menjadi "${nama}".`)
   },
 })
@@ -314,7 +301,7 @@ register({
 register({
   name: 'tno',
   description: 'Tambah nomor paralel: TNO.NOHP.PIN',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     if (!requirePin({ mitra, args })) {
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
@@ -325,11 +312,11 @@ register({
       return
     }
     const nohpD = String(nohp).replace(/\D/g, '')
-    if (!nohpD || nomorTaken(nohpD)) {
+    if (!nohpD || db.nomorTaken(nohpD)) {
       await client.message.send(event.key.remoteJid, 'Nomor tidak valid atau sudah terdaftar')
       return
     }
-    addNomor(mitra.id, nohpD)
+    db.addNomor(mitra.id, nohpD)
     await client.message.send(event.key.remoteJid, `Nomor ${nohpD} ditambahkan ke akun Anda.`)
   },
 })
@@ -337,7 +324,7 @@ register({
 register({
   name: 'hno',
   description: 'Hapus nomor paralel: HNO.NOHP.PIN',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     if (!requirePin({ mitra, args })) {
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
@@ -352,7 +339,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Nomor utama tidak bisa dihapus')
       return
     }
-    if (!removeNomor(mitra.id, nohpD)) {
+    if (!db.removeNomor(mitra.id, nohpD)) {
       await client.message.send(event.key.remoteJid, 'Nomor paralel tidak ditemukan')
       return
     }
@@ -363,9 +350,8 @@ register({
 register({
   name: 'lno',
   description: 'Cek daftar nomor',
-  async handler({ client, event, mitra }) {
-    const extra = nomorOf(mitra.id)
-    const all = [mitra.nohp, ...extra]
+  async handler({ client, event, mitra, db }) {
+    const all = [mitra.nohp, ...db.nomorOf(mitra.id)]
     await client.message.send(event.key.remoteJid, `*Nomor Anda:*\n${all.join('\n')}`)
   },
 })
@@ -374,7 +360,7 @@ register({
 register({
   name: 'beli',
   description: 'Beli produk: BELI.KODE.TUJUAN[.PIN]',
-  async handler({ client, event, mitra, args }) {
+  async handler({ client, event, mitra, args, db }) {
     const [kode, tujuan, pin] = args
     if (!kode || !tujuan) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: BELI.KODE.TUJUAN.PIN')
@@ -386,7 +372,7 @@ register({
       return
     }
 
-    const p = effectivePrice(mitra.id, String(kode).toUpperCase())
+    const p = db.effectivePrice(mitra.id, String(kode).toUpperCase())
     if (!p) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
       return
@@ -399,24 +385,25 @@ register({
     // Commission: every ancestor keeps its own markup, inactive or not.
     // A deactivated uplink still accrues commission; it just cannot TUKAR
     // while inactive (the auth gate blocks it). Root/admin takes no commission.
-    const chain = ancestors(mitra.id).filter((a) => a.senior_id != null && a.markup > 0)
+    const chain = db.ancestors(mitra.id).filter((a) => a.senior_id != null && a.markup > 0)
     const idTrx = `T${Date.now()}${Math.floor(Math.random() * 900 + 100)}`
 
-    tx(() => {
-      addSaldo(mitra.id, -p.hargaEfektif)
-      addMutasi(mitra.id, 'debit', p.hargaEfektif, mitra.saldo - p.hargaEfektif, `Beli ${p.kode}`)
+    db.tx(() => {
+      db.addSaldo(mitra.id, -p.hargaEfektif)
+      db.addMutasi(mitra.id, 'debit', p.hargaEfektif, mitra.saldo - p.hargaEfektif, `Beli ${p.kode}`)
       for (const a of chain) {
-        addKomisi(a.id, a.markup)
-        addMutasi(a.id, 'komisi_masuk', a.markup, a.saldo, `Komisi ${p.kode} dari ${mitra.kode}`)
+        db.addKomisi(a.id, a.markup)
+        db.addMutasi(a.id, 'komisi_masuk', a.markup, a.saldo, `Komisi ${p.kode} dari ${mitra.kode}`)
       }
-      insertTransaksi({
+      db.insertTransaksi({
         idTrx,
         agenId: mitra.id,
         produkId: p.id,
         produkKode: p.kode,
         tujuan,
         hargaModal: p.harga_modal,
-        markupTotal: p.hargaEfektif - p.harga_modal,
+        markupAdmin: p.adminMarkup,
+        markupTotal: p.markupTotal,
         hargaEfektif: p.hargaEfektif,
         komisiDibagikan: chain.map((a) => ({ agen_id: a.id, kode: a.kode, nominal: a.markup })),
         status: 'sukses',
@@ -430,8 +417,146 @@ register({
   },
 })
 
+// ---- LAP ----
+// Admin = whole session. Uplink = its own network. Mitra = itself.
+register({
+  name: 'lap',
+  description: 'Laporan: LAP[HARI|BULAN|YYYY-MM-DD]',
+  async handler({ client, event, mitra, args, isAdmin, db }) {
+    const { from, to, label } = parseRange(args[0])
+    const root = db.root()
+
+    if (isAdmin) {
+      const sum = db.profitSummary({ from, to })
+      const list = db.recentTransaksi({ from, to, limit: 10 })
+      const head =
+        `*Laporan Sesi* (${label})\n` +
+        `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
+        `Modal: ${formatRupiah(sum.modal)} Profit: ${formatRupiah(sum.profit)}`
+      const lines = list.map(
+        (t) => `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`
+      )
+      await client.message.send(event.key.remoteJid, lines.length ? `${head}\n\n${lines.join('\n')}` : head)
+      return
+    }
+
+    // Uplink: direct child of the root gets the whole network report.
+    if (root && mitra.senior_id === root.id) {
+      const ids = [mitra.id, ...db.descendants(mitra.id)]
+      const sum = db.profitSummary({ agenIds: ids, from, to })
+      const komisi = db.commissionEarned(mitra.id, from, to)
+      await client.message.send(
+        event.key.remoteJid,
+        `*Laporan Jaringan* (${label})\n` +
+          `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
+          `Komisi Anda: ${formatRupiah(komisi)}`
+      )
+      return
+    }
+
+    const sum = db.profitSummary({ agenIds: [mitra.id], from, to })
+    const komisi = db.commissionEarned(mitra.id, from, to)
+    await client.message.send(
+      event.key.remoteJid,
+      `*Laporan Anda* (${label})\n` +
+        `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
+        `Komisi Anda: ${formatRupiah(komisi)}`
+    )
+  },
+})
+
+// ---- admin: produk & markup ----
+register({
+  name: 'prdk',
+  description: 'Admin: PRDK.KODE.NAMA.MODAL',
+  async handler({ client, event, args, isAdmin, db }) {
+    if (!isAdmin) {
+      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
+      return
+    }
+    const [kode, ...rest] = args
+    const modal = parseNumber(rest[rest.length - 1])
+    const nama = rest.slice(0, -1).join(' ')
+    if (!kode || !nama || !Number.isInteger(modal) || modal < 0) {
+      await client.message.send(event.key.remoteJid, 'Gunakan format: PRDK.KODE.NAMA.MODAL')
+      return
+    }
+    db.upsertProduk({ kode: kode.toUpperCase(), nama, hargaModal: modal })
+    await client.message.send(
+      event.key.remoteJid,
+      `Produk ${kode.toUpperCase()} disimpan (modal ${formatRupiah(modal)}).`
+    )
+  },
+})
+
+register({
+  name: 'lprdk',
+  description: 'Admin: list produk',
+  async handler({ client, event, isAdmin, db }) {
+    if (!isAdmin) {
+      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
+      return
+    }
+    const rows = db.listProduk()
+    if (!rows.length) {
+      await client.message.send(event.key.remoteJid, 'Belum ada produk')
+      return
+    }
+    const lines = rows.map(
+      (p) =>
+        `• ${p.kode} — ${p.nama} | modal ${formatRupiah(p.harga_modal)} | markup ${p.markup == null ? 'general' : formatRupiah(p.markup)}`
+    )
+    await client.message.send(event.key.remoteJid, `*Produk:*\n${lines.join('\n')}`)
+  },
+})
+
+// General markup = root agen markup (fallback). Per-product markup overrides it.
+register({
+  name: 'mkp',
+  description: 'Admin: MKP.NOMINAL (general) | MKP.KODE.NOMINAL (per produk)',
+  async handler({ client, event, args, isAdmin, db }) {
+    if (!isAdmin) {
+      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
+      return
+    }
+    const [a, b] = args
+    if (!a) {
+      await client.message.send(event.key.remoteJid, 'Gunakan format: MKP.NOMINAL atau MKP.KODE.NOMINAL')
+      return
+    }
+    if (b === undefined) {
+      const markup = parseNumber(a)
+      if (!Number.isInteger(markup) || markup < 0) {
+        await client.message.send(event.key.remoteJid, 'Markup harus bilangan bulat >= 0')
+        return
+      }
+      const root = db.root()
+      if (!root) {
+        await client.message.send(event.key.remoteJid, 'Admin session belum terdaftar')
+        return
+      }
+      db.updateAgen(root.id, { markup })
+      await client.message.send(event.key.remoteJid, `Markup general diubah menjadi ${formatRupiah(markup)}.`)
+      return
+    }
+    const markup = parseNumber(b)
+    if (!Number.isInteger(markup) || markup < 0) {
+      await client.message.send(event.key.remoteJid, 'Markup harus bilangan bulat >= 0')
+      return
+    }
+    if (!db.setProdukMarkup(a.toUpperCase(), markup)) {
+      await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
+      return
+    }
+    await client.message.send(
+      event.key.remoteJid,
+      `Markup produk ${a.toUpperCase()} diubah menjadi ${formatRupiah(markup)}.`
+    )
+  },
+})
+
 // ---- stubs for not-yet-built features ----
-const STUBS = { tiket: 'Tiket Deposit', lap: 'Laporan', rek: 'Mutasi', cek: 'Cek Trx', btl: 'Batal Trx' }
+const STUBS = { tiket: 'Tiket Deposit', rek: 'Mutasi', cek: 'Cek Trx', btl: 'Batal Trx' }
 for (const [name, label] of Object.entries(STUBS)) {
   register({
     name,
