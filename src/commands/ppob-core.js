@@ -44,13 +44,14 @@ function requireDownline(ctx, kode) {
 register({
   name: 'sal',
   description: 'Cek saldo',
-  async handler({ client, event, mitra }) {
+  async handler({ client, event, mitra, deactivated }) {
     const st = transaksiStats(mitra.id)
     const text =
       `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
       `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
       `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
-      `Ketik TUKAR utk ambil komisi`
+      `Ketik TUKAR utk ambil komisi` +
+      (deactivated ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.` : '')
     await client.message.send(event.key.remoteJid, text)
   },
 })
@@ -177,8 +178,17 @@ register({
 })
 
 // ---- NA / AKTIF / HAPUS ----
+function downlineNotice(target, active) {
+  const state = active ? 'DIAKTIFKAN kembali' : 'DINONAKTIFKAN'
+  return (
+    `Yth. ${target.nama}, Akun anda dengan Kode Agen ${target.kode} telah ${state}. ` +
+    `Saldo sekarang ${formatRupiah(target.saldo)}. ` +
+    `Ketik INFO untuk mengetahui format-format transaksi.`
+  )
+}
+
 function statusHandler(action, text) {
-  return async function handler({ client, event, mitra, args }) {
+  return async function handler({ client, event, mitra, args, log }) {
     const kode = args[0]
     if (!kode) {
       await client.message.send(event.key.remoteJid, `Gunakan format: ${action}.KODE.PIN`)
@@ -202,8 +212,16 @@ function statusHandler(action, text) {
       await client.message.send(event.key.remoteJid, `${target.kode} dihapus.`)
       return
     }
-    updateAgen(target.id, { aktif: action === 'AKTIF' ? 1 : 0 })
+    const active = action === 'AKTIF'
+    updateAgen(target.id, { aktif: active ? 1 : 0 })
     await client.message.send(event.key.remoteJid, `${target.kode} ${text}.`)
+
+    // Same style as the DAFTAR welcome. PIN is never included (it is hashed).
+    try {
+      await client.message.send(`${target.nohp}@s.whatsapp.net`, downlineNotice(target, active))
+    } catch (err) {
+      log?.warn({ err, nohp: target.nohp }, 'status notice failed')
+    }
   }
 }
 register({ name: 'na', description: 'Nonaktifkan downline', handler: statusHandler('NA', 'dinonaktifkan') })

@@ -14,6 +14,9 @@ const owners = (process.env.OWNERS ?? '')
 const NOT_MITRA = 'Anda bukan mitra kami'
 const INACTIVE = 'Akun Anda nonaktif'
 
+// A deactivated mitra may still read its own status and the menus.
+const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'info', 'all', 'menu', 'help'])
+
 // Incoming button/list replies arrive as ordinary `message` events with a
 // buttonsResponseMessage / listResponseMessage payload — not a separate event.
 function extractSelectedId(message) {
@@ -78,11 +81,8 @@ export function attachHandlers(client, sessionId, logger) {
       return
     }
 
-    // Deactivated mitra is blocked entirely — before any command parsing.
-    if (mitra && !mitra.aktif && !isAdmin) {
-      await safeSend(client, event.key.remoteJid, INACTIVE, undefined, log)
-      return
-    }
+    // Deactivated mitra: only read-only status/menu commands get through.
+    const deactivated = Boolean(mitra && !mitra.aktif && !isAdmin)
 
     const prefix = prefixFor()
 
@@ -92,6 +92,11 @@ export function attachHandlers(client, sessionId, logger) {
     else parsed = parsePpob(text)
     if (!parsed) return
 
+    if (deactivated && !ALLOWED_WHEN_INACTIVE.has(parsed.cmd)) {
+      await safeSend(client, event.key.remoteJid, INACTIVE, undefined, log)
+      return
+    }
+
     const command = getCommand(parsed.cmd)
     if (!command) {
       if (!prefix) return
@@ -99,7 +104,18 @@ export function attachHandlers(client, sessionId, logger) {
       return
     }
 
-    const ctx = { client, event, args: parsed.args, log, sessionId, owners, prefix, mitra, isAdmin }
+    const ctx = {
+      client,
+      event,
+      args: parsed.args,
+      log,
+      sessionId,
+      owners,
+      prefix,
+      mitra,
+      isAdmin,
+      deactivated,
+    }
     try {
       await command.handler(ctx)
     } catch (err) {

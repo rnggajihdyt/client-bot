@@ -125,19 +125,17 @@ test('PIN salah ditolak', async () => {
   assert.equal(r, 'PIN salah')
 })
 
-test('downline nonaktif diblokir total', async () => {
-  const off = await say('628111', 'NA.RS00001.1234')
-  assert.match(off, /dinonaktifkan/)
-
-  // even menu / sal blocked
-  assert.equal(await say('628222', 'SAL'), 'Akun Anda nonaktif')
-  assert.equal(await say('628222', 'info'), 'Akun Anda nonaktif')
-  assert.equal(await say('628222', 'all'), 'Akun Anda nonaktif')
-
-  const on = await say('628111', 'AKTIF.RS00001.1234')
-  assert.match(on, /diaktifkan/)
-  // back to normal
-  assert.match(await say('628222', 'SAL'), /^Yth\. Mitra Ani ID: RS00001/)
+test('nonaktif: SAL & info boleh dengan keterangan, sisanya diblokir', async () => {
+  await say('628111', 'NA.RS00001.1234') // naikkan: A nonaktif
+  const sal = await say('628222', 'SAL')
+  assert.match(sal, /^Yth\. Mitra Ani ID: RS00001/)
+  assert.match(sal, /Akun Anda sedang DINONAKTIFKAN/)
+  assert.match(await say('628222', 'info'), /PANDUAN TRANSAKSI/)
+  assert.match(await say('628222', 'all'), /FORMAT 4/)
+  assert.equal(await say('628222', 'LDL'), 'Akun Anda nonaktif')
+  assert.equal(await say('628222', 'CH.PULSA10'), 'Akun Anda nonaktif')
+  await say('628111', 'AKTIF.RS00001.1234') // pulihkan untuk test berikutnya
+  assert.doesNotMatch(await say('628222', 'SAL'), /DINONAKTIFKAN/)
 })
 
 test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async () => {
@@ -149,10 +147,10 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
   db.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
 
   // A dinonaktifkan oleh uplink (admin)
-  assert.match(await say('628111', 'NA.RS00001.1234'), /dinonaktifkan/)
+  assert.match(await say('628111', 'NA.RS00001.1234'), /DINONAKTIFKAN/)
 
-  // A terkunci total
-  assert.equal(await say('628222', 'SAL'), 'Akun Anda nonaktif')
+  // A hanya bisa baca status, bukan transaksi
+  assert.match(await say('628222', 'SAL'), /DINONAKTIFKAN/)
 
   // B tetap bisa transaksi dengan harga penuh (modal 9500 + 1000 + 500 = 11000)
   const beli = await say('628444', 'BELI.PULSA10.081234567')
@@ -168,7 +166,7 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
   assert.equal(await say('628222', 'TUKAR'), 'Akun Anda nonaktif')
 
   // aktifkan lagi -> komisi bisa dicairkan
-  assert.match(await say('628111', 'AKTIF.RS00001.1234'), /diaktifkan/)
+  assert.match(await say('628111', 'AKTIF.RS00001.1234'), /DIAKTIFKAN/)
   const tukar = await say('628222', 'TUKAR')
   assert.match(tukar, /1\.000/)
   const a2 = db.prepare(`SELECT komisi, saldo FROM agen WHERE nohp = '628222'`).get()
@@ -179,6 +177,24 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 test('BELI ditolak saat saldo kurang', async () => {
   db.prepare(`UPDATE agen SET saldo = 100 WHERE nohp = '628444'`).run()
   assert.equal(await say('628444', 'BELI.PULSA10.0812'), 'Saldo tidak cukup')
+})
+
+test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
+  sent.length = 0
+  await say('628111', 'AKTIF.RS00001.1234')
+  const notice = sent.find((s) => s.jid === '628222@s.whatsapp.net')
+  assert.ok(notice, 'notifikasi terkirim ke downline')
+  assert.match(notice.text, /^Yth\. Ani, Akun anda dengan Kode Agen RS00001 telah DIAKTIFKAN kembali\./)
+  assert.match(notice.text, /Ketik INFO untuk mengetahui format-format transaksi\./)
+
+  sent.length = 0
+  await say('628111', 'NA.RS00001.1234')
+  const off = sent.find((s) => s.jid === '628222@s.whatsapp.net')
+  assert.ok(off)
+  assert.match(off.text, /telah DINONAKTIFKAN\./)
+
+  // bersihkan: aktifkan lagi
+  await say('628111', 'AKTIF.RS00001.1234')
 })
 
 test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
