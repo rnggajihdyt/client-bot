@@ -29,12 +29,17 @@ export function createRuntime(logger) {
   // Watchdog: a client that never reaches a stable connection is rebuilt from
   // scratch (disconnect + fresh WaClient). Real state comes from the
   // 'connection' event — getState() only reports auth, not the socket.
+  // `since` is set once at registration and never reset by transitions, so a
+  // fast open/close flap still accumulates past GIVE_UP_MS and gets rebuilt.
   const STABLE_MS = 120_000
   const GIVE_UP_MS = 180_000
-  const health = new Map() // sessionId -> { since, open }
+  const health = new Map() // sessionId -> { since, open, stableAt }
   const markOpen = (sessionId, open) => {
-    const h = health.get(sessionId) ?? { since: Date.now(), open: false }
-    if (open !== h.open) Object.assign(h, { since: Date.now(), open })
+    const now = Date.now()
+    const h = health.get(sessionId) ?? { since: now, open: false, stableAt: null }
+    if (open && !h.open) h.stableAt ??= now
+    if (!open && h.open) h.stableAt = null
+    h.open = open
     health.set(sessionId, h)
   }
 
@@ -159,9 +164,9 @@ export function createRuntime(logger) {
   const watchdog = setInterval(() => {
     const now = Date.now()
     for (const sessionId of clients.keys()) {
-      const h = health.get(sessionId) ?? { since: now }
-      if (h.open) {
-        if (now - h.since > STABLE_MS) health.delete(sessionId) // healthy again
+      const h = health.get(sessionId) ?? { since: now, open: false, stableAt: null }
+      if (h.stableAt && now - h.stableAt > STABLE_MS) {
+        health.delete(sessionId) // healthy again
         continue
       }
       if (now - h.since > GIVE_UP_MS) {

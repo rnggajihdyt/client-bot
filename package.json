@@ -13,10 +13,10 @@
     "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
-    "@zapo-js/store-sqlite": "latest",
+    "@zapo-js/store-sqlite": "^1.3.0",
     "pino": "latest",
     "pino-pretty": "latest",
     "qrcode-terminal": "latest",
-    "zapo-js": "latest"
+    "zapo-js": "^1.12.0"
   }
 }
