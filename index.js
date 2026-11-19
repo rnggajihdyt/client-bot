@@ -5,8 +5,10 @@ import { createRuntime } from './src/runtime.js'
 import './src/commands/demo.js' // registers the demo commands
 import './src/commands/ppob.js' // info / format1..4 menus
 import './src/commands/ppob-core.js' // SAL/CH/DAFTAR/TUKAR/dll
+import './src/commands/supplier.js' // APIKEY/SYNC/CEK/REK/BTL
 import './src/commands/prefix.js' // setprefix (owner only)
 import './src/commands/owner.js' // status/sessions/restart/cmd/env (owner only)
+import { startWebhookServer, startPoller } from './src/webhook.js'
 
 const logger = await createPinoLogger({ level: config.logLevel, pretty: true })
 
@@ -15,6 +17,8 @@ const registryPath = `${config.sessionDir}/_registry.sqlite`
 openRegistry(registryPath)
 
 const runtime = createRuntime(logger)
+// Commands (owner.js) and the webhook notify path reach live clients here.
+globalThis.__waRuntime = runtime
 
 // Startup: connect every session = env SESSIONS ∪ registry entries.
 const sessions = [
@@ -29,10 +33,21 @@ for (const sessionId of sessions) {
   await runtime.startSession(sessionId)
 }
 
+// Supplier webhook (POST /webhook/<token>/<session>) + cron safety net that
+// settles pendings the webhook never delivered.
+let webhookServer
+try {
+  webhookServer = startWebhookServer(logger)
+  startPoller(logger, () => [...runtime.clients.keys()])
+} catch (err) {
+  logger.error({ err: err?.message }, 'webhook server gagal start')
+}
+
 // Graceful shutdown — disconnect keeps credentials so we resume without re-pairing.
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, async () => {
     logger.info('shutting down')
+    webhookServer?.close()
     await runtime.stopAll()
     process.exit(0)
   })

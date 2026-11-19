@@ -357,66 +357,7 @@ register({
   },
 })
 
-// ---- BELI ----
-register({
-  name: 'beli',
-  description: 'Beli produk: BELI.KODE.TUJUAN[.PIN]',
-  async handler({ client, event, mitra, args, db }) {
-    const [kode, tujuan, pin] = args
-    if (!kode || !tujuan) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: BELI.KODE.TUJUAN.PIN')
-      return
-    }
-    // PIN optional per FORMAT 1 ("bisa tanpa PIN"), but verified when supplied.
-    if (pin && !verifyPin(pin, mitra.pin_hash)) {
-      await client.message.send(event.key.remoteJid, PIN_SALAH)
-      return
-    }
-
-    const p = db.effectivePrice(mitra.id, String(kode).toUpperCase())
-    if (!p) {
-      await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
-      return
-    }
-    if (mitra.saldo < p.hargaEfektif) {
-      await client.message.send(event.key.remoteJid, 'Saldo tidak cukup')
-      return
-    }
-
-    // Commission: every ancestor keeps its own markup, inactive or not.
-    // A deactivated uplink still accrues commission; it just cannot TUKAR
-    // while inactive (the auth gate blocks it). Root/admin takes no commission.
-    const chain = db.ancestors(mitra.id).filter((a) => a.senior_id != null && a.markup > 0)
-    const idTrx = `T${Date.now()}${Math.floor(Math.random() * 900 + 100)}`
-
-    db.tx(() => {
-      db.addSaldo(mitra.id, -p.hargaEfektif)
-      db.addMutasi(mitra.id, 'debit', p.hargaEfektif, mitra.saldo - p.hargaEfektif, `Beli ${p.kode}`)
-      for (const a of chain) {
-        db.addKomisi(a.id, a.markup)
-        db.addMutasi(a.id, 'komisi_masuk', a.markup, a.saldo, `Komisi ${p.kode} dari ${mitra.kode}`)
-      }
-      db.insertTransaksi({
-        idTrx,
-        agenId: mitra.id,
-        produkId: p.id,
-        produkKode: p.kode,
-        tujuan,
-        hargaModal: p.harga_modal,
-        markupAdmin: p.adminMarkup,
-        markupTotal: p.markupTotal,
-        hargaEfektif: p.hargaEfektif,
-        komisiDibagikan: chain.map((a) => ({ agen_id: a.id, kode: a.kode, nominal: a.markup })),
-        status: 'sukses',
-      })
-    })
-
-    await client.message.send(
-      event.key.remoteJid,
-      `Transaksi berhasil\nID: ${idTrx}\nProduk: ${p.nama}\nTujuan: ${tujuan}\nHarga: ${formatRupiah(p.hargaEfektif)}\nSaldo: ${formatRupiah(mitra.saldo - p.hargaEfektif)}`
-    )
-  },
-})
+// ---- BELI moved to commands/supplier.js (two-phase ICS flow) ----
 
 // ---- LAP ----
 // Admin = whole session. Uplink = its own network. Mitra = itself.
@@ -467,28 +408,7 @@ register({
 })
 
 // ---- admin: produk & markup ----
-register({
-  name: 'prdk',
-  description: 'Admin: PRDK.KODE.NAMA.MODAL',
-  async handler({ client, event, args, isAdmin, db }) {
-    if (!isAdmin) {
-      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
-      return
-    }
-    const [kode, ...rest] = args
-    const modal = parseNumber(rest[rest.length - 1])
-    const nama = rest.slice(0, -1).join(' ')
-    if (!kode || !nama || !Number.isInteger(modal) || modal < 0) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: PRDK.KODE.NAMA.MODAL')
-      return
-    }
-    db.upsertProduk({ kode: kode.toUpperCase(), nama, hargaModal: modal })
-    await client.message.send(
-      event.key.remoteJid,
-      `Produk ${kode.toUpperCase()} disimpan (modal ${formatRupiah(modal)}).`
-    )
-  },
-})
+// Manual product entry (PRDK) removed: the catalog comes from SYNC (ICS).
 
 register({
   name: 'lprdk',
@@ -505,7 +425,7 @@ register({
     }
     const lines = rows.map(
       (p) =>
-        `• ${p.kode} — ${p.nama} | modal ${formatRupiah(p.harga_modal)} | markup ${p.markup == null ? 'general' : formatRupiah(p.markup)}`
+        `• ${p.kode} — ${p.nama} | modal ${formatRupiah(p.harga_modal)} | markup ${p.markup == null ? 'general' : formatRupiah(p.markup)} | ${p.status_supplier}`
     )
     await client.message.send(event.key.remoteJid, `*Produk:*\n${lines.join('\n')}`)
   },
@@ -557,7 +477,7 @@ register({
 })
 
 // ---- stubs for not-yet-built features ----
-const STUBS = { tiket: 'Tiket Deposit', rek: 'Mutasi', cek: 'Cek Trx', btl: 'Batal Trx' }
+const STUBS = { tiket: 'Tiket Deposit' }
 for (const [name, label] of Object.entries(STUBS)) {
   register({
     name,

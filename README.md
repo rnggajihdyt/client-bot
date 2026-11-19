@@ -37,6 +37,10 @@ npm install
 | `SESSION_DIR` | `.data/sessions` | Satu file DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` |
 | `OWNER_PIN` | `1234` | PIN awal admin session yang di-seed oleh `SESIBUAT` |
 | `CYCLE_HOURS` | `10` | (supervisor) restart otomatis tiap N jam; `0` = tanpa cycle restart |
+| `WEBHOOK_BASE_URL` | (empty) | Base URL publik bot, mis. `https://bot.example.com` — dipakai menyusun URL webhook yang diberikan ke ICS |
+| `WEBHOOK_PORT` | `8080` | Port lokal server webhook (`POST /webhook/<token>/<sessionId>`) |
+| `ICS_BASE_URL` | `https://api.ics-store.my.id` | Base URL API supplier ICS |
+| `ICS_API_KEY` | (empty) | Fallback API key ICS kalau admin session belum set `APIKEY.ICS_sk_xxx` |
 
 ## Run
 
@@ -121,19 +125,42 @@ Active (non-stub) commands:
 | `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
 | `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
-| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Beli produk (potong saldo + distribusi komisi) |
+| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Kirim order ke supplier ICS (saldo ditahan dulu, status `proses`) |
+| `CEK` | `CEK` / `CEK.IDTRX` | List transaksi pending / detail satu transaksi |
+| `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
+| `BTL` | `BTL.IDTRX.PIN` | Batalkan transaksi yang masih `proses` + refund lokal |
 | `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringan sendiri. Mitra: dirinya |
-| `PRDK` | `PRDK.KODE.NAMA.MODAL` | Admin: tambah/ubah produk (nama boleh berspasi) |
-| `LPRDK` | `LPRDK` | Admin: list produk + modal + markup |
+| `APIKEY` | `APIKEY.ICS_sk_xxx` | Admin: simpan API key ICS, bot balas webhook URL |
+| `SYNC` | `SYNC` | Admin: tarik ulang produk dari ICS |
+| `LPRDK` | `LPRDK` | Admin: list produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Admin: markup general (fallback) / markup per produk (menimpa general) |
 | `CS` | `CS.PESAN` | Hubungi admin |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel |
 
-`TIKET`, `REK`, `CEK`, `BTL` = stub (`Fitur belum tersedia`).
+`TIKET` = stub (`Fitur belum tersedia`). `PRDK` dihapus — katalog produk hanya dari `SYNC`.
 
-Harga efektif mitra = `produk.harga_modal` + markup admin (per produk jika ada, jika tidak: markup root/general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
+Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (per produk jika ada, jika tidak: markup root/general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
+
+## Supplier ICS (order async)
+
+Alur `BELI` dua fase supaya bot tetap responsif dan saldo tidak pernah "hilang":
+
+1. Saldo mitra dipotong, transaksi disimpan `status='proses'`, snapshot komisi tiap uplink disimpan di `komisi_dibagikan`.
+2. Bot `POST {ICS_BASE_URL}/trx` (`product_code`, `dest_number`, `ref_id_custom` = `idTrx`).
+   Kalau supplier langsung menolak → transaksi `gagal`, saldo direfund, mitra diberi tahu.
+3. Penyelesaian (`sukses` / `gagal`) **selalu** lewat `src/orders.js:finalize()`:
+   - **Webhook** `POST {WEBHOOK_BASE_URL}/webhook/<token>/<sessionId>` dari ICS (`refid`, `status`, `kode_produk`, `nomor_tujuan`, `supplier_trxid`, `note`).
+   - **Cron** tiap 60 detik: transaksi `proses` > 60 detik dicek `GET /reseller/trx/:refid` (jaring pengaman kalau webhook tidak sampai).
+   `sukses` → SN disimpan, komisi uplink dibayarkan. `gagal` → `harga_efektif` direfund penuh. `batal` (via `BTL`) mengabaikan webhook berikutnya.
+
+Setup per session (dari nomor admin session):
+
+1. Pastikan `WEBHOOK_BASE_URL` (dan port publik → `WEBHOOK_PORT`) bisa diakses ICS.
+2. `APIKEY.ICS_sk_xxxx` → bot membalas URL webhook.
+3. Salin URL itu ke dashboard ICS → menu Webhook.
+4. `SYNC` untuk menarik produk.
 
 ## Multi-session PPOB
 
@@ -177,7 +204,7 @@ Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepo
 
 Registered commands: `info`, `format1`–`format4`, `ping`, `menu`, `help`, `setprefix`.
 
-`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `PRDK`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`, `STATUS`, `SESSIONS`, `RESTART`, `ENV`, `CMD`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa hanya melihat panduan standar. `format1`–`format4` tetap verbatim.
+`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `APIKEY`, `SYNC`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`, `STATUS`, `SESSIONS`, `RESTART`, `ENV`, `CMD`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa melihat panduan standar + section **TRANSAKSI** (`CEK`, `REK`, `BTL`). `format1`–`format4` tetap verbatim.
 
 With `COMMAND_PREFIX=` (empty), no prefix is needed — typing `info` or `format2` directly replies with the menu. Unknown text is ignored (no noisy "unknown command" reply).
 
@@ -225,16 +252,21 @@ src/config.js            env config
 src/store.js             shared store (SQLite), one store for all sessions
 src/registry.js          daftar session (id, admin, nomor WA) — .data/sessions/_registry.sqlite
 src/runtime.js           connect/pairing kode/reconnect per session saat runtime
-src/db.js                per-session SQLite (agen/produk/transaksi/mutasi) + openDb()
+src/db.js                per-session SQLite (agen/produk/transaksi/mutasi/settings) + openDb()
 src/handler.js           message → auth gate → command dispatch + super admin
 src/commands/registry.js command map
 src/commands/demo.js     ping / menu / help
-src/commands/ppob-core.js SAL/CH/DAFTAR/BELI/LAP/PRDK/MKP/dll
+src/commands/ppob-core.js SAL/CH/DAFTAR/TUKAR/LAP/MKP/dll
+src/commands/supplier.js BELI/CEK/REK/BTL/APIKEY/SYNC (supplier ICS)
 src/commands/owner.js    STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
+src/ics.js               client API supplier ICS (products / order / status)
+src/orders.js            finalize transaksi: sukses (komisi) / gagal (refund)
+src/webhook.js           server webhook ICS + cron poller pending
 src/report.js            parseRange (HARI/BULAN/tanggal) untuk LAP
 src/helpers.js           send helpers
 src/utils.js             text/parse/format helpers
 test/utils.test.js       parser + extract self-check
+test/webhook.test.js     webhook/token/finalize idempoten
 ```
 
 > Note: media without a processor uploads but may lack previews/dimensions. Install `@zapo-js/media-utils` + `ffmpeg` when you need proper media.

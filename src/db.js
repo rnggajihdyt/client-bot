@@ -34,7 +34,15 @@ CREATE TABLE IF NOT EXISTS produk (
   harga_modal INTEGER NOT NULL,
   markup INTEGER,
   kategori TEXT NOT NULL DEFAULT '',
-  aktif INTEGER NOT NULL DEFAULT 1
+  aktif INTEGER NOT NULL DEFAULT 1,
+  stok INTEGER NOT NULL DEFAULT 0,
+  status_supplier TEXT NOT NULL DEFAULT 'available',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS transaksi (
@@ -74,9 +82,15 @@ const MIGRATIONS = {
     harga_modal: `ALTER TABLE transaksi ADD COLUMN harga_modal INTEGER NOT NULL DEFAULT 0`,
     markup_admin: `ALTER TABLE transaksi ADD COLUMN markup_admin INTEGER NOT NULL DEFAULT 0`,
     markup_total: `ALTER TABLE transaksi ADD COLUMN markup_total INTEGER NOT NULL DEFAULT 0`,
+    sn: `ALTER TABLE transaksi ADD COLUMN sn TEXT NOT NULL DEFAULT ''`,
+    supplier_trxid: `ALTER TABLE transaksi ADD COLUMN supplier_trxid TEXT NOT NULL DEFAULT ''`,
+    selesai_at: `ALTER TABLE transaksi ADD COLUMN selesai_at TEXT NOT NULL DEFAULT ''`,
   },
   produk: {
     markup: `ALTER TABLE produk ADD COLUMN markup INTEGER`,
+    stok: `ALTER TABLE produk ADD COLUMN stok INTEGER NOT NULL DEFAULT 0`,
+    status_supplier: `ALTER TABLE produk ADD COLUMN status_supplier TEXT NOT NULL DEFAULT 'available'`,
+    updated_at: `ALTER TABLE produk ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`,
   },
 }
 
@@ -224,6 +238,31 @@ export function openDb(path) {
 
   db.listProduk = () => raw.prepare(`SELECT * FROM produk ORDER BY kategori, kode`).all()
 
+  // Upsert from a supplier sync: price/status/stock follow ICS, markup stays.
+  db.upsertProdukIcs = ({ code, name, price, category, status, stock }) => {
+    raw
+      .prepare(
+        `INSERT INTO produk (kode, nama, harga_modal, kategori, aktif, stok, status_supplier, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(kode) DO UPDATE SET
+           nama = excluded.nama,
+           harga_modal = excluded.harga_modal,
+           kategori = excluded.kategori,
+           aktif = excluded.aktif,
+           stok = excluded.stok,
+           status_supplier = excluded.status_supplier,
+           updated_at = excluded.updated_at`
+      )
+      .run(code, name, price, category ?? '', status === 'available' ? 1 : 0, stock ?? 0, status ?? 'available', new Date().toISOString())
+  }
+
+  // ---- per-session settings (ICS apikey, webhook token) ----
+  db.getSetting = (key) => raw.prepare(`SELECT value FROM settings WHERE key = ?`).get(key)?.value
+  db.setSetting = (key, value) =>
+    raw
+      .prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(key, String(value))
+
   // ---- mutasi ----
   db.addMutasi = (agenId, tipe, nominal, saldoAkhir, keterangan = '') =>
     raw
@@ -351,6 +390,39 @@ export function openDb(path) {
       .get(agenId, today).s
     return { proses, hariIni }
   }
+
+  // ---- supplier transaction lifecycle ----
+  db.getTransaksi = (idTrx) =>
+    raw
+      .prepare(
+        `SELECT t.*, a.nohp AS agen_nohp, a.kode AS agen_kode
+         FROM transaksi t LEFT JOIN agen a ON a.id = t.agen_id
+         WHERE t.id_trx = ?`
+      )
+      .get(idTrx)
+
+  db.setTransaksiStatus = (idTrx, status) =>
+    raw.prepare(`UPDATE transaksi SET status = ? WHERE id_trx = ?`).run(status, idTrx).changes
+
+  db.setTransaksiSupplier = (idTrx, { supplierTrxId = '', sn = '', selesaiAt = '' }) =>
+    raw
+      .prepare(
+        `UPDATE transaksi SET supplier_trxid = ?, sn = ?, selesai_at = ? WHERE id_trx = ?`
+      )
+      .run(supplierTrxId, sn, selesaiAt, idTrx).changes
+
+  // Pending rows the cron polls against ICS.
+  db.pendingTransaksi = (olderThanMs = 60_000, limit = 25) => {
+    const cut = new Date(Date.now() - olderThanMs).toISOString()
+    return raw
+      .prepare(`SELECT * FROM transaksi WHERE status = 'proses' AND created_at <= ? ORDER BY id LIMIT ?`)
+      .all(cut, limit)
+  }
+
+  db.pendingTransaksiOf = (agenId, limit = 20) =>
+    raw
+      .prepare(`SELECT * FROM transaksi WHERE agen_id = ? AND status = 'proses' ORDER BY id DESC LIMIT ?`)
+      .all(agenId, limit)
 
   return db
 }

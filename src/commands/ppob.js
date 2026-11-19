@@ -54,7 +54,8 @@ for (const [name, text] of Object.entries(FORMATS)) {
 // to a mitra, so only show them to admins and the super admin.
 const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Laporan Sesi : LAP[HARI|BULAN|YYYY-MM-DD]
-• Tambah/Ubah Produk : PRDK.KODE.NAMA.MODAL
+• API Key Supplier : APIKEY.ICS_sk_xxx
+• Sync Produk : SYNC
 • List Produk : LPRDK
 • Markup General : MKP.NOMINAL
 • Markup per Produk : MKP.KODE.NOMINAL`
@@ -71,8 +72,13 @@ const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 • Config Aktif : ENV
 • Semua Command : CMD`
 
+const MITRA_EXTRA = `*TRANSAKSI*
+• Cek Trx : CEK[.IDTRX]
+• Mutasi : REK
+• Batal Trx : BTL.IDTRX.PIN`
+
 function extrasFor({ isAdmin, isSuper }) {
-  return [isAdmin && ADMIN_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')
+  return [isAdmin ? ADMIN_EXTRA : MITRA_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')
 }
 
 function withExtras(text, ctx) {

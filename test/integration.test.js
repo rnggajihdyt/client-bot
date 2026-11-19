@@ -15,13 +15,40 @@ const { attachHandlers } = await import('../src/handler.js')
 await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
 await import('../src/commands/ppob-core.js')
+await import('../src/commands/supplier.js')
 await import('../src/commands/owner.js')
+const { finalize } = await import('../src/orders.js')
 openRegistry(join(dir, 'registry.sqlite'))
 
 const dbPath = join(dir, 'sessions', 'default.sqlite')
 const db = openDb(dbPath)
 db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
-db.upsertProduk({ kode: 'PULSA10', nama: 'Pulsa 10', hargaModal: 9500 })
+db.upsertProdukIcs({ code: 'PULSA10', name: 'Pulsa 10', price: 9500, status: 'available', stock: 10 })
+db.setSetting('ics_apikey', 'ICS_sk_test')
+
+// Fake ICS: order always accepted, status stays pending until a test resolves it.
+let icsOrders = []
+globalThis.fetch = async (url, opts = {}) => {
+  const body = opts.body ? JSON.parse(opts.body) : {}
+  const u = String(url)
+  if (u.includes('/api/reseller/products')) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          success: true,
+          data: [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, category: 'Pulsa', status: 'available', stock: 10 }],
+        }),
+    }
+  }
+  icsOrders.push({ url: u, body })
+  return {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ success: true, data: { refid: body.ref_id_custom, status: 'pending' } }),
+  }
+}
 
 const sent = []
 const handlers = {}
@@ -91,7 +118,7 @@ test('info admin & super admin dapat section khusus', async () => {
   const r = await say('628111', 'info')
   assert.match(r, /PANDUAN TRANSAKSI/)
   assert.match(r, /KHUSUS ADMIN/)
-  assert.match(r, /PRDK\.KODE\.NAMA\.MODAL/)
+  assert.match(r, /APIKEY\.ICS_sk_xxx/)
   assert.match(r, /KHUSUS SUPER ADMIN/)
   assert.match(r, /SESIBUAT\.ID\.NOMORADMIN/)
 
@@ -116,11 +143,12 @@ test('info uplink/mitra tanpa section admin', async () => {
     'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.'
   )
 
-  // uplink biasa: tidak ada section admin/super admin
+  // uplink biasa: tidak ada section admin/super admin, tapi ada CEK/REK/BTL
   const up = await say('628222', 'all')
   assert.match(up, /FORMAT 4/)
   assert.doesNotMatch(up, /KHUSUS ADMIN/)
   assert.doesNotMatch(up, /KHUSUS SUPER ADMIN/)
+  assert.match(up, /Cek Trx : CEK\[\.IDTRX\]/)
 })
 
 test('CH untuk downline: modal + markup', async () => {
@@ -186,11 +214,18 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 
   // B tetap bisa transaksi dengan harga penuh (modal 9500 + 1000 + 500 = 11000)
   const beli = await say('628444', 'BELI.PULSA10.081234567')
-  assert.match(beli, /Transaksi berhasil/)
+  assert.match(beli, /Transaksi diproses/)
   assert.match(beli, /Harga: 11\.000/)
-  assert.match(beli, /Saldo: 39\.000/)
+  const idTrx = beli.match(/ID: (T\d+)/)[1]
+  assert.equal(icsOrders.at(-1).body.ref_id_custom, idTrx)
 
-  // komisi A bertambah walau nonaktif (markup A = 1000)
+  // saldo ditahan dulu, komisi belum dibayar selama masih proses
+  const b0 = db.raw.prepare(`SELECT saldo FROM agen WHERE nohp = '628444'`).get()
+  assert.equal(b0.saldo, 39000)
+  assert.equal(db.raw.prepare(`SELECT komisi FROM agen WHERE nohp = '628222'`).get().komisi, 0)
+
+  // supplier settle -> komisi A masuk walau nonaktif (markup A = 1000)
+  finalize(db, idTrx, { status: 'sukses', sn: 'SN123' })
   const a = db.raw.prepare(`SELECT komisi FROM agen WHERE nohp = '628222'`).get()
   assert.equal(a.komisi, 1000)
 
@@ -213,7 +248,10 @@ test('BELI ditolak saat saldo kurang', async () => {
 
 test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
-  assert.match(await say('628444', 'BELI.PULSA10.08123'), /Transaksi berhasil/)
+  const r = await say('628444', 'BELI.PULSA10.08123')
+  assert.match(r, /Transaksi diproses/)
+  const idTrx = r.match(/ID: (T\d+)/)[1]
+  finalize(db, idTrx, { status: 'sukses' })
 
   const trx = db.raw.prepare(`SELECT * FROM transaksi WHERE tujuan = '08123' ORDER BY id DESC`).get()
   assert.equal(trx.produk_kode, 'PULSA10')
@@ -251,25 +289,28 @@ test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
 
 // ---- multi-session: admin role, per-product markup, LAP, super admin ----
 
-test('PRDK tambah/ubah produk (admin)', async () => {
-  const r = await say('628111', 'PRDK.DATA5.GB-Data-5.15000')
-  assert.match(r, /DATA5 disimpan \(modal 15\.000\)/)
-  const c = await say('628222', 'CH.DATA5')
-  assert.match(c, /16\.000/) // 15000 + general 0 + Ani 1000
+test('PRDK dihapus: SYNC menggantikan', async () => {
+  const before = db.listProduk().length
+  assert.equal(await say('628111', 'PRDK.X.X.100'), undefined) // prefix kosong: diabaikan
+  assert.equal(db.listProduk().length, before)
+  const r = await say('628111', 'SYNC')
+  assert.match(r, /Sync selesai\. 1 produk diterima, 1 tersedia\./)
 })
 
-test('PRDK ditolak untuk mitra', async () => {
-  assert.equal(await say('628222', 'PRDK.X.X.100'), 'Khusus admin')
+test('SYNC ditolak untuk mitra', async () => {
+  assert.equal(await say('628222', 'SYNC'), 'Khusus admin')
 })
 
 test('MKP per produk menimpa general', async () => {
-  // general markup = root markup (0). DATA5 = 15000 + Ani 1000 = 16000
-  assert.match(await say('628111', 'MKP.DATA5.2000'), /Markup produk DATA5 diubah/)
-  const c = await say('628222', 'CH.DATA5')
-  assert.match(c, /18\.000/) // 15000 + admin 2000 + Ani 1000
+  // general markup = root markup (0). PULSA10 = 9500 + Ani 1000 = 10500
+  assert.match(await say('628111', 'MKP.PULSA10.2000'), /Markup produk PULSA10 diubah/)
+  const c = await say('628222', 'CH.PULSA10')
+  assert.match(c, /12\.500/) // 9500 + admin 2000 + Ani 1000
 })
 
 test('MKP general (tanpa kode)', async () => {
+  // hapus override per produk supaya general markup berlaku
+  db.raw.prepare(`UPDATE produk SET markup = NULL WHERE kode = 'PULSA10'`).run()
   assert.match(await say('628111', 'MKP.500'), /Markup general/)
   const c = await say('628222', 'CH.PULSA10')
   // PULSA10 tanpa override per produk -> 9500 + admin 500 + Ani 1000
@@ -279,27 +320,49 @@ test('MKP general (tanpa kode)', async () => {
 
 test('LPRDK list produk', async () => {
   const r = await say('628111', 'LPRDK')
-  assert.match(r, /DATA5/)
-  assert.match(r, /markup 2\.000/)
+  assert.match(r, /PULSA10/)
+  assert.match(r, /available/)
 })
 
-test('BELI produk ber-markup admin: profit masuk ke markup_admin', async () => {
+test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
-  const r = await say('628222', 'BELI.DATA5.0811999')
-  assert.match(r, /Harga: 18\.000/) // 15000 + admin 2000 + Ani 1000
+  assert.match(await say('628111', 'MKP.2000'), /Markup general/)
+  const r = await say('628222', 'BELI.PULSA10.0811999')
+  assert.match(r, /Harga: 12\.500/) // 9500 + admin 2000 + Ani 1000
+  const idTrx = r.match(/ID: (T\d+)/)[1]
+  finalize(db, idTrx, { status: 'sukses' })
 })
 
 test('LAP admin: seluruh session', async () => {
   const r = await say('628111', 'LAP.BULAN')
   assert.match(r, /\*Laporan Sesi\*/)
-  assert.match(r, /Trx: 3/)
-  assert.match(r, /Profit: 2\.000/) // markup_admin DATA5 2000 (2 trx)
+  // 3 trx sukses: markup_admin 2000 x 1 + 0 x 2
+  assert.match(r, /Profit: 2\.000/)
+  assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
 test('LAP uplink: jaringannya sendiri', async () => {
   const r = await say('628222', 'LAP.BULAN')
   assert.match(r, /\*Laporan Jaringan\*/)
   assert.match(r, /Komisi Anda: 1\.000/)
+})
+
+test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', async () => {
+  db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
+  const r = await say('628222', 'BELI.PULSA10.0811777')
+  const idTrx = r.match(/ID: (T\d+)/)[1]
+
+  assert.match(await say('628222', 'CEK'), new RegExp(`${idTrx} — PULSA10`))
+  assert.match(await say('628222', `CEK.${idTrx}`), /Status: proses/)
+  assert.match(await say('628222', 'REK'), /Beli PULSA10/)
+
+  assert.match(await say('628222', `BTL.${idTrx}.1234`), /dibatalkan/)
+  const saldo = db.raw.prepare(`SELECT saldo FROM agen WHERE nohp = '628222'`).get().saldo
+  assert.equal(saldo, 50000)
+
+  // webhook sukses telat tidak boleh mengubah batal
+  assert.equal(finalize(db, idTrx, { status: 'sukses' }), null)
+  assert.equal(db.getTransaksi(idTrx).status, 'batal')
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
