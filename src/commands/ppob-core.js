@@ -2,6 +2,7 @@ import { register } from './registry.js'
 import { verifyPin, hashPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
+import { normalizeNohp } from '../utils.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'
@@ -73,7 +74,7 @@ register({
       return
     }
     const [nama, kota, nohp, markupRaw] = args.slice(0, 4)
-    const nohpD = String(nohp).replace(/\D/g, '')
+    const nohpD = normalizeNohp(nohp)
     if (!nohpD) {
       await client.message.send(event.key.remoteJid, 'Nomor HP tidak valid')
       return
@@ -311,7 +312,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Gunakan format: TNO.NOHP.PIN')
       return
     }
-    const nohpD = String(nohp).replace(/\D/g, '')
+    const nohpD = normalizeNohp(nohp)
     if (!nohpD || db.nomorTaken(nohpD)) {
       await client.message.send(event.key.remoteJid, 'Nomor tidak valid atau sudah terdaftar')
       return
@@ -334,7 +335,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Gunakan format: HNO.NOHP.PIN')
       return
     }
-    const nohpD = String(nohp).replace(/\D/g, '')
+    const nohpD = normalizeNohp(nohp)
     if (!nohpD || nohpD === mitra.nohp) {
       await client.message.send(event.key.remoteJid, 'Nomor utama tidak bisa dihapus')
       return

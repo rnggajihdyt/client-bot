@@ -1,5 +1,11 @@
-import { parseCommand, extractText, splitArgs, isOwner } from '../src/utils.js'
+import { parseCommand, extractText, splitArgs, isOwner, normalizeNohp } from '../src/utils.js'
 import assert from 'node:assert'
+
+// normalizeNohp: local 0-prefix and formatted input must become JID-ready digits
+assert.equal(normalizeNohp('085642927473'), '6285642927473')
+assert.equal(normalizeNohp('6285642927473'), '6285642927473')
+assert.equal(normalizeNohp('+62 856-4292-7473'), '6285642927473')
+assert.equal(normalizeNohp('0856429274735@s.whatsapp.net'), '62856429274735')
 
 // parseCommand
 {

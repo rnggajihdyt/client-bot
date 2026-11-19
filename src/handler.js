@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs'
 import { config } from './config.js'
-import { parseCommand, extractText, markRead, senderNumbers } from './utils.js'
+import { parseCommand, extractText, markRead, senderNumbers, normalizeNohp } from './utils.js'
 import { getCommand, unknownCommandText } from './commands/registry.js'
 import { getPrefix } from './settings.js'
 import { parsePpob } from './parse.js'
@@ -202,14 +202,14 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       await reply('ID hanya huruf/angka/-/_')
       return
     }
-    const adminNohp = String(adminRaw).replace(/\D/g, '')
+    const adminNohp = normalizeNohp(adminRaw)
     if (!adminNohp) {
       await reply('Nomor admin tidak valid')
       return
     }
     // 4th token is the WA number only when it looks like a phone number.
     const isPhone = waRaw && /^\+?\d{8,15}$/.test(waRaw)
-    const pairingPhone = isPhone ? waRaw.replace(/\D/g, '') : adminNohp
+    const pairingPhone = isPhone ? normalizeNohp(waRaw) : adminNohp
     const label = (isPhone ? rest : [waRaw, ...rest].filter(Boolean)).join(' ')
 
     const row = registry.createSession({ id, label, adminNohp, pairingPhone })

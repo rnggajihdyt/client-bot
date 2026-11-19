@@ -79,6 +79,14 @@ export function isOwner(event, owners) {
   })
 }
 
+// "08123456789" / "628123456789" / "+62 812-3456" -> "628123456789".
+// WhatsApp JIDs are always country-coded without the trunk 0; a local number
+// addressed as "0..." never resolves, so a failed welcome send is expected.
+export function normalizeNohp(value) {
+  const d = String(value ?? '').replace(/\D/g, '')
+  return d.startsWith('0') ? `62${d.slice(1)}` : d
+}
+
 // "628123456:12@s.whatsapp.net" -> "628123456"; "+62 812-3456" -> "628123456"
 function digitsOnly(value) {
   return value.split('@')[0].split(':')[0].replace(/\D/g, '')
