@@ -103,30 +103,54 @@ export function createRuntime(logger) {
 
   // Always link-code: request the 8-char code as soon as the server is ready.
   function handlePairing(client, sessionId, notify) {
-    client.on('auth_qr', ({ qr, ttlMs }) => {
-      // No phone to pair with → fall back to QR in the terminal.
-      if (getSession(sessionId)?.pairing_phone || config.pairingPhone) return
-      logger.info({ sessionId }, `QR valid for ${ttlMs}ms — scan from WhatsApp → Linked devices`)
-      qrcode.generate(qr, { small: true })
-    })
+    const phone = () => getSession(sessionId)?.pairing_phone || config.pairingPhone
 
-    client.on('auth_pairing_required', async () => {
-      const phone = getSession(sessionId)?.pairing_phone || config.pairingPhone
-      if (!phone) {
-        logger.error({ sessionId }, 'pairing phone unknown — SESIBUAT.ID.ADMIN.NOMORWA')
+    // Fresh sessions surface as `auth_qr` (zapo emits `auth_pairing_required`
+    // only on refresh/re-arm). With a phone known, the first QR is the cue to
+    // request the code; without one, fall back to QR in the terminal.
+    let requested = false
+    client.on('auth_qr', ({ qr, ttlMs }) => {
+      if (!phone()) {
+        logger.info({ sessionId }, `QR valid for ${ttlMs}ms — scan from WhatsApp → Linked devices`)
+        qrcode.generate(qr, { small: true })
         return
       }
+      if (requested) return
+      requested = true
+      void requestCode()
+    })
+
+    async function requestCode() {
+      const p = phone()
+      if (!p) return
       try {
-        const code = await client.auth.requestPairingCode(phone)
-        logger.info({ sessionId }, `Enter on phone ${phone}: ${formatCode(code)}`)
-        await notify?.(`*Pairing ${sessionId}*\nNomor: ${phone}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`)
+        await client.auth.requestPairingCode(p)
+        // The code surfaces via the `auth_pairing_code` listener below.
       } catch (err) {
         logger.error({ sessionId, err }, 'requestPairingCode failed')
-        await notify?.(`Gagal minta kode pairing untuk ${sessionId}. Cek nomor ${phone}.`)
+        requested = false
+        await notify?.(`Gagal minta kode pairing untuk ${sessionId}. Cek nomor ${p}.`)
       }
+    }
+
+    client.on('auth_pairing_code', ({ code }) => {
+      const p = phone()
+      logger.info({ sessionId }, `Enter on phone ${p}: ${formatCode(code)}`)
+      void notify?.(`*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`)
+    })
+
+    // Re-arm: forceManual means the pending code died with its connection and
+    // a fresh one must be requested; a plain refresh means it's still valid.
+    client.on('auth_pairing_required', ({ forceManual } = {}) => {
+      if (!phone()) return
+      if (forceManual) requested = false
+      if (requested) return
+      requested = true
+      void requestCode()
     })
 
     client.on('auth_paired', ({ credentials }) => {
+      requested = false
       logger.info({ sessionId }, `Paired as ${credentials.meJid}`)
       void notify?.(`Session ${sessionId} berhasil tertaut sebagai ${credentials.meJid}.`)
     })
