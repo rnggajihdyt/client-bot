@@ -52,6 +52,11 @@ export function createRuntime(logger) {
         logger.info({ sessionId }, 'connected')
         return
       }
+      // Always surface why: without the reason/code a flap loop is unguessable.
+      logger.warn(
+        { sessionId, reason: event.reason, code: event.code, isLogout: event.isLogout },
+        'connection closed'
+      )
       if (event.isLogout || FATAL.has(event.reason)) {
         logger.error({ sessionId, reason: event.reason, code: event.code }, 'logged out — re-pairing required')
         return
@@ -73,7 +78,14 @@ export function createRuntime(logger) {
           if (clients.get(sessionId) !== client) return // stopped or rebuilt
           try {
             await client.connect()
-            return // a close event will drive the next loop if it drops again
+            // connect() resolving only means the handshake started paying off;
+            // a drop inside that window fires its own close event. Wait a beat
+            // and check we're actually open before leaving the loop, else this
+            // races the close handler into a tight reconnect spin.
+            await new Promise((r) => setTimeout(r, 250))
+            if (clients.get(sessionId) !== client) return // stopped or rebuilt
+            if (health.get(sessionId)?.open) return
+            logger.debug({ sessionId }, 'connect() resolved without open — retrying')
           } catch (err) {
             logger.error({ sessionId, err }, 'reconnect failed')
           }
