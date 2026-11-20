@@ -295,7 +295,7 @@ test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
 
 test('PRDK dihapus: SYNC menggantikan', async () => {
   const before = db.listProduk().length
-  assert.equal(await say('628111', 'PRDK.X.X.100'), undefined) // prefix kosong: diabaikan
+  assert.match(await say('628111', 'PRDK.X.X.100'), /\*Super admin\*/) // tak dikenal: menu owner
   assert.equal(db.listProduk().length, before)
   const r = await say('628111', 'SYNC')
   assert.match(r, /Sync selesai\. 1 produk diterima, 1 tersedia\./)
@@ -511,6 +511,30 @@ test('utilitas owner: SESSIONS + RESTART memakai runtime', async () => {
   assert.match(r, /di-restart/)
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && c.stop), 'stopSession dipanggil')
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && !c.stop), 'startSession dipanggil')
+})
+
+test('utilitas owner jalan di session tanpa agen owner (nomor pusat)', async () => {
+  // Mirip `default`: OWNERS ada, tapi session ini tidak punya baris agen owner.
+  const h = {}
+  const c = { on: (ev, fn) => (h[ev] = fn), message: { send: async (jid, text) => (sent.push({ jid, text }), { id: 'p' }) } }
+  attachHandlers(c, 'pusat', logger, fakeRuntime)
+  sent.length = 0
+  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'STATUS' } })
+  assert.match(last(), /\*Status Server\*/)
+
+  sent.length = 0
+  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'SESSIONS' } })
+  assert.match(last(), /\*Sessions:\*/)
+
+  sent.length = 0
+  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'info' } })
+  // session ini tak punya agen owner: perintah non-owner jatuh ke menu super admin
+  assert.match(last(), /\*Super admin\*/)
+
+  // perintah tak dikenal: tidak diam, menu super admin
+  sent.length = 0
+  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'apa ini' } })
+  assert.match(last(), /\*Super admin\*/)
 })
 
 test('utilitas owner ditolak untuk mitra', async () => {

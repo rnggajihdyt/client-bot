@@ -26,6 +26,9 @@ const sessionPath = (id) => `${SESSION_DIR}/${id}.sqlite`
 // Super admin (OWNERS) commands — handled before the mitra command table.
 const SUPER_COMMANDS = new Set(['sesi', 'sesibuat', 'sesion', 'sesioff', 'sesihapus', 'laptrx'])
 
+// Owner-only utility commands: work for OWNERS even without an agen row here.
+const SUPER_ONLY_COMMANDS = new Set(['status', 'sessions', 'cmd', 'env', 'restart'])
+
 // A deactivated mitra may still read its own status and the menus.
 const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'info', 'all', 'menu', 'help'])
 
@@ -135,12 +138,14 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     if (!parsed) return
 
     // Super admin (OWNERS): session management + cross-session reports, whether
-    // or not it also happens to be a root admin in this session.
-    if (isSuper && SUPER_COMMANDS.has(parsed.cmd)) {
+    // or not it also happens to be a root admin in this session. Owner-only
+    // utilities must not depend on an agen row in *this* session's DB.
+    const ownerUtility = isSuper && SUPER_ONLY_COMMANDS.has(parsed.cmd) && getCommand(parsed.cmd)
+    if (!ownerUtility && isSuper && SUPER_COMMANDS.has(parsed.cmd)) {
       await handleSuper(event, parsed)
       return
     }
-    if (!mitra) {
+    if (!ownerUtility && !mitra) {
       await handleSuper(event, { cmd: '', args: [] }) // prints the super menu
       return
     }
@@ -189,6 +194,12 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
 
     const command = getCommand(parsed.cmd)
     if (!command) {
+      // Owner gets the session menu instead of silence; a mitra with no prefix
+      // is ignored (typing random text must not spam the chat).
+      if (isSuper) {
+        await handleSuper(event, { cmd: '', args: [] })
+        return
+      }
       if (!prefix) return
       await safeSend(client, event.key.remoteJid, unknownCommandText(prefix), { quote: event }, log)
       return
