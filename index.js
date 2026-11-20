@@ -20,13 +20,15 @@ const runtime = createRuntime(logger)
 // Commands (owner.js) and the webhook notify path reach live clients here.
 globalThis.__waRuntime = runtime
 
-// Startup: connect every session = env SESSIONS ∪ registry entries.
-const sessions = [
-  ...new Set([
-    ...(process.env.SESSIONS ?? config.sessionId).split(',').map((s) => s.trim()).filter(Boolean),
-    ...listSessions().map((s) => s.id),
-  ]),
-]
+// Startup: connect every session in the registry. `SESSIONS`/`DEFAULT_SESSION`
+// only bootstrap a brand-new install (empty registry) — otherwise a session
+// deleted with SESIHAPUS would keep coming back from env on every restart.
+const registered = listSessions().map((s) => s.id)
+const fromEnv = (process.env.SESSIONS ?? config.sessionId)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+const sessions = registered.length ? registered : [...new Set(fromEnv)]
 
 // Pairing code for startup sessions goes to the console only.
 for (const sessionId of sessions) {

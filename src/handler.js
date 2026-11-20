@@ -6,6 +6,7 @@ import { getPrefix } from './settings.js'
 import { parsePpob } from './parse.js'
 import { openDb } from './db.js'
 import * as registry from './registry.js'
+import { wipeSessionStore } from './runtime.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
 import { webhookUrl, icsConfig } from './webhook.js'
@@ -60,6 +61,12 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
   const log = logger.child({ sessionId })
   const prefixFor = () => getPrefix(sessionId, commandPrefix)
   const db = openDb(sessionPath(sessionId))
+  let dbClosed = false
+  const closeDb = () => {
+    if (dbClosed) return
+    dbClosed = true
+    db.close()
+  }
 
   log.info(
     { prefix: prefixFor(), effective: prefixFor() === '' ? 'none' : prefixFor() },
@@ -67,6 +74,9 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
   )
 
   client.on('message', async (event) => {
+    // A deleted session's handler stays registered on its (dead) client; drop
+    // the message instead of reopening a DB that was just wiped.
+    if (dbClosed) return
     try {
       await handleMessage(event)
     } catch (err) {
@@ -269,6 +279,13 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     }
 
     await reply(`Session *${id}* terdaftar (admin ${adminNohp}, WA ${pairingPhone}). Menyambungkan + minta kode pairing…`)
+    // Stale WhatsApp credentials from an earlier pairing would silently resume
+    // the old device instead of asking for a code.
+    try {
+      await wipeSessionStore(id)
+    } catch (err) {
+      log.warn({ err: err?.message, id }, 'session store wipe failed')
+    }
     await startRuntimeSession(reply, id)
   }
 
@@ -317,13 +334,19 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     }
     await stopRuntimeSession(id)
     registry.removeSession(id)
-    // Irreversible: the session DB is wiped.
+    // Irreversible: the session DB and the stored WhatsApp credentials are
+    // wiped, so re-creating the same id starts from a fresh pairing.
     try {
       rmSync(sessionPath(id), { force: true })
     } catch (err) {
-      log.warn({ err, id }, 'session db remove failed')
+      log.warn({ err: err?.message, id }, 'session db remove failed')
     }
-    await reply(`Session ${id} dihapus beserta DB-nya.`)
+    try {
+      await wipeSessionStore(id)
+    } catch (err) {
+      log.warn({ err: err?.message, id }, 'session store wipe failed')
+    }
+    await reply(`Session ${id} dihapus beserta DB & kredensialnya.`)
   }
 
   // Read-only: any session's transactions, no mitra row needed.
@@ -356,5 +379,5 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     }
   }
 
-  return { db }
+  return { db, close: closeDb }
 }

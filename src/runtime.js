@@ -20,10 +20,35 @@ const FATAL = new Set([
   'primary_identity_key_change',
 ])
 
+// Removes every domain of a session from the shared auth store. Pairing a
+// deleted session again would otherwise resume the *old* credentials, and the
+// server never asks for a new code.
+const STORE_DOMAINS = [
+  'auth',
+  'signal',
+  'preKey',
+  'session',
+  'identity',
+  'senderKey',
+  'appState',
+  'privacyToken',
+  'messages',
+  'threads',
+  'contacts',
+]
+
+export async function wipeSessionStore(sessionId) {
+  const bundle = store.session(sessionId)
+  for (const domain of STORE_DOMAINS) await bundle[domain].clear()
+  await bundle.destroyCaches?.()
+  await bundle.destroy()
+}
+
 // Connects WhatsApp sessions at runtime (no restart) and keeps their clients
 // alive for reconnect + graceful shutdown.
 export function createRuntime(logger) {
   const clients = new Map()
+  const handles = new Map() // sessionId -> handler bundle (owns its DB handle)
   const api = { startSession, stopSession, stopAll, clients }
 
   // Watchdog: a client that never reaches a stable connection is rebuilt from
@@ -176,7 +201,7 @@ export function createRuntime(logger) {
     clients.set(sessionId, client)
     handlePairing(client, sessionId, notify)
     connectWithRetry(client, sessionId)
-    attachHandlers(client, sessionId, logger, api)
+    handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
     setSessionStatus(sessionId, 'on')
 
     // connect() stays pending until paired; never await it here.
@@ -205,6 +230,8 @@ export function createRuntime(logger) {
   async function rebuild(sessionId) {
     const client = clients.get(sessionId)
     clients.delete(sessionId)
+    handles.get(sessionId)?.close()
+    handles.delete(sessionId)
     if (client) await client.disconnect().catch(() => {})
     await startSession(sessionId)
   }
@@ -212,6 +239,8 @@ export function createRuntime(logger) {
   async function stopSession(sessionId) {
     const client = clients.get(sessionId)
     clients.delete(sessionId)
+    handles.get(sessionId)?.close()
+    handles.delete(sessionId)
     setSessionStatus(sessionId, 'off')
     // Graceful disconnect keeps credentials; the close event's
     // client_disconnected reason must not trigger a reconnect.
@@ -219,9 +248,9 @@ export function createRuntime(logger) {
   }
 
   async function stopAll() {
-    const all = [...clients.values()]
+    const all = [...clients.keys()]
     clients.clear()
-    await Promise.allSettled(all.map((c) => c.disconnect()))
+    await Promise.allSettled(all.map((id) => stopSession(id)))
   }
 
   return api
