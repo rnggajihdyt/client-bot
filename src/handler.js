@@ -10,7 +10,7 @@ import { wipeSessionStore } from './runtime.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
 import { webhookUrl, icsConfig } from './webhook.js'
-import { apiKeyPrompt, extractApiKey, setupApiKey } from './apikey.js'
+import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem } from './apikey.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -113,6 +113,21 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
 
     const prefix = prefixFor()
 
+    // Admin number = bot number: nothing to operate. The bot cannot be its own
+    // admin, so every message gets a correction instead of a command result.
+    const session = registry.getSession(sessionId)
+    if (session && sameNumberProblem(session.admin_nohp, session.pairing_phone)) {
+      await safeSend(
+        client,
+        event.key.remoteJid,
+        `*Session ${sessionId} salah konfigurasi*\nNomor admin = nomor bot (${session.pairing_phone}).\n` +
+          `Hapus dan buat ulang dari nomor owner:\nSESIHAPUS.${sessionId}\nSESIBUAT.${sessionId}.NOMORADMIN.NOMORBOT[LABEL]`,
+        undefined,
+        log
+      )
+      return
+    }
+
     let parsed
     if (selectedId) parsed = { cmd: selectedId.toLowerCase(), args: [] }
     else if (prefix && text.trim().startsWith(prefix)) parsed = parseCommand(text, prefix)
@@ -204,7 +219,7 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
   // ---- super admin (OWNERS) ----
   async function handleSuper(event, parsed) {
     const jid = event.key.remoteJid
-    const reply = (msg) => safeSend(client, jid, msg, undefined, log)
+    const reply = (msg, to) => safeSend(client, to ?? jid, msg, undefined, log)
     const commands = {
       sesi: () => listSessions(reply),
       sesibuat: () => registerSession(reply, parsed.args),
@@ -239,13 +254,14 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
   }
 
-  // SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]
-  // Registers the session, seeds its admin, then connects it right away so the
-  // pairing code is requested automatically.
+  // SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]
+  // Admin number and bot number are both required and must differ: the bot's
+  // phone cannot also be its own admin. Then the session connects right away so
+  // the pairing code is requested automatically.
   async function registerSession(reply, args) {
     const [id, adminRaw, waRaw, ...rest] = args
-    if (!id || !adminRaw) {
-      await reply('Gunakan format: SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]\nNomor WA default = nomor admin.')
+    if (!id || !adminRaw || !waRaw) {
+      await reply('Gunakan format: SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]\nNomor admin wajib beda dengan nomor bot (WA).')
       return
     }
     if (!/^[a-z0-9_-]+$/i.test(id)) {
@@ -257,10 +273,16 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       await reply('Nomor admin tidak valid')
       return
     }
-    // 4th token is the WA number only when it looks like a phone number.
-    const isPhone = waRaw && /^\+?\d{8,15}$/.test(waRaw)
-    const pairingPhone = isPhone ? normalizeNohp(waRaw) : adminNohp
-    const label = (isPhone ? rest : [waRaw, ...rest].filter(Boolean)).join(' ')
+    if (!/^\+?\d{8,15}$/.test(waRaw)) {
+      await reply('Nomor WA bot tidak valid (token ke-3 wajib: SESIBUAT.ID.ADMIN.WA[LABEL])')
+      return
+    }
+    const pairingPhone = normalizeNohp(waRaw)
+    if (sameNumberProblem(adminNohp, pairingPhone)) {
+      await reply('Nomor admin tidak boleh sama dengan nomor bot (WA)')
+      return
+    }
+    const label = rest.join(' ')
 
     const row = registry.createSession({ id, label, adminNohp, pairingPhone })
     if (!row) {
@@ -286,16 +308,20 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     } catch (err) {
       log.warn({ err: err?.message, id }, 'session store wipe failed')
     }
-    await startRuntimeSession(reply, id)
-  }
+    await startRuntimeSession(reply, id)  }
 
-  // Connects a session now; the pairing code comes back through the notify hook.
+  // Connects a session now. `notify(jid, text)`: no jid = owner chat (pairing
+  // codes), jid = the admin's own number (onboarding).
   async function startRuntimeSession(reply, id) {
     if (!runtime) {
       await reply(`Runtime belum siap, restart bot lalu SESION.${id}`)
       return
     }
-    await runtime.startSession(id, { notify: (msg) => reply(msg) })
+    // notify(jid, text) reaches the owner chat for pairing codes, and the
+    // admin's own number for onboarding (see src/apikey.js).
+    await runtime.startSession(id, {
+      notify: (jid, text) => (jid ? reply(text, jid) : reply(text)),
+    })
   }
 
   async function setSessionStatus(reply, args, status) {

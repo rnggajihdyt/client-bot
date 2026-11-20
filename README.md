@@ -175,7 +175,7 @@ Setup per session (dari nomor admin session):
 | Command | Format | Fungsi |
 |---|---|---|
 | `SESI` | `SESI` | Daftar session terdaftar + nomor WA + status |
-| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing** |
+| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing** |
 | `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (langsung connect/disconnect, tanpa restart) |
 | `SESIHAPUS` | `SESIHAPUS.ID` | Hapus session + DB-nya (permanen) |
 | `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Lihat transaksi session mana pun |
@@ -196,10 +196,13 @@ Kode: ABCD-EFGH
 Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.
 ```
 
-- Nomor WA = token ke-3 (`SESIBUAT.toko2.628555.628555`), default nomor admin.
+- Nomor admin (token ke-2) dan nomor bot (token ke-3) **wajib** dan **tidak boleh sama** (`SESIBUAT.toko2.628555.628111`).
 - Kode juga dicetak di console log (`Enter on phone ...`).
 - QR di terminal hanya muncul kalau nomor WA tidak diketahui (fallback).
 - Daftar session disimpan di `.data/sessions/_registry.sqlite`; semua session di registry otomatis di-connect saat start (kredensial tersimpan, jadi tidak pairing ulang).
+
+### Onboarding supplier
+Begitu session pertama kali connect, bot otomatis mengirim prompt API key ICS ke **nomor admin** (bukan nomor bot). Sampai `APIKEY.ICS_sk_xxx` valid tersimpan, semua perintah uang (`SAL`, `BELI`, `SYNC`, dll) diblokir dan dijawab prompt ulang — tanpa timeout. Key divalidasi ke ICS dulu; key salah tidak disimpan. Setelah tersimpan, bot mengirim URL webhook session itu untuk disalin ke dashboard ICS.
 
 ## PPOB menu (demo)
 

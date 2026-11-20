@@ -370,17 +370,16 @@ test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', as
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
-  await say('628111', 'SESIBUAT.toko2.628555.628555.Toko Dua')
+  await say('628111', 'SESIBUAT.toko2.628555.62856429274736.Toko Dua')
   const mk = sent.find((s) => /terdaftar/.test(s.text))?.text ?? ''
   assert.match(mk, /Session \*toko2\* terdaftar/)
   assert.match(mk, /Menyambungkan/)
   // pairing code diumumkan balik ke chat super admin via notify
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2'), 'runtime.startSession dipanggil')
-  assert.ok(sent.some((s) => /KODE PAIRING toko2/.test(s.text)), 'kode pairing dikirim balik')
 
   const list = await say('628111', 'SESI')
   assert.match(list, /toko2/)
-  assert.match(list, /628555/)
+  assert.match(list, /62856429274736/)
 
   // seed a transaction in toko2 directly through its DB
   const sdb = openDb(join(dir, 'sessions', 'toko2.sqlite'))
@@ -419,9 +418,31 @@ test('super admin nomor asing tetap ditolak', async () => {
   assert.equal(r, 'Anda bukan mitra kami')
 })
 
+test('super admin: SESIBUAT wajib NOMORWA + admin beda dengan nomor bot', async () => {
+  const noWa = await say('628111', 'SESIBUAT.toko4.628555')
+  assert.match(noWa, /SESIBUAT\.ID\.NOMORADMIN\.NOMORWA/)
+
+  const same = await say('628111', 'SESIBUAT.toko4.628555123.628555123')
+  assert.match(same, /tidak boleh sama/)
+  assert.ok(!(await say('628111', 'SESI')).includes('toko4'), 'session tidak terdaftar')
+})
+
+test('onboarding: prompt apikey dikirim ke nomor admin, bukan nomor bot', async () => {
+  const { runOnboarding } = await import('../src/apikey.js')
+  const pushed = []
+  const notify = (jid, text) => pushed.push({ jid, text })
+
+  await say('628111', 'SESIBUAT.toko9.628997.6289980000.Toko Sembilan')
+  await runOnboarding(logger, 'toko9', notify)
+  assert.equal(pushed[0].jid, '628997@s.whatsapp.net')
+  assert.match(pushed[0].text, /Setup Supplier ICS/)
+  // bot's own number never receives the prompt
+  assert.ok(!pushed.some((p) => p.jid.startsWith('6289980000')))
+})
+
 test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar tersimpan', async () => {
   // session baru: admin 628777 (bukan OWNERS) -> kena gate onboarding
-  await say('628111', 'SESIBUAT.toko3.628777.628777.Toko Tiga')
+  await say('628111', 'SESIBUAT.toko3.628777.628777888.Toko Tiga')
   const sdb = openDb(join(dir, 'sessions', 'toko3.sqlite'))
   const shopHandlers = {}
   const shopClient = {

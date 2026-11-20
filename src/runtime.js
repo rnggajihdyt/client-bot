@@ -4,6 +4,7 @@ import { config } from './config.js'
 import { store } from './store.js'
 import { attachHandlers } from './handler.js'
 import { setSessionStatus, getSession } from './registry.js'
+import { runOnboarding } from './apikey.js'
 
 const formatCode = (code) => code.match(/.{1,4}/g)?.join('-') ?? code
 
@@ -68,10 +69,11 @@ export function createRuntime(logger) {
     health.set(sessionId, h)
   }
 
-  function connectWithRetry(client, sessionId) {
+  function connectWithRetry(client, sessionId, notify) {
     // Unbounded: a 10h uptime target must survive more than 10 drops.
     let attempt = 0
     let reconnecting = false
+    let onboarded = false
 
     client.on('connection', (event) => {
       // Stale client (rebuilt or stopped): ignore everything, stop looping.
@@ -80,6 +82,15 @@ export function createRuntime(logger) {
       if (event.status === 'open') {
         attempt = 0
         logger.info({ sessionId }, 'connected')
+        // First open of this client: push the ICS apikey gate to the admin.
+        // Resumed pairings never emit auth_paired, so this is the only hook
+        // that fires for both fresh and reconnected sessions.
+        if (!onboarded) {
+          onboarded = true
+          void runOnboarding(logger, sessionId, notify).catch((err) =>
+            logger.warn({ sessionId, err: err?.message }, 'onboarding gagal')
+          )
+        }
         return
       }
       // Always surface why: without the reason/code a flap loop is unguessable.
@@ -200,7 +211,7 @@ export function createRuntime(logger) {
     )
     clients.set(sessionId, client)
     handlePairing(client, sessionId, notify)
-    connectWithRetry(client, sessionId)
+    connectWithRetry(client, sessionId, notify)
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
     setSessionStatus(sessionId, 'on')
 
