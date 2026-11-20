@@ -24,13 +24,17 @@ const dbPath = join(dir, 'sessions', 'default.sqlite')
 const db = openDb(dbPath)
 db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
 db.upsertProdukIcs({ code: 'PULSA10', name: 'Pulsa 10', price: 9500, status: 'available', stock: 10 })
-db.setSetting('ics_apikey', 'ICS_sk_test')
+db.setSetting('ics_apikey', 'ICS_sk_testok')
 
 // Fake ICS: order always accepted, status stays pending until a test resolves it.
 let icsOrders = []
 globalThis.fetch = async (url, opts = {}) => {
   const body = opts.body ? JSON.parse(opts.body) : {}
   const u = String(url)
+  // Any key not ending in "ok" is rejected, like a real 401.
+  if (!/Bearer .*ok$/.test(opts.headers?.Authorization ?? '')) {
+    return { ok: false, status: 401, text: async () => JSON.stringify({ success: false, message: 'API key tidak valid' }) }
+  }
   if (u.includes('/api/reseller/products')) {
     return {
       ok: true,
@@ -413,6 +417,48 @@ test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
 test('super admin nomor asing tetap ditolak', async () => {
   const r = await say('628999', 'SESI')
   assert.equal(r, 'Anda bukan mitra kami')
+})
+
+test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar tersimpan', async () => {
+  // session baru: admin 628777 (bukan OWNERS) -> kena gate onboarding
+  await say('628111', 'SESIBUAT.toko3.628777.628777.Toko Tiga')
+  const sdb = openDb(join(dir, 'sessions', 'toko3.sqlite'))
+  const shopHandlers = {}
+  const shopClient = {
+    on: (ev, fn) => (shopHandlers[ev] = fn),
+    message: { send: async (jid, text) => (sent.push({ jid, text }), { id: 'y' }) },
+  }
+  attachHandlers(shopClient, 'toko3', logger, fakeRuntime)
+  const sayShop = async (text) => {
+    sent.length = 0
+    await shopHandlers.message({
+      key: { remoteJid: '628777@s.whatsapp.net', fromMe: false },
+      message: { conversation: text },
+    })
+    return last()
+  }
+
+  // perintah uang diblokir, diganti prompt
+  assert.match(await sayShop('SAL'), /Setup Supplier ICS/)
+  assert.match(await sayShop('BELI.PULSA10.0812'), /Setup Supplier ICS/)
+  // info/menu tetap boleh
+  assert.doesNotMatch(await sayShop('info'), /Setup Supplier ICS/)
+
+  // key salah format -> prompt lagi
+  assert.match(await sayShop('APIKEY.salah'), /Setup Supplier ICS/)
+
+  // key salah tapi format benar -> ditolak ICS, TIDAK tersimpan
+  assert.match(await sayShop('APIKEY.ICS_sk_nope'), /belum benar/)
+  assert.equal(sdb.getSetting('ics_apikey'), undefined)
+
+  // key benar (mock menerima yang berakhiran "ok") -> tersimpan + sinkron produk
+  assert.match(await sayShop('ICS_sk_baikok'), /API key tersimpan\. 1 produk tersinkron/)
+  assert.equal(sdb.getSetting('ics_apikey'), 'ICS_sk_baikok')
+  assert.equal(sdb.listProduk().length, 1)
+
+  // setelah ada key, SAL tidak lagi di-prompt
+  assert.doesNotMatch(await sayShop('SAL'), /Setup Supplier ICS/)
+  sdb.close()
 })
 
 test('utilitas owner: STATUS / CMD / ENV', async () => {

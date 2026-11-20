@@ -158,9 +158,10 @@ Alur `BELI` dua fase supaya bot tetap responsif dan saldo tidak pernah "hilang":
 Setup per session (dari nomor admin session):
 
 1. Pastikan `WEBHOOK_BASE_URL` (dan port publik → `WEBHOOK_PORT`) bisa diakses ICS.
-2. `APIKEY.ICS_sk_xxxx` → bot membalas URL webhook.
-3. Salin URL itu ke dashboard ICS → menu Webhook.
-4. `SYNC` untuk menarik produk.
+2. **Gate onboarding**: selama session belum punya API key, setiap pesan dari admin session dijawab dengan pertanyaan API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang tetap dilayani; perintah lain (termasuk `SAL`/`BELI`) dibalas prompt.
+3. Admin kirim `APIKEY.ICS_sk_xxxx` (atau langsung paste key-nya). Key **diuji dulu** ke `GET /api/reseller/products`: kalau ICS menolak, key tidak disimpan dan bot minta ulang.
+4. Key valid → tersimpan di DB session (`settings.ics_apikey`) + produk langsung tersinkron, bot membalas URL webhook. Salin URL itu ke dashboard ICS → Webhook.
+5. `SYNC` kapan saja untuk tarik ulang produk.
 
 ## Multi-session PPOB
 
@@ -260,6 +261,7 @@ src/commands/ppob-core.js SAL/CH/DAFTAR/TUKAR/LAP/MKP/dll
 src/commands/supplier.js BELI/CEK/REK/BTL/APIKEY/SYNC (supplier ICS)
 src/commands/owner.js    STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/ics.js               client API supplier ICS (products / order / status)
+src/apikey.js            gate onboarding admin: validasi + simpan apikey ICS
 src/orders.js            finalize transaksi: sukses (komisi) / gagal (refund)
 src/webhook.js           server webhook ICS + cron poller pending
 src/report.js            parseRange (HARI/BULAN/tanggal) untuk LAP

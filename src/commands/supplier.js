@@ -4,6 +4,7 @@ import { formatRupiah } from '../money.js'
 import { ics } from '../ics.js'
 import { webhookUrl, icsConfig } from '../webhook.js'
 import { finalize, snapshotCommission } from '../orders.js'
+import { extractApiKey, setupApiKey } from '../apikey.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -14,12 +15,12 @@ const PIN_SALAH = 'PIN salah'
 register({
   name: 'apikey',
   description: 'Admin: APIKEY.ICS_sk_xxx — kredensial supplier ICS',
-  async handler({ client, event, args, isAdmin, db, sessionId }) {
+  async handler({ client, event, args, isAdmin, db, sessionId, log }) {
     if (!isAdmin) {
       await client.message.send(event.key.remoteJid, ADMIN_ONLY)
       return
     }
-    const key = args.join('')
+    const key = extractApiKey(args.join('.'))
     const url = webhookUrl(db, sessionId)
     if (!key) {
       const current = db.getSetting('ics_apikey')
@@ -31,11 +32,17 @@ register({
       )
       return
     }
-    db.setSetting('ics_apikey', key)
-    await client.message.send(
-      event.key.remoteJid,
-      `API key tersimpan.\nWebhook URL: ${url}\n\nSalin URL itu ke dashboard ICS → Webhook.`
-    )
+    try {
+      const r = await setupApiKey(db, key)
+      await client.message.send(
+        event.key.remoteJid,
+        `API key tersimpan. ${r.total} produk tersinkron (${r.available} tersedia).\n` +
+          `Webhook URL: ${url}\n\nSalin URL itu ke dashboard ICS → Webhook.`
+      )
+    } catch (err) {
+      log?.warn({ err: err?.message }, 'apikey ditolak ICS')
+      await client.message.send(event.key.remoteJid, `API key ditolak: ${err.message}`)
+    }
   },
 })
 
@@ -48,37 +55,13 @@ register({
       await client.message.send(event.key.remoteJid, ADMIN_ONLY)
       return
     }
-    const cfg = icsConfig(db)
-    if (!cfg.apiKey) {
-      await client.message.send(event.key.remoteJid, 'API key belum diisi. Kirim: APIKEY.ICS_sk_xxx')
-      return
-    }
-    let res
     try {
-      res = await ics.products(cfg.baseUrl, cfg.apiKey)
+      const r = await setupApiKey(db, db.getSetting('ics_apikey'))
+      await client.message.send(event.key.remoteJid, `Sync selesai. ${r.total} produk diterima, ${r.available} tersedia.`)
     } catch (err) {
       log?.error({ err: err?.message }, 'sync produk gagal')
       await client.message.send(event.key.remoteJid, `Gagal sync produk: ${err.message}`)
-      return
     }
-    const rows = Array.isArray(res?.data) ? res.data : []
-    db.tx(() => {
-      for (const p of rows) {
-        db.upsertProdukIcs({
-          code: p.code,
-          name: p.name,
-          price: p.price,
-          category: p.category,
-          status: p.status,
-          stock: p.stock,
-        })
-      }
-    })
-    const available = rows.filter((p) => p.status === 'available').length
-    await client.message.send(
-      event.key.remoteJid,
-      `Sync selesai. ${rows.length} produk diterima, ${available} tersedia.`
-    )
   },
 })
 
@@ -98,6 +81,11 @@ register({
       await client.message.send(event.key.remoteJid, PIN_SALAH)
       return
     }
+    const cfg = icsConfig(db)
+    if (!cfg.apiKey) {
+      await client.message.send(event.key.remoteJid, 'Admin belum mengatur API key supplier')
+      return
+    }
     const p = db.effectivePrice(mitra.id, String(kode).toUpperCase())
     if (!p) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
@@ -105,11 +93,6 @@ register({
     }
     if (!p.aktif || p.status_supplier !== 'available') {
       await client.message.send(event.key.remoteJid, 'Produk sedang gangguan/tidak tersedia')
-      return
-    }
-    const cfg = icsConfig(db)
-    if (!cfg.apiKey) {
-      await client.message.send(event.key.remoteJid, 'Admin belum mengatur API key supplier')
       return
     }
     if (mitra.saldo < p.hargaEfektif) {

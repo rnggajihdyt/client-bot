@@ -8,6 +8,8 @@ import { openDb } from './db.js'
 import * as registry from './registry.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
+import { webhookUrl, icsConfig } from './webhook.js'
+import { apiKeyPrompt, extractApiKey, setupApiKey } from './apikey.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -25,6 +27,10 @@ const SUPER_COMMANDS = new Set(['sesi', 'sesibuat', 'sesion', 'sesioff', 'sesiha
 
 // A deactivated mitra may still read its own status and the menus.
 const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'info', 'all', 'menu', 'help'])
+
+// While the session has no supplier key only these get through; the key itself
+// is accepted from any reply (see the setup gate in handleMessage).
+const ALLOWED_WITHOUT_APIKEY = new Set(['info', 'all', 'menu', 'help', 'cs'])
 
 // Incoming button/list replies arrive as ordinary `message` events with a
 // buttonsResponseMessage / listResponseMessage payload — not a separate event.
@@ -112,6 +118,40 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     if (!mitra) {
       await handleSuper(event, { cmd: '', args: [] }) // prints the super menu
       return
+    }
+
+    // Onboarding gate: a session admin without a supplier key can do nothing
+    // that moves money. No timeout — every message re-prompts, and only a key
+    // ICS actually accepts gets stored.
+    if (isAdmin && !isSuper && !db.getSetting('ics_apikey')) {
+      const candidate = extractApiKey(text)
+      if (candidate) {
+        try {
+          const r = await setupApiKey(db, candidate)
+          await safeSend(
+            client,
+            event.key.remoteJid,
+            `API key tersimpan. ${r.total} produk tersinkron (${r.available} tersedia).\n\n` +
+              `Webhook URL:\n${webhookUrl(db, sessionId)}\n\nSalin URL itu ke dashboard ICS → Webhook.`,
+            undefined,
+            log
+          )
+        } catch (err) {
+          log.warn({ err: err?.message }, 'apikey ditolak ICS')
+          await safeSend(
+            client,
+            event.key.remoteJid,
+            `API key belum benar: ${err.message}\n\nKirim lagi: APIKEY.ICS_sk_xxx`,
+            undefined,
+            log
+          )
+        }
+        return
+      }
+      if (!ALLOWED_WITHOUT_APIKEY.has(parsed.cmd)) {
+        await safeSend(client, event.key.remoteJid, apiKeyPrompt(webhookUrl(db, sessionId)), undefined, log)
+        return
+      }
     }
 
     // Deactivated mitra: only read-only status/menu commands get through.
