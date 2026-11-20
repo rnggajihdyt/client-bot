@@ -116,7 +116,7 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     // Admin number = bot number: nothing to operate. The bot cannot be its own
     // admin, so every message gets a correction instead of a command result.
     const session = registry.getSession(sessionId)
-    if (session && sameNumberProblem(session.admin_nohp, session.pairing_phone)) {
+    if (!isSuper && session && sameNumberProblem(session.admin_nohp, session.pairing_phone)) {
       await safeSend(
         client,
         event.key.remoteJid,
