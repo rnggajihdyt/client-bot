@@ -293,12 +293,25 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       await reply('Nomor admin tidak boleh sama dengan nomor bot (WA)')
       return
     }
-    const label = rest.join(' ')
-
-    const row = registry.createSession({ id, label, adminNohp, pairingPhone })
-    if (!row) {
+    // A bot waiting to be (re)paired by QR is identified by its env id, not by a
+    // registry row yet — accept it so pusat can still serve admins.
+    const existing = registry.getSession(id)
+    if (existing && !(existing.pairing_phone === '' && registry.isBootstrapSession(id))) {
       await reply(`Session ${id} sudah ada`)
       return
+    }
+    const label = rest.join(' ')
+
+    // A bootstrap (QR) row exists but carries no admin yet: adopt it instead of
+    // refusing, so pusat keeps its already-paired credentials.
+    if (existing) {
+      registry.updateSessionAdmin(id, { label: label || existing.label, adminNohp, pairingPhone })
+    } else {
+      const row = registry.createSession({ id, label, adminNohp, pairingPhone })
+      if (!row) {
+        await reply(`Session ${id} sudah ada`)
+        return
+      }
     }
 
     // Seed the new session with its admin (root) so DAFTAR/CH work immediately.

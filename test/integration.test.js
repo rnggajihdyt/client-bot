@@ -513,11 +513,33 @@ test('utilitas owner: SESSIONS + RESTART memakai runtime', async () => {
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && !c.stop), 'startSession dipanggil')
 })
 
+test('bootstrap QR: sesi DEFAULT_SESSION di-adopsi SESIBUAT dan QR pairing daftar ke registry', async () => {
+  // Simulasi bootstrap: baris registry dibuat saat auth_paired (admin kosong),
+  // lalu owner meng-adopsinya via SESIBUAT dengan bot number berbeda.
+  process.env.SESSIONS = 'pusat'
+  const { isBootstrapSession } = await import('../src/registry.js')
+  assert.ok(isBootstrapSession('pusat'), 'pusat adalah bootstrap session')
+
+  const { createSession, getSession } = await import('../src/registry.js')
+  createSession({ id: 'pusat', label: 'Bootstrap (QR)', adminNohp: '', pairingPhone: '', status: 'on' })
+
+  // owner adopt: admin = owner, WA = nomor bot pusat (beda dari admin)
+  await say('628111', 'SESIBUAT.pusat.628111.6281230999.Pusat')
+  const row = getSession('pusat')
+  assert.equal(row.admin_nohp, '628111')
+  assert.equal(row.pairing_phone, '6281230999')
+  assert.ok(runtimeCalls.some((c) => c.id === 'pusat'), 'connect dipanggil untuk sesi teradopsi')
+
+  delete process.env.SESSIONS
+})
+
 test('utilitas owner jalan di session tanpa agen owner (nomor pusat)', async () => {
-  // Mirip `default`: OWNERS ada, tapi session ini tidak punya baris agen owner.
+  // Mirip sesi pusat sebelum adopsi: OWNERS ada, tanpa baris agen di DB sesi.
   const h = {}
   const c = { on: (ev, fn) => (h[ev] = fn), message: { send: async (jid, text) => (sent.push({ jid, text }), { id: 'p' }) } }
-  attachHandlers(c, 'pusat', logger, fakeRuntime)
+  const { openDb: open } = await import('../src/db.js')
+  open(join(dir, 'sessions', 'kosong.sqlite')).close()
+  attachHandlers(c, 'kosong', logger, fakeRuntime)
   sent.length = 0
   await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'STATUS' } })
   assert.match(last(), /\*Status Server\*/)

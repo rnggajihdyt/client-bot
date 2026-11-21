@@ -101,6 +101,10 @@ nssm start WABot
 First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
 
 > Sesi pusat pertama **tidak bisa** dibuat lewat `SESIBUAT` (nomor bot wajib diisi, jadi selalu pairing code). Cara bootstrap-nya: hapus registry + kredensial session itu, lalu set `DEFAULT_SESSION` ke id-nya dan jalankan bot — tanpa `pairing_phone` runtime menampilkan QR di terminal.
+>
+> Setelah QR terscan, sesi itu **otomatis terdaftar** di registry (label `Bootstrap (QR)`, admin & nomor bot kosong) sehingga start berikutnya me-resume kredensialnya. Untuk memberi admin + nomor bot, owner cukup `SESIBUAT.<ID>.NOMOROWNER.NOMORBOT[LABEL]` dari sesi mana pun — baris bootstrap diadopsi (kredensial tidak disentuh, sesi tetap hidup), bukan ditolak.
+>
+> Selama dipakai sebagai bot utama, sesi pusat tidak punya admin sendiri: perintah uang (`SAL`, `BELI`, ...) dijawab menu/gate. Perintah owner (`STATUS`, `SESI`, `SESIBUAT`, `RESTART`, ...) tetap jalan tanpa perlu agen di DB sesi.
 
 ## Custom prefix at runtime
 

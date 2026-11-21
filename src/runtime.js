@@ -3,7 +3,7 @@ import qrcode from 'qrcode-terminal'
 import { config } from './config.js'
 import { store } from './store.js'
 import { attachHandlers } from './handler.js'
-import { setSessionStatus, getSession } from './registry.js'
+import { setSessionStatus, getSession, isBootstrapSession, createSession } from './registry.js'
 import { runOnboarding } from './apikey.js'
 
 const formatCode = (code) => code.match(/.{1,4}/g)?.join('-') ?? code
@@ -208,6 +208,21 @@ export function createRuntime(logger) {
     return (text) => logger.info({ sessionId }, String(text).replace(/\n+/g, ' | '))
   }
 
+  // QR pairing (bootstrap, no phone on record) creates an account in the registry
+  // so the next start resumes it instead of forgetting it.
+  function registerBootstrapSession(sessionId, meJid) {
+    // Only the env bootstrap session may be armed by QR; any other id must come
+    // from SESIBUAT so it has an admin (and never equals its own bot number).
+    if (!isBootstrapSession(sessionId) || getSession(sessionId)) return
+    try {
+      createSession({ id: sessionId, label: 'Bootstrap (QR)', adminNohp: '', pairingPhone: '', status: 'on' })
+      logger.info({ sessionId, meJid }, 'session QR didaftarkan ke registry')
+    } catch (err) {
+      // WhatsApp is already paired; a registry hiccup must not take it down.
+      logger.error({ sessionId, err: err?.message }, 'gagal daftarkan session bootstrap')
+    }
+  }
+
   async function startSession(sessionId, { notify } = {}) {
     if (clients.has(sessionId)) return clients.get(sessionId)
 
@@ -224,6 +239,7 @@ export function createRuntime(logger) {
     clients.set(sessionId, client)
     handlePairing(client, sessionId, notify ?? consoleNotify(sessionId))
     connectWithRetry(client, sessionId, notify)
+    client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
     setSessionStatus(sessionId, 'on')
 

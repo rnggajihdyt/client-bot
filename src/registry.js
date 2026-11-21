@@ -18,6 +18,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 let db = null
 
+// The env bootstrap session (DEFAULT_SESSION / SESSIONS) is the pusat/owner bot:
+// it connects at startup, before any admin session exists or can be commanded.
+// Its id is allowed as a bot number in SESIBUAT, so that session can serve admins.
+function bootstrapIds() {
+  const raw = (process.env.SESSIONS ?? process.env.DEFAULT_SESSION ?? 'default').split(',')
+  return raw.map((s) => s.trim()).filter(Boolean)
+}
+
+export function isBootstrapSession(id) {
+  return bootstrapIds().includes(String(id))
+}
+
 export function openRegistry(path) {
   mkdirSync(dirname(path), { recursive: true })
   db = new DatabaseSync(path)
@@ -58,6 +70,12 @@ export function setSessionStatus(id, status) {
 
 export function setPairingPhone(id, phone) {
   return ensure().prepare(`UPDATE sessions SET pairing_phone = ? WHERE id = ?`).run(phone, id).changes
+}
+
+export function updateSessionAdmin(id, { label, adminNohp, pairingPhone }) {
+  return ensure()
+    .prepare(`UPDATE sessions SET label = ?, admin_nohp = ?, pairing_phone = ? WHERE id = ?`)
+    .run(label ?? '', adminNohp, pairingPhone, id).changes
 }
 
 export function removeSession(id) {
