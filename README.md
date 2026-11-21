@@ -1,73 +1,82 @@
 # bot_client
 
-Production-ready WhatsApp bot base built on [`zapo-js`](https://zapo.to).
+Bot PPOB WhatsApp multi-session production-ready, dibangun di atas [`zapo-js`](https://zapo.to). Satu proses Node memegang banyak nomor WhatsApp: satu **bot pusat** (owner/super admin) dan banyak **bot admin** (satu per toko/session). Semua state di SQLite — kredensial WhatsApp, agen, produk, transaksi — sehingga restart tidak pernah meminta pairing ulang.
 
-- Multi-session (one process, many accounts)
-- SQLite storage (auth + signal state persisted across restarts)
-- Pairing via QR **or** 8-character code (configurable)
-- Auto-reconnect with exponential backoff
-- Command registry + parser (`!cmd args`), demo commands
-- Helpers: buttons, media send
-- Pino logging
+**Arsitektur singkat**
 
-## Requirements
+```
+                    ┌────────────────────────── satu proses Node ──────────────────────────┐
+                    │                                                                      │
+  Nomor pusat  ◄────┤  WaClient "pusat"   ── DB .data/sessions/pusat.sqlite                 │
+  (OWNERS)          │        ▲                                                             │
+                    │        │  SESIBUAT / SESION / SESIHAPUS / LAPTRX / STATUS / RESTART   │
+  Nomor toko A ◄────┤  WaClient "tokoku"  ── DB .data/sessions/tokoku.sqlite  ── admin toko │
+  Nomor toko B ◄────┤  WaClient "toko2"   ── DB .data/sessions/toko2.sqlite   ── admin      │
+                    │                                                                      │
+                    │  webhook server :8080  ◄── ICS callback (sukses/gagal + SN)           │
+                    │  poller 60s          ─── jaring pengaman transaksi pending           │
+                    └──────────────────────────────────────────────────────────────────────┘
+```
 
-- Node.js 22.13+ (`node:sqlite` built-in, no native addon needed)
+- Multi-session: satu proses, banyak akun WA, DB terpisah per session.
+- Penyimpanan SQLite (kredensial auth + state signal + data PPOB persisten).
+- Pairing via QR (terminal) **atau** kode 8 karakter (dikirim ke chat owner).
+- Reconnect otomatis dengan backoff eksponensial + watchdog anti-flap.
+- Registry perintah + parser (`CMD.args`), menu PPOB verbatim.
+- Logging Pino (pretty di console).
+- Supervisor opsional: restart saat crash + cycle restart tiap N jam.
 
-## Install
+## Persyaratan
+
+- Node.js **22.13+** (`node:sqlite` bawaan, tanpa native addon).
+
+## Instalasi
 
 ```bash
 npm install
 ```
 
-## Config (env)
+## Konfigurasi (env / `.env`)
 
-| Var | Default | Description |
+| Var | Default | Keterangan |
 |---|---|---|
-| `DEFAULT_SESSION` | `default` | Session id for the single-session mode |
-| `SESSIONS` | `DEFAULT_SESSION` | Comma-separated session ids for multi-session |
-| `COMMAND_PREFIX` | *(empty)* | Command prefix. Empty = no prefix (every text is a command, bot-menu style) |
-| `OWNERS` | (empty) | Comma-separated phone numbers (digits) = **super admin**: kelola session + lihat transaksi semua session |
-| `SETTINGS_PATH` | `.auth/settings.json` | Where per-session runtime settings live |
-| `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` (runtime: kode pairing per session, QR hanya fallback) |
-| `PAIRING_PHONE` | (empty) | Nomor WA default kalau session tidak punya nomor sendiri |
-| `LOG_LEVEL` | `info` | Pino level |
-| `AUTOREAD` | `false` | `true` = mark incoming messages read (blue ticks) |
-| `STORE_PATH` | `.auth/state.sqlite` | SQLite file location |
-| `SESSION_DIR` | `.data/sessions` | Satu file DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` |
-| `OWNER_PIN` | `1234` | PIN awal admin session yang di-seed oleh `SESIBUAT` |
-| `CYCLE_HOURS` | `10` | (supervisor) restart otomatis tiap N jam; `0` = tanpa cycle restart |
-| `WEBHOOK_BASE_URL` | (empty) | Base URL publik bot, mis. `https://bot.example.com` — dipakai menyusun URL webhook yang diberikan ke ICS |
+| `OWNERS` | *(kosong)* | Nomor HP (digit, tanpa `+`) dipisah koma = **super admin**. Wajib diisi. Contoh: `OWNERS=6285642927473` |
+| `DEFAULT_SESSION` | `default` | Id sesi bootstrap (bot pusat) saat registry masih kosong |
+| `SESSIONS` | `DEFAULT_SESSION` | Daftar id sesi bootstrap (dipakai hanya saat registry kosong) |
+| `COMMAND_PREFIX` | *(kosong)* | Prefix perintah. Kosong = tanpa prefix (semua teks = perintah, gaya bot-menu) |
+| `PAIRING_PHONE` | *(kosong)* | Nomor WA default kalau session tidak punya nomor sendiri (fallback kode pairing) |
+| `PAIRING_MODE` | `both` | `qr` \| `code` \| `both` (runtime: kode pairing per session; QR hanya fallback bootstrap) |
+| `STORE_PATH` | `.auth/state.sqlite` | File SQLite kredensial WhatsApp **semua** session |
+| `SESSION_DIR` | `.data/sessions` | DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` + `_registry.sqlite` |
+| `SETTINGS_PATH` | `.auth/settings.json` | Setelan runtime per session (mis. prefix) |
+| `AUTOREAD` | `false` | `true` = tandai pesan masuk sudah dibaca (centang biru) |
+| `OWNER_PIN` | `1234` | PIN awal admin yang di-seed `SESIBUAT` (segera ganti via `GP`) |
+| `LOG_LEVEL` | `info` | Level Pino |
+| `WEBHOOK_BASE_URL` | *(kosong)* | Base URL publik bot, mis. `https://bot.example.com` — menyusun URL webhook yang diberikan ke ICS |
 | `WEBHOOK_PORT` | `8080` | Port lokal server webhook (`POST /webhook/<token>/<sessionId>`) |
 | `ICS_BASE_URL` | `https://api.ics-store.my.id` | Base URL API supplier ICS |
-| `ICS_API_KEY` | (empty) | Fallback API key ICS kalau admin session belum set `APIKEY.ICS_sk_xxx` |
+| `ICS_API_KEY` | *(kosong)* | Fallback API key ICS kalau session belum punya key sendiri |
+| `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
 
-## Run
-
-```bash
-npm start
-```
-
-For auto-restart on file changes (dev):
+## Menjalankan
 
 ```bash
-npm run dev
+npm start              # langsung
+npm run dev            # dev: restart saat file berubah
+npm run start:safe     # produksi: lewat supervisor (auto-restart + cycle)
+npm test               # seluruh test
 ```
 
 ## Uptime / auto-restart
 
-```bash
-npm run start:safe
-```
+`supervisor.js` menjalankan `index.js` sebagai child process:
 
-`supervisor.js` menjalankan `index.js` sebagai child process dan:
+- **Restart saat crash** — child mati → start ulang. Backoff 1s → 2s → 4s … maks 60s, kembali ke 1s kalau run terakhir sehat > 5 menit.
+- **Cycle restart** — child di-restart tiap `CYCLE_HOURS` jam (default 10) agar memori/koneksi tidak menumpuk. Kredensial tersimpan, jadi tidak pairing ulang.
+- **Log supervisor** — `logs/supervisor.log` selain console.
+- `SIGINT`/`SIGTERM` diteruskan ke child supaya `disconnect()` sempat jalan rapi.
 
-- **Restart saat crash** — child mati (exit non-zero) → start ulang. Backoff 1s → 2s → 4s … maksimum 60s, dan balik ke 1s kalau run terakhir sehat >5 menit.
-- **Cycle restart** — child di-restart sendiri setiap `CYCLE_HOURS` jam (default 10) supaya proses tidak menumpuk memori koneksi. Kredensial tersimpan di `STORE_PATH`, jadi tidak pairing ulang.
-- **Log supervisor** — `logs/supervisor.log` (rotasi manual / pakai logrotate), selain output console.
-- `SIGINT`/`SIGTERM` diteruskan ke child supaya `disconnect()` sempat jalan.
-
-Supaya hidup setelah terminal/SSH ditutup, jalankan sebagai service:
+Supaya tetap hidup setelah terminal/SSH ditutup, jalankan sebagai service:
 
 ```bash
 # Linux (systemd)
@@ -89,139 +98,188 @@ EOF
 sudo systemctl enable --now wa-bot
 ```
 
-Windows (PowerShell, auto-start saat login):
+Windows (PowerShell, [nssm](https://nssm.cc)):
 
 ```powershell
-# jalankan sekali; service akan restart sendiri kalau proses mati
 nssm install WABot "C:\Program Files\nodejs\node.exe" "supervisor.js"
 nssm set WABot AppDirectory D:\code\bot_client
 nssm start WABot
 ```
 
-First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
+Di dalam proses juga ada pengaman tambahan:
 
-> Sesi pusat pertama **tidak bisa** dibuat lewat `SESIBUAT` (nomor bot wajib diisi, jadi selalu pairing code). Cara bootstrap-nya: hapus registry + kredensial session itu, lalu set `DEFAULT_SESSION` ke id-nya dan jalankan bot — tanpa `pairing_phone` runtime menampilkan QR di terminal.
->
-> Setelah QR terscan, sesi itu **otomatis terdaftar** di registry (label `Bootstrap (QR)`, admin & nomor bot kosong) sehingga start berikutnya me-resume kredensialnya. Untuk memberi admin + nomor bot, owner cukup `SESIBUAT.<ID>.NOMOROWNER.NOMORBOT[LABEL]` dari sesi mana pun — baris bootstrap diadopsi (kredensial tidak disentuh, sesi tetap hidup), bukan ditolak.
->
-> Selama dipakai sebagai bot utama, sesi pusat tidak punya admin sendiri: perintah uang (`SAL`, `BELI`, ...) dijawab menu/gate. Perintah owner (`STATUS`, `SESI`, `SESIBUAT`, `RESTART`, ...) tetap jalan tanpa perlu agen di DB sesi.
+- **Reconnect policy** — reconnect tanpa batas untuk sebab transien (`stream_error_*`, keepalive timeout, dsb.).
+- **FATAL (tidak reconnect)** — `stream_error_replaced`, `stream_error_device_removed`, `stream_error_force_logout`, `failure_not_authorized`, `failure_banned`, `failure_locked`, `failure_bad_user_agent`, `primary_identity_key_change`. `stream_error_force_login` (515) **bukan** fatal.
+- **Watchdog** — client yang tidak pernah stabil 3 menit sejak start di-rebuild dari nol; flap yang cepat tetap terakumulasi dan kena rebuild.
 
-## Custom prefix at runtime
+## Menyiapkan sesi dari nol
 
-Default prefix comes from `COMMAND_PREFIX`. To change it per session at runtime, an owner sends:
+### 1) Bot pusat (owner) — pairing QR
+
+Sesi pusat adalah sesi pertama dan tidak bisa dibuat lewat `SESIBUAT` (perintah itu butuh bot yang sudah hidup untuk menerima perintah). Bootstrap-nya lewat env:
+
+1. Kosongkan data lama (hanya saat memulai benar-benar bersih):
+   ```powershell
+   Remove-Item -Recurse -Force .data\sessions      # DB PPOB + registry
+   Remove-Item -Force .auth\state.sqlite*          # kredensial WA semua nomor
+   ```
+2. `.env`:
+   ```
+   OWNERS=6285642927473
+   DEFAULT_SESSION=pusat
+   ```
+3. `npm run start:safe` → **QR muncul di terminal** → scan dari WhatsApp pusat: *Perangkat tertaut → Tautkan perangkat*.
+4. Saat `auth_paired`, sesi otomatis terdaftar di registry (label `Bootstrap (QR)`, admin & nomor bot kosong) → start berikutnya resume kredensial, tanpa scan ulang.
+
+Selama dipakai sebagai bot utama, sesi pusat tidak punya admin sendiri: perintah uang (`SAL`, `BELI`, …) dijawab menu/gate. Perintah owner (`STATUS`, `SESI`, `SESIBUAT`, `RESTART`, …) tetap jalan tanpa perlu baris agen di DB sesi.
+
+### 2) Bot admin (per toko) — pairing kode
+
+Dari nomor owner, chat **bot pusat**:
+
+```
+SESIBUAT.tokoku.628895560325.62856429274736[Toko Rangga]
+```
+
+- Format: `SESIBUAT.ID.NOMORADMIN.NOMORBOT[LABEL]`
+- `ID` — huruf/angka/-/`_`, jadi nama DB + nama sesi.
+- `NOMORADMIN` — WA admin toko; **wajib** dan **tidak boleh sama** dengan nomor bot. Prompt APIKEY & pesan onboarding dikirim ke nomor ini.
+- `NOMORBOT` — WA yang akan dipairing sebagai bot toko; **wajib**, beda dari admin.
+- Runtime langsung connect dan minta **kode 8 karakter**, dikirim balik ke chat owner:
+
+  ```
+  *Pairing tokoku*
+  Nomor: 62856429274736
+  Kode: ABCD-EFGH
+
+  Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.
+  ```
+
+- Masukkan kode di WhatsApp nomor bot (kedaluwarsa ± beberapa menit; kalau mati, `RESTART.tokoku` memicu kode baru).
+- Sesudah tertaut: DB sesi di-seed admin (kode `OWN01`, PIN `OWNER_PIN`), onboarding APIKEY otomatis dikirim ke nomor admin (lihat di bawah).
+
+### 3) Adopsi sesi bootstrap lewat `SESIBUAT`
+
+Baris registry `Bootstrap (QR)` (admin & nomor bot kosong) **diadopsi**, bukan ditolak: `SESIBUAT.pusat.6285642927473.6281230999[Pusat]` mengisi admin + nomor bot tanpa menyentuh kredensial — sesi tetap hidup, tidak pairing ulang. Berguna untuk menaikkan sesi pusat jadi sesi yang punya admin.
+
+### 4) Onboarding supplier (APIKEY ICS)
+
+Begitu sesi pertama kali connect — sesi baru maupun resume — bot mengirim prompt ke **nomor admin**:
+
+1. Selama belum ada key valid: setiap pesan admin dijawab prompt API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang dilayani; perintah uang terkunci.
+2. Admin kirim `APIKEY.ICS_sk_xxxx` (atau paste key-nya langsung). Key **diuji dulu** ke `GET /api/reseller/products` — kalau ICS menolak, key tidak disimpan dan prompt diulang.
+3. Key valid → tersimpan di DB sesi (`settings.ics_apikey`) + produk langsung tersinkron; bot mengirim **URL webhook** sesi.
+4. Salin URL itu ke dashboard ICS → Webhook. `SYNC` kapan saja untuk tarik ulang produk.
+
+> `WEBHOOK_BASE_URL` wajib bisa diakses publik oleh ICS (port → `WEBHOOK_PORT`). Token webhook acak 24 byte per sesi, stabil, disimpan di DB sesi.
+
+## Perintah
+
+Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_PREFIX`, teks apa pun dianggap perintah; teks tak dikenal diabaikan untuk mitra, dan dibalas menu super admin untuk owner.
+
+### Mitra & uplink
+
+| Perintah | Format | Keterangan |
+|---|---|---|
+| `SAL` | `SAL` | Saldo, komisi, dalam proses, terpakai hari ini |
+| `CH` | `CH.KODE` | Harga produk (modal + markup rantai uplink) |
+| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS; saldo ditahan, status `proses` sampai webhook/cron |
+| `CEK` | `CEK` / `CEK.IDTRX` | Daftar pending sendiri / detail satu transaksi |
+| `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
+| `BTL` | `BTL.IDTRX.PIN` | Batalkan transaksi masih-`proses` + refund lokal |
+| `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
+| `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline (senior = pengirim) |
+| `LDL` | `LDL` | Daftar downline langsung |
+| `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
+| `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
+| `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel (beberapa WA satu akun) |
+| `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
+| `UN` | `UN.NAMA.PIN` | Ubah nama |
+| `CS` | `CS.PESAN` | Teruskan pesan ke admin session |
+| `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringannya. Mitra: dirinya |
+
+### Admin session
+
+| Perintah | Format | Keterangan |
+|---|---|---|
+| `APIKEY` | `APIKEY.ICS_sk_xxx` | Simpan API key ICS (validasi dulu), balas URL webhook |
+| `SYNC` | `SYNC` | Tarik ulang katalog dari ICS |
+| `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
+| `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
+
+### Super admin (OWNERS)
+
+| Perintah | Format | Fungsi |
+|---|---|---|
+| `SESI` | `SESI` | Daftar session terdaftar + nomor WA + status |
+| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing**; mengadopsi baris bootstrap |
+| `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (connect/disconnect tanpa restart proses) |
+| `SESIHAPUS` | `SESIHAPUS.ID` | **Permanen**: stop + hapus baris registry + DB sesi + kredensial WA. Sesi bootstrap ikut terhapus — kalau terlanjur, ulangi bootstrap QR |
+| `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Transaksi session mana pun |
+| `STATUS` | `STATUS` | Uptime proses & OS, RSS/heap, RAM sistem, versi Node |
+| `SESSIONS` | `SESSIONS` | Daftar session + status live (🟢 live / 🟡 on / ⚪ off) |
+| `RESTART` | `RESTART.ID` | Connect ulang session; kode pairing baru dikirim kalau perlu |
+| `ENV` | `ENV` | Ringkasan config aktif (nilai sensitif dimasking) |
+| `CMD` | `CMD` | Semua perintah terdaftar |
+
+Perintah owner bekerja dari **semua** sesi yang hidup — tidak butuh baris agen di DB sesi tersebut.
+
+### Menu
+
+`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` stub (`Fitur belum tersedia`). `PRDK` dihapus — katalog hanya dari `SYNC`.
+
+## Alur transaksi (supplier ICS, async dua fase)
+
+```
+mitra: BELI.PULSA10.0812xxxx
+  │
+  ├─ 1. Saldo dipotong, trx disimpan status='proses',
+  │     snapshot komisi tiap uplink disimpan di komisi_dibagikan
+  ├─ 2. POST {ICS_BASE_URL}/trx  (product_code, dest_number, ref_id_custom = idTrx)
+  │     ditolak langsung → status 'gagal', refund penuh, mitra diberi tahu
+  │
+  ├─ 3a. Webhook ICS → POST {WEBHOOK_BASE_URL}/webhook/<token>/<sessionId>
+  │      { refid, status, kode_produk, nomor_tujuan, supplier_trxid, note }
+  └─ 3b. Cron 60 dtk: pending > 60 dtk dicek GET /reseller/trx/:refid  (jaring pengaman)
+         │
+         ├─ success → status 'sukses', SN disimpan, komisi dibayar, mitra dinotifikasi
+         └─ failed  → status 'gagal', harga_efektif direfund penuh
+```
+
+- Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, `batal` (via `BTL`) mengabaikan webhook telat.
+- Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama).
+- Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (per produk jika ada, else general/root) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
+- Buyer dinotifikasi via nomor tersimpan di `agen`; client offline hanya di-log — state tetap benar, `SAL`/`CEK` menunjukkan kebenarannya.
+
+## Peran & data
+
+| Peran | Siapa | Hak |
+|---|---|---|
+| **Super admin** | nomor di `OWNERS` | Kelola session, lihat transaksi semua session, status server. Tidak butuh jadi mitra. |
+| **Admin session** | root di DB sesi (`senior_id IS NULL`), didaftarkan via `SESIBUAT` | Markup (general + per produk), produk, downline, `LAP` seluruh session-nya, menerima `CS` |
+| **Uplink** | anak langsung admin | Transaksi + `LAP` jaringannya sendiri |
+| **Mitra** | downline | Transaksi, kelola downline-nya sendiri |
+
+- **DB terpisah per session** (`.data/sessions/<id>.sqlite`): tabel `agen`, `agen_nomor`, `produk`, `transaksi`, `mutasi`, `settings`. Tidak ada data yang bocor antar admin.
+- **Registry** `.data/sessions/_registry.sqlite`: id, label, admin, nomor WA, status. Semua sesi di registry otomatis di-connect saat start.
+- **Kredensial WA** `.auth/state.sqlite` satu file untuk semua session, dipisah per `sessionId`.
+- Nomor paralel (`TNO`) membuat beberapa JID diakui sebagai mitra yang sama.
+- Mitra nonaktif hanya bisa `SAL`/`info`/`all`/`menu`/`help` sampai diaktifkan ulang uplink.
+
+## Penyesuaian
+
+### Custom prefix saat runtime
 
 ```
 !setprefix #
 ```
 
-- `OWNERS` env must list the owner's phone number(s) without `@s.whatsapp.net` (e.g. `OWNERS=628123456,6287654321`)
-- Prefix persisted to `SETTINGS_PATH` (`.auth/settings.json`), survives restart
-- Max 3 chars, no whitespace. Empty/absent `OWNERS` → nobody can change it.
+- Hanya `OWNERS` yang bisa; persist ke `SETTINGS_PATH`, bertahan restart; maks 3 karakter tanpa spasi.
+- `COMMAND_PREFIX` kosong = tanpa prefix (default).
 
-## PPOB core commands
+### Menambah perintah
 
-Active (non-stub) commands:
-
-| Command | Format | Keterangan |
-|---|---|---|
-| `SAL` | `SAL` | Cek saldo, komisi, dalam proses |
-| `CH` | `CH.KODE` | Cek harga produk (modal + markup rantai) |
-| `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline |
-| `LDL` | `LDL` | List downline langsung |
-| `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
-| `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
-| `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
-| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Kirim order ke supplier ICS (saldo ditahan dulu, status `proses`) |
-| `CEK` | `CEK` / `CEK.IDTRX` | List transaksi pending / detail satu transaksi |
-| `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
-| `BTL` | `BTL.IDTRX.PIN` | Batalkan transaksi yang masih `proses` + refund lokal |
-| `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringan sendiri. Mitra: dirinya |
-| `APIKEY` | `APIKEY.ICS_sk_xxx` | Admin: simpan API key ICS, bot balas webhook URL |
-| `SYNC` | `SYNC` | Admin: tarik ulang produk dari ICS |
-| `LPRDK` | `LPRDK` | Admin: list produk + modal + markup + status supplier |
-| `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Admin: markup general (fallback) / markup per produk (menimpa general) |
-| `CS` | `CS.PESAN` | Hubungi admin |
-| `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
-| `UN` | `UN.NAMA.PIN` | Ubah nama |
-| `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel |
-
-`TIKET` = stub (`Fitur belum tersedia`). `PRDK` dihapus — katalog produk hanya dari `SYNC`.
-
-Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (per produk jika ada, jika tidak: markup root/general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
-
-## Supplier ICS (order async)
-
-Alur `BELI` dua fase supaya bot tetap responsif dan saldo tidak pernah "hilang":
-
-1. Saldo mitra dipotong, transaksi disimpan `status='proses'`, snapshot komisi tiap uplink disimpan di `komisi_dibagikan`.
-2. Bot `POST {ICS_BASE_URL}/trx` (`product_code`, `dest_number`, `ref_id_custom` = `idTrx`).
-   Kalau supplier langsung menolak → transaksi `gagal`, saldo direfund, mitra diberi tahu.
-3. Penyelesaian (`sukses` / `gagal`) **selalu** lewat `src/orders.js:finalize()`:
-   - **Webhook** `POST {WEBHOOK_BASE_URL}/webhook/<token>/<sessionId>` dari ICS (`refid`, `status`, `kode_produk`, `nomor_tujuan`, `supplier_trxid`, `note`).
-   - **Cron** tiap 60 detik: transaksi `proses` > 60 detik dicek `GET /reseller/trx/:refid` (jaring pengaman kalau webhook tidak sampai).
-   `sukses` → SN disimpan, komisi uplink dibayarkan. `gagal` → `harga_efektif` direfund penuh. `batal` (via `BTL`) mengabaikan webhook berikutnya.
-
-Setup per session (dari nomor admin session):
-
-1. Pastikan `WEBHOOK_BASE_URL` (dan port publik → `WEBHOOK_PORT`) bisa diakses ICS.
-2. **Gate onboarding**: selama session belum punya API key, setiap pesan dari admin session dijawab dengan pertanyaan API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang tetap dilayani; perintah lain (termasuk `SAL`/`BELI`) dibalas prompt.
-3. Admin kirim `APIKEY.ICS_sk_xxxx` (atau langsung paste key-nya). Key **diuji dulu** ke `GET /api/reseller/products`: kalau ICS menolak, key tidak disimpan dan bot minta ulang.
-4. Key valid → tersimpan di DB session (`settings.ics_apikey`) + produk langsung tersinkron, bot membalas URL webhook. Salin URL itu ke dashboard ICS → Webhook.
-5. `SYNC` kapan saja untuk tarik ulang produk.
-
-## Multi-session PPOB
-
-- Satu proses, banyak nomor WhatsApp (`SESSIONS=a,b,c`).
-- **DB terpisah per session**: `.data/sessions/<sessionId>.sqlite`. Tidak ada data yang bocor antar admin.
-- **Admin session** = root di DB session itu (`senior_id IS NULL`), nomornya didaftarkan super admin via `SESIBUAT`. Kelola markup (general + per produk), produk, downline, dan lihat `LAP` seluruh session-nya.
-- **Admin mendaftarkan uplink langsung** dengan `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` — senior otomatis admin session.
-- **Uplink** (anak langsung admin) bisa transaksi seperti mitra + `LAP` jaringannya sendiri.
-- **Super admin** (`OWNERS`, tanpa perlu jadi mitra):
-
-| Command | Format | Fungsi |
-|---|---|---|
-| `SESI` | `SESI` | Daftar session terdaftar + nomor WA + status |
-| `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing** |
-| `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (langsung connect/disconnect, tanpa restart) |
-| `SESIHAPUS` | `SESIHAPUS.ID` | Hapus session + DB-nya (permanen) |
-| `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Lihat transaksi session mana pun |
-| `STATUS` | `STATUS` | Status proses & server: uptime, RSS/heap, RAM, Node |
-| `SESSIONS` | `SESSIONS` | Daftar session + status live (🟢 live / 🟡 on / ⚪ off) |
-| `RESTART` | `RESTART.ID` | Connect ulang session (pairing kode dikirim ulang kalau perlu) |
-| `ENV` | `ENV` | Ringkasan config aktif (nilai sensitif dimasking) |
-| `CMD` | `CMD` | Daftar semua command terdaftar |
-
-### Pairing kode & QR
-Session dengan nomor WA terdaftar memakai **kode pairing**: begitu `SESIBUAT` dijalankan, runtime langsung connect dan minta kode 8 karakter ke WhatsApp lalu mengirimkannya balik ke chat super admin:
-
-```
-*Pairing toko2*
-Nomor: 628555123456
-Kode: ABCD-EFGH
-
-Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.
-```
-
-- Nomor admin (token ke-2) dan nomor bot (token ke-3) **wajib** dan **tidak boleh sama** (`SESIBUAT.toko2.628555.628111`).
-- Kode juga dicetak di console log (`Enter on phone ...`).
-- QR di terminal dipakai kalau nomor WA tidak diketahui (fallback) — mis. session bootstrap pertama dari `DEFAULT_SESSION` sebelum ada session di registry.
-- Session startup (tanpa `notify`) mencetak kode pairing / hasil pairing ke log, bukan dibuang.
-- Daftar session disimpan di `.data/sessions/_registry.sqlite`; semua session di registry otomatis di-connect saat start (kredensial tersimpan, jadi tidak pairing ulang).
-
-### Onboarding supplier
-Begitu session pertama kali connect, bot otomatis mengirim prompt API key ICS ke **nomor admin** (bukan nomor bot). Sampai `APIKEY.ICS_sk_xxx` valid tersimpan, semua perintah uang (`SAL`, `BELI`, `SYNC`, dll) diblokir dan dijawab prompt ulang — tanpa timeout. Key divalidasi ke ICS dulu; key salah tidak disimpan. Setelah tersimpan, bot mengirim URL webhook session itu untuk disalin ke dashboard ICS.
-
-## PPOB menu (demo)
-
-Registered commands: `info`, `format1`–`format4`, `ping`, `menu`, `help`, `setprefix`.
-
-`info` dan `all` menambahkan section **KHUSUS ADMIN** (`LAP`, `APIKEY`, `SYNC`, `LPRDK`, `MKP`) kalau pengirim adalah admin session, dan **KHUSUS SUPER ADMIN** (`SESI`, `SESIBUAT`, `SESION`, `SESIOFF`, `SESIHAPUS`, `LAPTRX`, `STATUS`, `SESSIONS`, `RESTART`, `ENV`, `CMD`) kalau pengirim ada di `OWNERS`. Mitra/uplink biasa melihat panduan standar + section **TRANSAKSI** (`CEK`, `REK`, `BTL`). `format1`–`format4` tetap verbatim.
-
-With `COMMAND_PREFIX=` (empty), no prefix is needed — typing `info` or `format2` directly replies with the menu. Unknown text is ignored (no noisy "unknown command" reply).
-
-## Adding a command
-
-Create a file in `src/commands/`, e.g. `src/commands/mycmd.js`:
+Buat file di `src/commands/`, misal `src/commands/mycmd.js`:
 
 ```js
 import { register } from './registry.js'
@@ -235,50 +293,83 @@ register({
 })
 ```
 
-Then import it in `index.js` next to the demo commands:
+Lalu import di `index.js`:
 
 ```js
 import './src/commands/mycmd.js'
 ```
 
-That's it — no core changes. Handler receives `{ client, event, args, log }`.
+Selesai — tanpa mengubah core. Handler menerima `{ client, event, args, log, sessionId, mitra, isAdmin, isSuper, deactivated, db, prefix, owners }`.
 
-## Helpers
+### Helpers
 
 - `src/helpers.js` — `sendButtons(client, jid, { text, footer, buttons })`, `sendMedia(client, jid, { type, media, mimetype, caption })`
-- `src/utils.js` — `extractText`, `parseCommand`, `splitArgs`, `formatLatency`, `mentionFromJid`
+- `src/utils.js` — `extractText`, `parseCommand`, `senderNumbers`, `normalizeNohp`, `markRead`
+
+> Catatan: media tanpa processor ter-upload tapi bisa tanpa preview/dimensi. Pasang `@zapo-js/media-utils` + `ffmpeg` bila perlu media proper.
+
+## Alat bantu (scripts)
+
+| Script | Fungsi |
+|---|---|
+| `node scripts/inspect-store.mjs` | Lihat session id mana saja yang punya kredensial di `.auth/state.sqlite` |
+| `node scripts/wipe-session-store.mjs <id>` | Hapus kredensial WA satu session (bot harus stop; file store terkunci) |
+| `node scripts/fix-nohp.mjs` | Perbaikan satu kali nomor HP lama di DB |
+
+## Struktur
+
+```
+index.js                    entry: registry-only startup, webhook server, poller, graceful shutdown
+supervisor.js               auto-restart + cycle restart (npm run start:safe)
+src/config.js               env config
+src/store.js                store zapo bersama (SQLite) untuk semua session
+src/registry.js             daftar session (id, admin, nomor WA, status) — _registry.sqlite
+src/runtime.js              start/stop/rebuild session, pairing kode & QR, reconnect, watchdog
+src/db.js                   per-session SQLite (agen/produk/transaksi/mutasi/settings) + openDb()
+src/handler.js              pesan → auth gate → dispatch + perintah super admin
+src/apikey.js               gate onboarding: validasi + simpan apikey ICS, prompt ke admin
+src/ics.js                  client API ICS (products / trx / status)
+src/orders.js               finalize transaksi: sukses (komisi) / gagal (refund), idempoten
+src/webhook.js              server webhook ICS + cron poller pending
+src/commands/registry.js    command map
+src/commands/demo.js        ping / menu / help
+src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
+src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
+src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY/SYNC
+src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
+src/commands/prefix.js      setprefix (owner only)
+src/report.js               parseRange (HARI/BULAN/tanggal) untuk LAP/LAPTRX
+src/auth.js                 hash/verify PIN
+src/money.js                format/parse rupiah
+src/parse.js                parser perintah PPOB (prefixless)
+src/settings.js             setelan runtime per session (prefix)
+src/helpers.js              send helpers (buttons/media)
+src/utils.js                text/parse/format helpers
+test/integration.test.js    end-to-end handler: gate, markup, transaksi, peran, sesi
+test/pairing-flow.test.js   state machine pairing (auth_qr/re-arm)
+test/runtime-reconnect.test.js  keputusan reconnect per close reason + watchdog
+test/webhook.test.js        webhook/token/finalize idempoten
+test/ppob.test.js           parser & harga efektif
+test/utils.test.js          utilitas + self-check
+```
+
+## Pemecahan masalah
+
+| Gejala | Sebab & langkah |
+|---|---|
+| Kode pairing tidak muncul ke chat owner | Sesi startup memang mencetak ke **log**, bukan chat (chat owner belum ada saat bootstrap). Cek log `Pairing <id> nomor ...` |
+| Kode pairing salah/kedaluwarsa | `RESTART.ID` → kode baru. `auth_pairing_required` dengan `forceManual` otomatis minta ulang |
+| Sesi terhapus masih membalas pesan | Kredensial lama nyangkut di store: `node scripts/wipe-session-store.mjs <id>` (bot stop dulu) |
+| `session db remove failed` saat `SESIHAPUS` | File DB terkunci proses lain (Windows). Stop proses pemakai file, hapus manual |
+| Sesi tidak hidup setelah restart | Cek `_registry.sqlite` (`node scripts/inspect-store.mjs` untuk kredensial). Startup hanya connect isi registry; env hanya dipakai saat registry kosong |
+| Webhook ICS tidak sampai | `WEBHOOK_BASE_URL` harus publik; cek token & id di URL; cron poller tetap menyelesaikan pending ≤ 60 dtk kemudian |
+| Bot admin = nomor admin sendiri | Ditolak sejak `SESIBUAT`. Sesi lama yang salah konfigurasi membalas peringatan salah konfigurasi di setiap pesan |
+| `API key belum benar` berulang | Key memang ditolak ICS (uji nyata ke endpoint produk). Key salah tidak pernah tersimpan |
 
 ## Tests
 
 ```bash
-node test/utils.test.js
+npm test        # seluruh test (node:test)
 ```
 
-## Structure
-
-```
-index.js                 entry: sessions, pairing, reconnect, shutdown
-supervisor.js            auto-restart + cycle restart (npm run start:safe)
-src/config.js            env config
-src/store.js             shared store (SQLite), one store for all sessions
-src/registry.js          daftar session (id, admin, nomor WA) — .data/sessions/_registry.sqlite
-src/runtime.js           connect/pairing kode/reconnect per session saat runtime
-src/db.js                per-session SQLite (agen/produk/transaksi/mutasi/settings) + openDb()
-src/handler.js           message → auth gate → command dispatch + super admin
-src/commands/registry.js command map
-src/commands/demo.js     ping / menu / help
-src/commands/ppob-core.js SAL/CH/DAFTAR/TUKAR/LAP/MKP/dll
-src/commands/supplier.js BELI/CEK/REK/BTL/APIKEY/SYNC (supplier ICS)
-src/commands/owner.js    STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
-src/ics.js               client API supplier ICS (products / order / status)
-src/apikey.js            gate onboarding admin: validasi + simpan apikey ICS
-src/orders.js            finalize transaksi: sukses (komisi) / gagal (refund)
-src/webhook.js           server webhook ICS + cron poller pending
-src/report.js            parseRange (HARI/BULAN/tanggal) untuk LAP
-src/helpers.js           send helpers
-src/utils.js             text/parse/format helpers
-test/utils.test.js       parser + extract self-check
-test/webhook.test.js     webhook/token/finalize idempoten
-```
-
-> Note: media without a processor uploads but may lack previews/dimensions. Install `@zapo-js/media-utils` + `ffmpeg` when you need proper media.
+Cakupan: gate apikey & onboarding push, markup (general/per-produk/beranak), transaksi async + refund + idempoten webhook, peran admin/uplink/mitra/super, SESIBUAT wajib NOMORWA & admin ≠ bot, adopsi sesi bootstrap, keputusan reconnect & watchdog, webhook token salah/asing.
