@@ -210,18 +210,54 @@ export function openDb(path) {
     return nodes.slice(0, -1).reduce((s, a) => s + a.markup, 0)
   }
 
-  // Effective price = modal + admin markup (per-product override, else general)
-  // + sum of markup along the non-root path.
-  db.effectivePrice = (agenId, kodeProduk) => {
-    const p = raw.prepare(`SELECT * FROM produk WHERE kode = ? AND aktif = 1`).get(kodeProduk)
-    if (!p) return undefined
-    const nodes = db.chain(agenId)
+  function priceWithNodes(p, nodes) {
     const root = nodes[nodes.length - 1]
     const adminMarkup = p.markup != null ? p.markup : root ? root.markup : 0
     const chainMarkup = nodes.slice(0, -1).reduce((s, a) => s + a.markup, 0)
     const markupTotal = adminMarkup + chainMarkup
     return { ...p, adminMarkup, markupTotal, hargaEfektif: p.harga_modal + markupTotal }
   }
+
+  // Effective price = modal + admin markup (per-product override, else general)
+  // + sum of markup along the non-root path. Includes inactive/empty products
+  // so CH can show their price + status and BELI can report "gangguan/kosong"
+  // instead of "tidak ditemukan".
+  db.effectivePrice = (agenId, kodeProduk) => {
+    const p = raw.prepare(`SELECT * FROM produk WHERE UPPER(kode) = UPPER(?)`).get(kodeProduk)
+    if (!p) return undefined
+    return priceWithNodes(p, db.chain(agenId))
+  }
+
+  // Search products: exact category match (from ICS `type`) takes priority so
+  // e.g. CH.AX.1 returns only `AX` (not `AXP`), then falls back to prefix match
+  // on `kode` or `kategori` (e.g. CH.CNDPLN.1, CH.AXLK.1).
+  db.searchEffectivePrices = (agenId, query) => {
+    const q = String(query ?? '').trim().toUpperCase()
+    if (!q) return []
+    let rows = raw
+      .prepare(`SELECT * FROM produk WHERE UPPER(kategori) = ? ORDER BY harga_modal ASC, kode ASC`)
+      .all(q)
+    if (!rows.length) {
+      const escaped = q.replace(/[\\%_]/g, '\\$&')
+      const prefix = `${escaped}%`
+      rows = raw
+        .prepare(
+          `SELECT * FROM produk
+           WHERE UPPER(kode) LIKE ? ESCAPE '\\' OR UPPER(kategori) LIKE ? ESCAPE '\\'
+           ORDER BY harga_modal ASC, kode ASC`
+        )
+        .all(prefix, prefix)
+    }
+    if (!rows.length) return []
+    const nodes = db.chain(agenId)
+    return rows.map((p) => priceWithNodes(p, nodes))
+  }
+
+  db.listKategori = () =>
+    raw
+      .prepare(`SELECT DISTINCT kategori FROM produk WHERE kategori != '' ORDER BY kategori`)
+      .all()
+      .map((r) => r.kategori)
 
   // ---- produk ----
   db.upsertProduk = ({ kode, nama, hargaModal, kategori = '' }) => {
@@ -238,8 +274,12 @@ export function openDb(path) {
 
   db.listProduk = () => raw.prepare(`SELECT * FROM produk ORDER BY kategori, kode`).all()
 
-  // Upsert from a supplier sync: price/status/stock follow ICS, markup stays.
-  db.upsertProdukIcs = ({ code, name, price, category, status, stock }) => {
+  // Upsert from a supplier sync: price/status/stock follow ICS, kategori follows
+  // ICS `type` (uppercase, fallback to `category`), markup stays untouched.
+  db.upsertProdukIcs = ({ code, name, price, type, category, status, stock }) => {
+    const kat = String(type || category || '')
+      .trim()
+      .toUpperCase()
     raw
       .prepare(
         `INSERT INTO produk (kode, nama, harga_modal, kategori, aktif, stok, status_supplier, updated_at)
@@ -253,7 +293,7 @@ export function openDb(path) {
            status_supplier = excluded.status_supplier,
            updated_at = excluded.updated_at`
       )
-      .run(code, name, price, category ?? '', status === 'available' ? 1 : 0, stock ?? 0, status ?? 'available', new Date().toISOString())
+      .run(code, name, price, kat, status === 'available' ? 1 : 0, stock ?? 0, status ?? 'available', new Date().toISOString())
   }
 
   // ---- per-session settings (ICS apikey, webhook token) ----

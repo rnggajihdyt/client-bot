@@ -1,6 +1,6 @@
 import { createPinoLogger } from 'zapo-js'
 import { config } from './src/config.js'
-import { openRegistry, listSessions } from './src/registry.js'
+import { openRegistry, closeRegistry, listSessions } from './src/registry.js'
 import { createRuntime } from './src/runtime.js'
 import './src/commands/demo.js' // registers the demo commands
 import './src/commands/ppob.js' // info / format1..4 menus
@@ -38,22 +38,36 @@ for (const sessionId of sessions) {
 // Supplier webhook (POST /webhook/<token>/<session>) + cron safety net that
 // settles pendings the webhook never delivered.
 let webhookServer
+let poller
 try {
   webhookServer = startWebhookServer(logger)
-  startPoller(logger, () => [...runtime.clients.keys()])
+  poller = startPoller(logger, () => [...runtime.clients.keys()])
 } catch (err) {
   logger.error({ err: err?.message }, 'webhook server gagal start')
 }
 
 // Graceful shutdown — disconnect keeps credentials so we resume without re-pairing.
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, async () => {
-    logger.info('shutting down')
-    webhookServer?.close()
-    await runtime.stopAll()
-    process.exit(0)
-  })
+// Handles both POSIX signals and supervisor IPC ('shutdown') for clean Windows restarts.
+let shuttingDown = false
+async function shutdown(reason = 'signal') {
+  if (shuttingDown) return
+  shuttingDown = true
+  logger.info({ reason }, 'shutting down')
+  const force = setTimeout(() => process.exit(0), 4_000)
+  force.unref?.()
+  clearInterval(poller)
+  webhookServer?.close()
+  await runtime.stopAll()
+  closeRegistry()
+  process.exit(0)
 }
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => void shutdown(signal))
+}
+process.on('message', (msg) => {
+  if (msg === 'shutdown') void shutdown('supervisor')
+})
 
 // Staying alive beats dying: a failed send or a stray rejection must not kill
 // every session. Log and continue. A genuinely wedged process exits non-zero so

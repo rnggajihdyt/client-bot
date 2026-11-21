@@ -41,7 +41,7 @@ npm install
 | Var | Default | Keterangan |
 |---|---|---|
 | `OWNERS` | *(kosong)* | Nomor HP (digit, tanpa `+`) dipisah koma = **super admin**. Wajib diisi. Contoh: `OWNERS=6285642927473` |
-| `DEFAULT_SESSION` | `default` | Id sesi bootstrap (bot pusat) saat registry masih kosong |
+| `DEFAULT_SESSION` | `owner` | Id sesi bootstrap (bot pusat / owner) saat registry masih kosong |
 | `SESSIONS` | `DEFAULT_SESSION` | Daftar id sesi bootstrap (dipakai hanya saat registry kosong) |
 | `COMMAND_PREFIX` | *(kosong)* | Prefix perintah. Kosong = tanpa prefix (semua teks = perintah, gaya bot-menu) |
 | `PAIRING_PHONE` | *(kosong)* | Nomor WA default kalau session tidak punya nomor sendiri (fallback kode pairing) |
@@ -57,6 +57,7 @@ npm install
 | `ICS_BASE_URL` | `https://api.ics-store.my.id` | Base URL API supplier ICS |
 | `ICS_API_KEY` | *(kosong)* | Fallback API key ICS kalau session belum punya key sendiri |
 | `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
+| `WATCH_CHANGES` | `true` | (supervisor) auto-restart child saat `index.js`, `src/**`, atau `.env` berubah tanpa mereset uptime |
 
 ## Menjalankan
 
@@ -72,6 +73,8 @@ npm test               # seluruh test
 `supervisor.js` menjalankan `index.js` sebagai child process:
 
 - **Restart saat crash** — child mati → start ulang. Backoff 1s → 2s → 4s … maks 60s, kembali ke 1s kalau run terakhir sehat > 5 menit.
+- **Auto-restart saat file berubah** — memantau `index.js`, `src/**`, dan `.env` (debounced 500ms, mengabaikan `.auth/`, `.data/`, `logs/`, `*.sqlite*`). Child dimatikan rapi lewat IPC agar koneksi & handle SQLite tertutup bersih lalu langsung di-start ulang tanpa backoff (`WATCH_CHANGES=false` untuk mematikan).
+- **Uptime kontinu** — proses supervisor tetap hidup terus dan meneruskan `SUPERVISOR_STARTED_AT` ke child, sehingga `Uptime proses` di perintah `STATUS` tetap berjalan terus-menerus walau `index.js` mengalami reload/restart.
 - **Cycle restart** — child di-restart tiap `CYCLE_HOURS` jam (default 10) agar memori/koneksi tidak menumpuk. Kredensial tersimpan, jadi tidak pairing ulang.
 - **Log supervisor** — `logs/supervisor.log` selain console.
 - `SIGINT`/`SIGTERM` diteruskan ke child supaya `disconnect()` sempat jalan rapi.
@@ -129,7 +132,7 @@ Sesi pusat adalah sesi pertama dan tidak bisa dibuat lewat `SESIBUAT` (perintah 
    DEFAULT_SESSION=pusat
    ```
 3. `npm run start:safe` → **QR muncul di terminal** → scan dari WhatsApp pusat: *Perangkat tertaut → Tautkan perangkat*.
-4. Saat `auth_paired`, sesi otomatis terdaftar di registry (label `Bootstrap (QR)`, admin & nomor bot kosong) → start berikutnya resume kredensial, tanpa scan ulang.
+4. Saat `auth_paired`, sesi otomatis terdaftar di registry sebagai sesi **owner** (label `Owner (QR)`, nomor WA bot tercatat dari `meJid`, tanpa admin toko) → start berikutnya resume kredensial, tanpa scan ulang.
 
 Selama dipakai sebagai bot utama, sesi pusat tidak punya admin sendiri: perintah uang (`SAL`, `BELI`, …) dijawab menu/gate. Perintah owner (`STATUS`, `SESI`, `SESIBUAT`, `RESTART`, …) tetap jalan tanpa perlu baris agen di DB sesi.
 
@@ -167,7 +170,7 @@ Baris registry `Bootstrap (QR)` (admin & nomor bot kosong) **diadopsi**, bukan d
 Begitu sesi pertama kali connect — sesi baru maupun resume — bot mengirim prompt ke **nomor admin**:
 
 1. Selama belum ada key valid: setiap pesan admin dijawab prompt API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang dilayani; perintah uang terkunci.
-2. Admin kirim `APIKEY.ICS_sk_xxxx` (atau paste key-nya langsung). Key **diuji dulu** ke `GET /api/reseller/products` — kalau ICS menolak, key tidak disimpan dan prompt diulang.
+2. Admin kirim `APIKEY.<KEY>` (atau paste key hex 64 karakter langsung). Key **diuji dulu** ke `GET /api/reseller/products` — kalau ICS menolak, key tidak disimpan dan prompt diulang.
 3. Key valid → tersimpan di DB sesi (`settings.ics_apikey`) + produk langsung tersinkron; bot mengirim **URL webhook** sesi.
 4. Salin URL itu ke dashboard ICS → Webhook. `SYNC` kapan saja untuk tarik ulang produk.
 
@@ -182,7 +185,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | Perintah | Format | Keterangan |
 |---|---|---|
 | `SAL` | `SAL` | Saldo, komisi, dalam proses, terpakai hari ini |
-| `CH` | `CH.KODE` | Harga produk (modal + markup rantai uplink) |
+| `CH` | `CH.KODE` / `CH.PREFIX.HAL` | Harga produk tunggal atau daftar harga per prefix kode/kategori dengan paginasi (contoh: `CH.XDA.1`) |
 | `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS; saldo ditahan, status `proses` sampai webhook/cron |
 | `CEK` | `CEK` / `CEK.IDTRX` | Daftar pending sendiri / detail satu transaksi |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
@@ -202,7 +205,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 
 | Perintah | Format | Keterangan |
 |---|---|---|
-| `APIKEY` | `APIKEY.ICS_sk_xxx` | Simpan API key ICS (validasi dulu), balas URL webhook |
+| `APIKEY` | `APIKEY.KEY` | Simpan API key ICS (validasi dulu), balas URL webhook |
 | `SYNC` | `SYNC` | Tarik ulang katalog dari ICS |
 | `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
@@ -213,8 +216,8 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 |---|---|---|
 | `SESI` | `SESI` | Daftar session terdaftar + nomor WA + status |
 | `SESIBUAT` | `SESIBUAT.ID.NOMORADMIN.NOMORWA[LABEL]` | Daftarkan session, seed admin, **langsung connect + minta kode pairing**; mengadopsi baris bootstrap |
-| `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (connect/disconnect tanpa restart proses) |
-| `SESIHAPUS` | `SESIHAPUS.ID` | **Permanen**: stop + hapus baris registry + DB sesi + kredensial WA. Sesi bootstrap ikut terhapus — kalau terlanjur, ulangi bootstrap QR |
+| `SESION` / `SESIOFF` | `SESION.ID` | Nyala/matikan session (connect/disconnect tanpa restart proses). Sesi utama (owner) tidak boleh dinonaktifkan |
+| `SESIHAPUS` | `SESIHAPUS.ID` | **Permanen**: stop + hapus baris registry + DB sesi + kredensial WA. Sesi utama (owner) dilindungi dan tidak boleh dihapus |
 | `LAPTRX` | `LAPTRX.ID[HARI\|BULAN\|YYYY-MM-DD]` | Transaksi session mana pun |
 | `STATUS` | `STATUS` | Uptime proses & OS, RSS/heap, RAM sistem, versi Node |
 | `SESSIONS` | `SESSIONS` | Daftar session + status live (🟢 live / 🟡 on / ⚪ off) |

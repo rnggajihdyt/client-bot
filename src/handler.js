@@ -10,7 +10,7 @@ import { wipeSessionStore } from './runtime.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
 import { webhookUrl, icsConfig } from './webhook.js'
-import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem } from './apikey.js'
+import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem, sessionReadyText } from './apikey.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -158,11 +158,11 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       if (candidate) {
         try {
           const r = await setupApiKey(db, candidate)
+          db.setSetting('ready_notified', '1')
           await safeSend(
             client,
             event.key.remoteJid,
-            `API key tersimpan. ${r.total} produk tersinkron (${r.available} tersedia).\n\n` +
-              `Webhook URL:\n${webhookUrl(db, sessionId)}\n\nSalin URL itu ke dashboard ICS → Webhook.`,
+            sessionReadyText(sessionId, { total: r.total, available: r.available, url: webhookUrl(db, sessionId) }),
             undefined,
             log
           )
@@ -171,7 +171,7 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
           await safeSend(
             client,
             event.key.remoteJid,
-            `API key belum benar: ${err.message}\n\nKirim lagi: APIKEY.ICS_sk_xxx`,
+            `API key belum benar: ${err.message}\nKirim lagi: APIKEY.KEY`,
             undefined,
             log
           )
@@ -258,10 +258,13 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       await reply('Belum ada session. Buat: SESIBUAT.ID.NOMORADMIN')
       return
     }
-    const lines = rows.map(
-      (s) =>
-        `• ${s.id} — admin ${s.admin_nohp || '-'} — WA ${s.pairing_phone || '-'} — ${s.status}${s.label ? ` — ${s.label}` : ''}`
-    )
+    const lines = rows.map((s) => {
+      const role = registry.isOwnerSession(s)
+        ? `owner ${owners.join(',') || '-'}`
+        : `admin ${s.admin_nohp || '-'}`
+      const wa = s.wa_nohp || s.pairing_phone || '-'
+      return `• ${s.id} — ${role} — WA ${wa} — ${s.status}${s.label ? ` — ${s.label}` : ''}`
+    })
     await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
   }
 
@@ -296,7 +299,7 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     // A bot waiting to be (re)paired by QR is identified by its env id, not by a
     // registry row yet — accept it so pusat can still serve admins.
     const existing = registry.getSession(id)
-    if (existing && !(existing.pairing_phone === '' && registry.isBootstrapSession(id))) {
+    if (existing && !registry.isOwnerSession(existing)) {
       await reply(`Session ${id} sudah ada`)
       return
     }
@@ -324,6 +327,12 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
       sdb.close()
     }
 
+    if (existing) {
+      await reply(`Session *${id}* diadopsi (admin ${adminNohp}, WA ${pairingPhone}). Kredensial tetap dipertahankan.`)
+      await startRuntimeSession(reply, id)
+      return
+    }
+
     await reply(`Session *${id}* terdaftar (admin ${adminNohp}, WA ${pairingPhone}). Menyambungkan + minta kode pairing…`)
     // Stale WhatsApp credentials from an earlier pairing would silently resume
     // the old device instead of asking for a code.
@@ -332,19 +341,19 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     } catch (err) {
       log.warn({ err: err?.message, id }, 'session store wipe failed')
     }
-    await startRuntimeSession(reply, id)  }
+    await startRuntimeSession(reply, id)
+  }
 
-  // Connects a session now. `notify(jid, text)`: no jid = owner chat (pairing
-  // codes), jid = the admin's own number (onboarding).
+  // Connects a session now. `notify(text)` delivers pairing codes and link
+  // status back to the owner chat; admin onboarding is sent by the session's
+  // own client once its socket opens (see src/runtime.js).
   async function startRuntimeSession(reply, id) {
     if (!runtime) {
       await reply(`Runtime belum siap, restart bot lalu SESION.${id}`)
       return
     }
-    // notify(jid, text) reaches the owner chat for pairing codes, and the
-    // admin's own number for onboarding (see src/apikey.js).
     await runtime.startSession(id, {
-      notify: (jid, text) => (jid ? reply(text, jid) : reply(text)),
+      notify: (text) => reply(text),
     })
   }
 
@@ -361,6 +370,10 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     if (status === 'on') {
       await reply(`Session ${id} dinyalakan. Menyambungkan + minta kode pairing…`)
       await startRuntimeSession(reply, id)
+      return
+    }
+    if (registry.isBootstrapSession(id)) {
+      await reply(`Session utama (${id}) tidak boleh dinonaktifkan.`)
       return
     }
     await stopRuntimeSession(id)
@@ -380,6 +393,10 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     }
     if (!registry.getSession(id)) {
       await reply('Session tidak ditemukan')
+      return
+    }
+    if (registry.isBootstrapSession(id)) {
+      await reply(`Session utama (${id}) tidak boleh dihapus.`)
       return
     }
     await stopRuntimeSession(id)

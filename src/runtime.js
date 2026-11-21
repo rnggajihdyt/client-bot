@@ -69,7 +69,7 @@ export function createRuntime(logger) {
     health.set(sessionId, h)
   }
 
-  function connectWithRetry(client, sessionId, notify) {
+  function connectWithRetry(client, sessionId) {
     // Unbounded: a 10h uptime target must survive more than 10 drops.
     let attempt = 0
     let reconnecting = false
@@ -82,12 +82,14 @@ export function createRuntime(logger) {
       if (event.status === 'open') {
         attempt = 0
         logger.info({ sessionId }, 'connected')
-        // First open of this client: push the ICS apikey gate to the admin.
+        // First open of this client: push the ICS apikey gate to the admin
+        // from this session's own client so their reply lands in this session.
         // Resumed pairings never emit auth_paired, so this is the only hook
         // that fires for both fresh and reconnected sessions.
         if (!onboarded) {
           onboarded = true
-          void runOnboarding(logger, sessionId, notify).catch((err) =>
+          const sendToAdmin = (jid, text) => client.message.send(jid, text)
+          void runOnboarding(logger, sessionId, sendToAdmin).catch((err) =>
             logger.warn({ sessionId, err: err?.message }, 'onboarding gagal')
           )
         }
@@ -208,18 +210,19 @@ export function createRuntime(logger) {
     return (text) => logger.info({ sessionId }, String(text).replace(/\n+/g, ' | '))
   }
 
-  // QR pairing (bootstrap, no phone on record) creates an account in the registry
-  // so the next start resumes it instead of forgetting it.
+  // QR pairing (bootstrap, no phone on record) creates an owner session in the
+  // registry so the next start resumes it instead of forgetting it.
   function registerBootstrapSession(sessionId, meJid) {
     // Only the env bootstrap session may be armed by QR; any other id must come
-    // from SESIBUAT so it has an admin (and never equals its own bot number).
+    // from SESIBUAT so it has a shop admin (and never equals its own bot number).
     if (!isBootstrapSession(sessionId) || getSession(sessionId)) return
+    const waNohp = String(meJid ?? '').split('@')[0].split(':')[0].replace(/\D/g, '')
     try {
-      createSession({ id: sessionId, label: 'Bootstrap (QR)', adminNohp: '', pairingPhone: '', status: 'on' })
-      logger.info({ sessionId, meJid }, 'session QR didaftarkan ke registry')
+      createSession({ id: sessionId, label: 'Owner (QR)', adminNohp: '', pairingPhone: '', waNohp, status: 'on' })
+      logger.info({ sessionId, meJid }, 'session owner (QR) didaftarkan ke registry')
     } catch (err) {
       // WhatsApp is already paired; a registry hiccup must not take it down.
-      logger.error({ sessionId, err: err?.message }, 'gagal daftarkan session bootstrap')
+      logger.error({ sessionId, err: err?.message }, 'gagal daftarkan session owner')
     }
   }
 
@@ -238,7 +241,7 @@ export function createRuntime(logger) {
     )
     clients.set(sessionId, client)
     handlePairing(client, sessionId, notify ?? consoleNotify(sessionId))
-    connectWithRetry(client, sessionId, notify)
+    connectWithRetry(client, sessionId)
     client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
     setSessionStatus(sessionId, 'on')
@@ -287,9 +290,15 @@ export function createRuntime(logger) {
   }
 
   async function stopAll() {
-    const all = [...clients.keys()]
+    const entries = [...clients.entries()]
     clients.clear()
-    await Promise.allSettled(all.map((id) => stopSession(id)))
+    await Promise.allSettled(
+      entries.map(async ([id, client]) => {
+        handles.get(id)?.close()
+        handles.delete(id)
+        await client.disconnect().catch(() => {})
+      })
+    )
   }
 
   return api

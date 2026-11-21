@@ -54,7 +54,7 @@ for (const [name, text] of Object.entries(FORMATS)) {
 // to a mitra, so only show them to admins and the super admin.
 const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Laporan Sesi : LAP[HARI|BULAN|YYYY-MM-DD]
-• API Key Supplier : APIKEY.ICS_sk_xxx
+• API Key Supplier : APIKEY.KEY
 • Sync Produk : SYNC
 • List Produk : LPRDK
 • Markup General : MKP.NOMINAL

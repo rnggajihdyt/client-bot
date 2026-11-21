@@ -37,23 +37,83 @@ register({
 })
 
 // ---- CH ----
+const CH_PAGE_SIZE = 15
+
+function produkStatusLabel(p) {
+  if (p.aktif && p.status_supplier === 'available') return 'Tersedia'
+  if (p.status_supplier === 'empty') return 'Kosong'
+  return `Gangguan (${p.status_supplier || 'nonaktif'})`
+}
+
 register({
   name: 'ch',
-  description: 'Cek harga produk, e.g. CH.PULSA10',
+  description: 'Cek harga produk/kategori: CH.KODE atau CH.PREFIX[.HAL]',
   async handler({ client, event, mitra, args, db }) {
-    const kode = args[0]
-    if (!kode) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: CH.KODE')
+    const rawQuery = args[0]
+    if (!rawQuery) {
+      const cats = db.listKategori()
+      const hint = cats.length ? `\nKategori: ${cats.join(', ')}` : ''
+      await client.message.send(
+        event.key.remoteJid,
+        `Gunakan format: CH.KODE atau CH.PREFIX.HAL (contoh: CH.XDA.1)${hint}`
+      )
       return
     }
-    const p = db.effectivePrice(mitra.id, kode.toUpperCase())
-    if (!p) {
+
+    const query = rawQuery.toUpperCase()
+    const hasPageArg = args.length >= 2
+
+    // Exact code match when no page number is requested (e.g. CH.XDA40).
+    if (!hasPageArg) {
+      const exact = db.effectivePrice(mitra.id, query)
+      if (exact) {
+        await client.message.send(
+          event.key.remoteJid,
+          `*${exact.nama}* (${exact.kode})\nHarga: ${formatRupiah(exact.hargaEfektif)}\nStatus: ${produkStatusLabel(exact)}`
+        )
+        return
+      }
+    }
+
+    // Prefix / category search with pagination (e.g. CH.XDA, CH.XDA.1, CH.PROMO.2).
+    let page = 1
+    if (hasPageArg) {
+      if (!/^\d+$/.test(args[1]) || Number(args[1]) < 1) {
+        await client.message.send(event.key.remoteJid, `Nomor halaman tidak valid. Contoh: CH.${query}.1`)
+        return
+      }
+      page = Number(args[1])
+    }
+
+    const rows = db.searchEffectivePrices(mitra.id, query)
+    if (!rows.length) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
       return
     }
+
+    const totalPages = Math.ceil(rows.length / CH_PAGE_SIZE)
+    if (page > totalPages) {
+      await client.message.send(
+        event.key.remoteJid,
+        `Halaman ${page} tidak tersedia (maks ${totalPages}). Coba: CH.${query}.${totalPages}`
+      )
+      return
+    }
+
+    const slice = rows.slice((page - 1) * CH_PAGE_SIZE, page * CH_PAGE_SIZE)
+    const lines = slice.map(
+      (p) => `• *${p.kode}* — ${formatRupiah(p.hargaEfektif)} (${produkStatusLabel(p)})\n  ${p.nama}`
+    )
+    const nav =
+      page < totalPages
+        ? `\n\nHalaman berikutnya: CH.${query}.${page + 1}`
+        : totalPages > 1
+          ? `\n\nHalaman sebelumnya: CH.${query}.${page - 1}`
+          : ''
+
     await client.message.send(
       event.key.remoteJid,
-      `*${p.nama}* (${p.kode})\nHarga: ${formatRupiah(p.hargaEfektif)}`
+      `*Harga ${query}* (Hal ${page}/${totalPages} — ${rows.length} produk)\n${lines.join('\n')}${nav}`
     )
   },
 })

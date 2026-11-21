@@ -17,6 +17,7 @@ export async function setupApiKey(db, key) {
         code: p.code,
         name: p.name,
         price: p.price,
+        type: p.type,
         category: p.category,
         status: p.status,
         stock: p.stock,
@@ -28,19 +29,27 @@ export async function setupApiKey(db, key) {
 }
 
 // Candidate key in a free-text reply, with or without the APIKEY. prefix.
+// ICS API keys are hex strings (e.g. 64-char hex), without any fixed prefix.
 export function extractApiKey(text) {
-  return String(text ?? '')
-    .trim()
-    .match(/^(?:APIKEY\.)?(ICS_[A-Za-z0-9_-]+)$/i)?.[1]
+  const s = String(text ?? '').trim()
+  const prefixed = s.match(/^APIKEY[.\s]+([A-Za-z0-9_-]{16,})$/i)
+  if (prefixed) return prefixed[1]
+  const bare = s.match(/^(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{16,}$/)
+  return bare?.[0]
 }
 
 // Repeated on every message until a key is stored: no timeout, no way past it.
 export function apiKeyPrompt(url) {
+  return `*API Key ICS belum diisi*\nKirim: APIKEY.KEY\nWebhook: ${url}`
+}
+
+// Sent once when the session first becomes ready with a valid API key.
+export function sessionReadyText(sessionId, { total, available, url }) {
   return (
-    `*Setup Supplier ICS*\n\n` +
-    `Sesi ini belum punya API key supplier, jadi transaksi masih terkunci.\n` +
-    `Kirim API key dari dashboard ICS:\n\nAPIKEY.ICS_sk_xxxx\n\n` +
-    `Setelah tersimpan, salin URL webhook ini ke dashboard ICS:\n${url}`
+    `*Sesi ${sessionId} siap.*\n` +
+    `Produk: ${total} tersimpan (${available} online)\n` +
+    `Webhook: ${url}\n\n` +
+    `Salin URL webhook ke dashboard ICS → Webhook.`
   )
 }
 
@@ -51,17 +60,23 @@ export function sameNumberProblem(adminNohp, pairingPhone) {
 }
 
 // Runs the gate for a session that just connected. No API key → prompt the
-// admin; as soon as the key is valid, tell the admin the webhook URL so it can
-// be registered on the ICS dashboard. Both messages go to the admin's number
-// (the bot's own number is a different phone by rule), chat JID as fallback.
+// admin; if already keyed and never notified yet → send the one-time ready
+// message with product counts + webhook URL. Reconnects stay silent once ready.
 export async function runOnboarding(logger, sessionId, notify) {
   const db = openDb(sessionPath(sessionId))
-  let to, key, url
+  let to, key, url, alreadyReady, total, available
   try {
-    to = getSession(sessionId)?.admin_nohp ?? ''
-    if (!to) return
+    const session = getSession(sessionId)
+    to = session?.admin_nohp ?? ''
+    if (!to || sameNumberProblem(to, session?.pairing_phone)) return
     key = db.getSetting('ics_apikey')
+    alreadyReady = db.getSetting('ready_notified') === '1'
     url = webhookUrl(db, sessionId)
+    if (key && !alreadyReady) {
+      const produk = db.listProduk()
+      total = produk.length
+      available = produk.filter((p) => p.aktif && p.status_supplier === 'available').length
+    }
   } finally {
     db.close()
   }
@@ -72,5 +87,13 @@ export async function runOnboarding(logger, sessionId, notify) {
     await send(apiKeyPrompt(url))
     return
   }
-  await send(`*Sesi ${sessionId} siap.*\n\nWebhook URL:\n${url}\n\nSalin URL itu ke dashboard ICS → Webhook.`)
+  if (alreadyReady) return
+
+  await send(sessionReadyText(sessionId, { total, available, url }))
+  const db2 = openDb(sessionPath(sessionId))
+  try {
+    db2.setSetting('ready_notified', '1')
+  } finally {
+    db2.close()
+  }
 }

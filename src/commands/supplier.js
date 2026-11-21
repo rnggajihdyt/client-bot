@@ -14,7 +14,7 @@ const PIN_SALAH = 'PIN salah'
 // handed back is what they register on the ICS dashboard.
 register({
   name: 'apikey',
-  description: 'Admin: APIKEY.ICS_sk_xxx — kredensial supplier ICS',
+  description: 'Admin: APIKEY.KEY — kredensial supplier ICS',
   async handler({ client, event, args, isAdmin, db, sessionId, log }) {
     if (!isAdmin) {
       await client.message.send(event.key.remoteJid, ADMIN_ONLY)
@@ -26,7 +26,7 @@ register({
       const current = db.getSetting('ics_apikey')
       await client.message.send(
         event.key.remoteJid,
-        `Gunakan format: APIKEY.ICS_sk_xxx\n` +
+        `Gunakan format: APIKEY.KEY\n` +
           `API key saat ini: ${current ? `${current.slice(0, 10)}…` : '(belum diisi)'}\n` +
           `Webhook URL: ${url}`
       )
@@ -34,10 +34,11 @@ register({
     }
     try {
       const r = await setupApiKey(db, key)
+      db.setSetting('ready_notified', '1')
       await client.message.send(
         event.key.remoteJid,
-        `API key tersimpan. ${r.total} produk tersinkron (${r.available} tersedia).\n` +
-          `Webhook URL: ${url}\n\nSalin URL itu ke dashboard ICS → Webhook.`
+        `API key tersimpan. Produk: ${r.total} tersimpan (${r.available} online).\n` +
+          `Webhook: ${url}`
       )
     } catch (err) {
       log?.warn({ err: err?.message }, 'apikey ditolak ICS')

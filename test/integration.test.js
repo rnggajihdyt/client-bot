@@ -8,6 +8,7 @@ const dir = mkdtempSync(join(tmpdir(), 'ppob-int-'))
 process.env.OWNERS = '628111'
 process.env.COMMAND_PREFIX = ''
 process.env.SESSION_DIR = join(dir, 'sessions')
+process.env.STORE_PATH = join(dir, 'state.sqlite')
 
 const { openDb } = await import('../src/db.js')
 const { openRegistry } = await import('../src/registry.js')
@@ -122,7 +123,7 @@ test('info admin & super admin dapat section khusus', async () => {
   const r = await say('628111', 'info')
   assert.match(r, /PANDUAN TRANSAKSI/)
   assert.match(r, /KHUSUS ADMIN/)
-  assert.match(r, /APIKEY\.ICS_sk_xxx/)
+  assert.match(r, /APIKEY\.KEY/)
   assert.match(r, /KHUSUS SUPER ADMIN/)
   assert.match(r, /SESIBUAT\.ID\.NOMORADMIN/)
 
@@ -158,6 +159,55 @@ test('info uplink/mitra tanpa section admin', async () => {
 test('CH untuk downline: modal + markup', async () => {
   const r = await say('628222', 'CH.PULSA10')
   assert.match(r, /10\.000/) // 9500 + 500
+  assert.match(r, /Status: Tersedia/)
+
+  // produk kosong/empty tetap tampil di CH dengan status Kosong, dan ditolak di BELI sebagai tidak tersedia
+  db.upsertProdukIcs({ code: 'XDA40', name: 'XL AXIS Data 40Gb', price: 76000, type: 'xda', category: 'BEST', status: 'empty', stock: 0 })
+  const chEmpty = await say('628222', 'CH.XDA40')
+  assert.match(chEmpty, /76\.500/)
+  assert.match(chEmpty, /Status: Kosong/)
+  const beliEmpty = await say('628222', 'BELI.XDA40.08123456')
+  assert.match(beliEmpty, /gangguan\/tidak tersedia/)
+
+  // pengkategorian mengikuti field `type` ICS + paginasi (CH.XDA.1 / CH.XDA.2 / CH.AX.1 vs CH.AXP.1 / CH.SM.1)
+  for (let i = 1; i <= 17; i++) {
+    db.upsertProdukIcs({
+      code: `XDA${String(i).padStart(2, '0')}`,
+      name: `XL Data ${i}GB`,
+      price: 10000 + i * 1000,
+      type: 'xda',
+      category: 'PROMO',
+      status: 'available',
+      stock: 10,
+    })
+  }
+  db.upsertProdukIcs({ code: 'AXLK9', name: 'Axis Lite 9', price: 9000, type: 'ax', category: 'General', status: 'available', stock: 5 })
+  db.upsertProdukIcs({ code: 'AXP14', name: 'Axis Pro 14', price: 14000, type: 'axp', category: 'General', status: 'available', stock: 5 })
+  db.upsertProdukIcs({ code: 'M19', name: 'Smartfren 19', price: 19000, type: 'sm', category: 'General', status: 'available', stock: 5 })
+
+  const page1 = await say('628222', 'CH.XDA.1')
+  assert.match(page1, /\*Harga XDA\* \(Hal 1\/2 — 18 produk\)/)
+  assert.match(page1, /• \*XDA01\* — 11\.500 \(Tersedia\)/)
+  assert.match(page1, /Halaman berikutnya: CH\.XDA\.2/)
+
+  const page2 = await say('628222', 'CH.XDA.2')
+  assert.match(page2, /\*Harga XDA\* \(Hal 2\/2 — 18 produk\)/)
+  assert.match(page2, /• \*XDA40\* — 76\.500 \(Kosong\)/)
+  assert.match(page2, /Halaman sebelumnya: CH\.XDA\.1/)
+
+  // halaman di luar batas & invalid
+  assert.match(await say('628222', 'CH.XDA.9'), /tidak tersedia \(maks 2\)/)
+  assert.match(await say('628222', 'CH.XDA.0'), /Nomor halaman tidak valid/)
+
+  // exact kategori `AX` tidak tercampur `AXP`, dan `SM` menemukan kode yang tidak berawalan SM (`M19`)
+  const axOnly = await say('628222', 'CH.AX.1')
+  assert.match(axOnly, /\*Harga AX\* \(Hal 1\/1 — 1 produk\)/)
+  assert.match(axOnly, /• \*AXLK9\*/)
+  assert.doesNotMatch(axOnly, /AXP14/)
+
+  const smList = await say('628222', 'CH.SM.1')
+  assert.match(smList, /\*Harga SM\* \(Hal 1\/1 — 1 produk\)/)
+  assert.match(smList, /• \*M19\*/)
 })
 
 test('MP ubah markup dan harga ikut berubah', async () => {
@@ -374,8 +424,12 @@ test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
   const mk = sent.find((s) => /terdaftar/.test(s.text))?.text ?? ''
   assert.match(mk, /Session \*toko2\* terdaftar/)
   assert.match(mk, /Menyambungkan/)
-  // pairing code diumumkan balik ke chat super admin via notify
+  // pairing code diumumkan balik ke chat super admin via notify(text)
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2'), 'runtime.startSession dipanggil')
+  assert.ok(
+    sent.some((s) => s.jid === '628111@s.whatsapp.net' && s.text === 'KODE PAIRING toko2'),
+    'pairing code harus terkirim ke chat owner dengan text valid'
+  )
 
   const list = await say('628111', 'SESI')
   assert.match(list, /toko2/)
@@ -429,15 +483,40 @@ test('super admin: SESIBUAT wajib NOMORWA + admin beda dengan nomor bot', async 
 
 test('onboarding: prompt apikey dikirim ke nomor admin, bukan nomor bot', async () => {
   const { runOnboarding } = await import('../src/apikey.js')
+  const { createSession } = await import('../src/registry.js')
   const pushed = []
   const notify = (jid, text) => pushed.push({ jid, text })
 
   await say('628111', 'SESIBUAT.toko9.628997.6289980000.Toko Sembilan')
   await runOnboarding(logger, 'toko9', notify)
   assert.equal(pushed[0].jid, '628997@s.whatsapp.net')
-  assert.match(pushed[0].text, /Setup Supplier ICS/)
+  assert.match(pushed[0].text, /API Key ICS belum diisi/)
   // bot's own number never receives the prompt
   assert.ok(!pushed.some((p) => p.jid.startsWith('6289980000')))
+
+  // legacy misconfigured session (admin == bot): onboarding must not message itself
+  pushed.length = 0
+  createSession({ id: 'toko_bad', label: 'Bad', adminNohp: '6284440000', pairingPhone: '6284440000', status: 'on' })
+  await runOnboarding(logger, 'toko_bad', notify)
+  assert.equal(pushed.length, 0)
+
+  // sesi yang sudah punya apikey & produk -> pesan siap (dengan jumlah tersimpan & online) hanya dikirim sekali
+  const db9 = openDb(join(dir, 'sessions', 'toko9.sqlite'))
+  db9.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  db9.upsertProdukIcs({ code: 'P1', name: 'P1', price: 1000, status: 'available', stock: 5 })
+  db9.upsertProdukIcs({ code: 'P2', name: 'P2', price: 2000, status: 'unavailable', stock: 0 })
+  db9.close()
+
+  pushed.length = 0
+  await runOnboarding(logger, 'toko9', notify)
+  assert.equal(pushed.length, 1)
+  assert.match(pushed[0].text, /\*Sesi toko9 siap\.\*/)
+  assert.match(pushed[0].text, /Produk: 2 tersimpan \(1 online\)/)
+
+  // panggilan berikutnya (reconnect/restart) tidak lagi mengirim pesan siap
+  pushed.length = 0
+  await runOnboarding(logger, 'toko9', notify)
+  assert.equal(pushed.length, 0)
 })
 
 test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar tersimpan', async () => {
@@ -459,33 +538,55 @@ test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar
     return last()
   }
 
-  // perintah uang diblokir, diganti prompt
-  assert.match(await sayShop('SAL'), /Setup Supplier ICS/)
-  assert.match(await sayShop('BELI.PULSA10.0812'), /Setup Supplier ICS/)
+  // perintah uang diblokir, diganti prompt singkat
+  assert.match(await sayShop('SAL'), /API Key ICS belum diisi/)
+  assert.match(await sayShop('BELI.PULSA10.0812'), /API Key ICS belum diisi/)
   // info/menu tetap boleh
-  assert.doesNotMatch(await sayShop('info'), /Setup Supplier ICS/)
+  assert.doesNotMatch(await sayShop('info'), /API Key ICS belum diisi/)
 
   // key salah format -> prompt lagi
-  assert.match(await sayShop('APIKEY.salah'), /Setup Supplier ICS/)
+  assert.match(await sayShop('APIKEY.salah'), /API Key ICS belum diisi/)
 
-  // key salah tapi format benar -> ditolak ICS, TIDAK tersimpan
-  assert.match(await sayShop('APIKEY.ICS_sk_nope'), /belum benar/)
+  // key format benar (hex 64-karakter) tapi ditolak ICS -> TIDAK tersimpan
+  const badHex = '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0cc6'
+  assert.match(await sayShop(`APIKEY.${badHex}`), /belum benar/)
   assert.equal(sdb.getSetting('ics_apikey'), undefined)
 
-  // key benar (mock menerima yang berakhiran "ok") -> tersimpan + sinkron produk
-  assert.match(await sayShop('ICS_sk_baikok'), /API key tersimpan\. 1 produk tersinkron/)
-  assert.equal(sdb.getSetting('ics_apikey'), 'ICS_sk_baikok')
+  // key benar (paste langsung hex 64-karakter, mock menerima yang berakhiran "ok") -> tersimpan + sinkron produk + pesan siap sekali
+  const goodHex1 = '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok'
+  const readyMsg = await sayShop(goodHex1)
+  assert.match(readyMsg, /\*Sesi toko3 siap\.\*/)
+  assert.match(readyMsg, /Produk: 1 tersimpan \(1 online\)/)
+  assert.match(readyMsg, /Webhook: /)
+  assert.equal(sdb.getSetting('ics_apikey'), goodHex1)
+  assert.equal(sdb.getSetting('ready_notified'), '1')
   assert.equal(sdb.listProduk().length, 1)
 
-  // setelah ada key, SAL tidak lagi di-prompt
-  assert.doesNotMatch(await sayShop('SAL'), /Setup Supplier ICS/)
+  // reconnect / restart setelah siap -> runOnboarding TIDAK mengirim ulang pesan siap
+  const { runOnboarding } = await import('../src/apikey.js')
+  const pushedAgain = []
+  await runOnboarding(logger, 'toko3', (jid, text) => pushedAgain.push({ jid, text }))
+  assert.equal(pushedAgain.length, 0, 'pesan siap tidak boleh muncul ulang saat reconnect')
+
+  // update key lewat command APIKEY.<hex>
+  const goodHex2 = '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0bok'
+  assert.match(await sayShop(`APIKEY.${goodHex2}`), /API key tersimpan\. Produk: 1 tersimpan \(1 online\)/)
+  assert.equal(sdb.getSetting('ics_apikey'), goodHex2)
+
+  // setelah ada key, SAL & SYNC tidak lagi di-prompt
+  assert.doesNotMatch(await sayShop('SAL'), /API Key ICS belum diisi/)
+  assert.match(await sayShop('SYNC'), /Sync selesai/)
   sdb.close()
 })
 
 test('utilitas owner: STATUS / CMD / ENV', async () => {
+  const prevStarted = process.env.SUPERVISOR_STARTED_AT
+  process.env.SUPERVISOR_STARTED_AT = String(Date.now() - (2 * 3_600_000 + 15 * 60_000))
   const st = await say('628111', 'STATUS')
+  if (prevStarted === undefined) delete process.env.SUPERVISOR_STARTED_AT
+  else process.env.SUPERVISOR_STARTED_AT = prevStarted
   assert.match(st, /\*Status Server\*/)
-  assert.match(st, /Uptime proses:/)
+  assert.match(st, /Uptime proses: 2j 15m/)
   assert.match(st, /Node: v\d+/)
 
   const cmd = await say('628111', 'CMD')
@@ -513,22 +614,53 @@ test('utilitas owner: SESSIONS + RESTART memakai runtime', async () => {
   assert.ok(runtimeCalls.some((c) => c.id === 'toko2' && !c.stop), 'startSession dipanggil')
 })
 
-test('bootstrap QR: sesi DEFAULT_SESSION di-adopsi SESIBUAT dan QR pairing daftar ke registry', async () => {
-  // Simulasi bootstrap: baris registry dibuat saat auth_paired (admin kosong),
-  // lalu owner meng-adopsinya via SESIBUAT dengan bot number berbeda.
+test('bootstrap QR: sesi owner tampil sebagai owner di SESI/SESSIONS dan bisa di-adopsi SESIBUAT', async () => {
+  // Default bootstrap session adalah 'owner' saat env SESSIONS/DEFAULT_SESSION kosong.
+  const { isBootstrapSession, isOwnerSession, createSession, getSession } = await import('../src/registry.js')
+  const { store } = await import('../src/store.js')
+  delete process.env.SESSIONS
+  delete process.env.DEFAULT_SESSION
+  assert.ok(isBootstrapSession('owner'), 'default bootstrap session adalah owner')
+
+  // Simulasi bootstrap: baris registry dibuat saat auth_paired (sesi owner, tanpa admin toko).
   process.env.SESSIONS = 'pusat'
-  const { isBootstrapSession } = await import('../src/registry.js')
   assert.ok(isBootstrapSession('pusat'), 'pusat adalah bootstrap session')
 
-  const { createSession, getSession } = await import('../src/registry.js')
-  createSession({ id: 'pusat', label: 'Bootstrap (QR)', adminNohp: '', pairingPhone: '', status: 'on' })
+  createSession({ id: 'pusat', label: 'Owner (QR)', adminNohp: '', pairingPhone: '', waNohp: '6281230999', status: 'on' })
+  assert.ok(isOwnerSession(getSession('pusat')), 'sesi bootstrap tanpa admin adalah sesi owner')
+
+  // Di SESI & SESSIONS, sesi bootstrap tampil sebagai owner (bukan admin)
+  const sesiList = await say('628111', 'SESI')
+  assert.match(sesiList, /• pusat — owner 628111 — WA 6281230999 — on — Owner \(QR\)/)
+  const sessionsList = await say('628111', 'SESSIONS')
+  assert.match(sessionsList, /• pusat — .* — owner 628111 — WA 6281230999 — Owner \(QR\)/)
+
+  const k = new Uint8Array(32)
+  await store.session('pusat').auth.save({
+    noiseKeyPair: { pubKey: k, privKey: k },
+    registrationInfo: { registrationId: 1, identityKeyPair: { pubKey: k, privKey: k } },
+    signedPreKey: { keyId: 1, keyPair: { pubKey: k, privKey: k }, signature: new Uint8Array(64) },
+    advSecretKey: k,
+    meJid: '6281230999@s.whatsapp.net',
+  })
 
   // owner adopt: admin = owner, WA = nomor bot pusat (beda dari admin)
   await say('628111', 'SESIBUAT.pusat.628111.6281230999.Pusat')
   const row = getSession('pusat')
   assert.equal(row.admin_nohp, '628111')
   assert.equal(row.pairing_phone, '6281230999')
+  assert.ok(!isOwnerSession(row), 'setelah diadopsi jadi sesi admin, bukan lagi owner-only')
   assert.ok(runtimeCalls.some((c) => c.id === 'pusat'), 'connect dipanggil untuk sesi teradopsi')
+  // kredensial bootstrap tidak boleh terhapus saat adopsi
+  const creds = await store.session('pusat').auth.load()
+  assert.equal(creds?.meJid, '6281230999@s.whatsapp.net')
+
+  // guard: sesi utama tidak boleh dinonaktifkan atau dihapus
+  runtimeCalls.length = 0
+  assert.match(await say('628111', 'SESIOFF.pusat'), /tidak boleh dinonaktifkan/)
+  assert.match(await say('628111', 'SESIHAPUS.pusat'), /tidak boleh dihapus/)
+  assert.ok(!runtimeCalls.some((c) => c.id === 'pusat' && c.stop), 'stopSession tidak boleh dipanggil untuk sesi utama')
+  assert.ok(getSession('pusat'), 'sesi utama tetap ada di registry')
 
   delete process.env.SESSIONS
 })

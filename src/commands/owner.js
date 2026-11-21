@@ -37,11 +37,16 @@ register({
     const mem = process.memoryUsage()
     const sysFree = freemem()
     const sysTotal = totalmem()
+    const startedAt = Number(process.env.SUPERVISOR_STARTED_AT)
+    const uptimeMs =
+      Number.isFinite(startedAt) && startedAt > 0
+        ? Math.max(0, Date.now() - startedAt)
+        : process.uptime() * 1000
     await client.message.send(
       event.key.remoteJid,
       `*Status Server*\n` +
         `Host: ${hostname()} (${platform()} ${release()})\n` +
-        `Uptime proses: ${fmtDur(process.uptime() * 1000)}\n` +
+        `Uptime proses: ${fmtDur(uptimeMs)}\n` +
         `Uptime OS: ${fmtDur(osUptime() * 1000)}\n` +
         `RSS: ${formatRupiah(Math.round(mem.rss / 1024))} KB | Heap: ${formatRupiah(Math.round(mem.heapUsed / 1024))}/${formatRupiah(Math.round(mem.heapTotal / 1024))} KB\n` +
         `RAM sistem: ${formatRupiah(Math.round((sysTotal - sysFree) / 1048576))}/${formatRupiah(Math.round(sysTotal / 1048576))} MB\n` +
@@ -54,7 +59,7 @@ register({
 register({
   name: 'sessions',
   description: 'Owner: daftar session + status live',
-  async handler({ client, event, isSuper }) {
+  async handler({ client, event, isSuper, owners }) {
     if (!isSuper) {
       await client.message.send(event.key.remoteJid, OWNER_ONLY)
       return
@@ -68,7 +73,11 @@ register({
     }
     const lines = rows.map((s) => {
       const state = live.includes(s.id) ? '🟢 live' : s.status === 'on' ? '🟡 on (belum live)' : '⚪ off'
-      return `• ${s.id} — ${state} — admin ${s.admin_nohp || '-'} — WA ${s.pairing_phone || '-'}${s.label ? ` — ${s.label}` : ''}`
+      const role = registry.isOwnerSession(s)
+        ? `owner ${owners.join(',') || '-'}`
+        : `admin ${s.admin_nohp || '-'}`
+      const wa = s.wa_nohp || s.pairing_phone || '-'
+      return `• ${s.id} — ${state} — ${role} — WA ${wa}${s.label ? ` — ${s.label}` : ''}`
     })
     await client.message.send(event.key.remoteJid, `*Sessions:*\n${lines.join('\n')}`)
   },
@@ -78,7 +87,7 @@ register({
 register({
   name: 'restart',
   description: 'Owner: RESTART.ID — connect ulang session',
-  async handler({ client, event, args, isSuper }) {
+  async handler({ client, event, args, isSuper, log }) {
     if (!isSuper) {
       await client.message.send(event.key.remoteJid, OWNER_ONLY)
       return
@@ -99,7 +108,8 @@ register({
     }
     await rt.stopSession(id)
     await rt.startSession(id, {
-      notify: (msg) => client.message.send(event.key.remoteJid, msg),
+      notify: (msg) =>
+        client.message.send(event.key.remoteJid, msg).catch((err) => log?.warn({ err, id }, 'restart notify failed')),
     })
     await client.message.send(event.key.remoteJid, `Session ${id} di-restart. Pairing kode dikirim kalau perlu.`)
   },
