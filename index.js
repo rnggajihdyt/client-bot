@@ -30,9 +30,9 @@ const fromEnv = (process.env.SESSIONS ?? config.sessionId)
   .filter(Boolean)
 const sessions = registered.length ? registered : [...new Set(fromEnv)]
 
-// Pairing code for startup sessions goes to the console only.
+// Startup sessions have no owner chat yet: pairing output goes to the console.
 for (const sessionId of sessions) {
-  await runtime.startSession(sessionId)
+  await runtime.startSession(sessionId, { notify: runtime.consoleNotify(sessionId) })
 }
 
 // Supplier webhook (POST /webhook/<token>/<session>) + cron safety net that

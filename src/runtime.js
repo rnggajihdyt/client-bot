@@ -50,7 +50,7 @@ export async function wipeSessionStore(sessionId) {
 export function createRuntime(logger) {
   const clients = new Map()
   const handles = new Map() // sessionId -> handler bundle (owns its DB handle)
-  const api = { startSession, stopSession, stopAll, clients }
+  const api = { startSession, stopSession, stopAll, clients, consoleNotify }
 
   // Watchdog: a client that never reaches a stable connection is rebuilt from
   // scratch (disconnect + fresh WaClient). Real state comes from the
@@ -137,7 +137,8 @@ export function createRuntime(logger) {
     }
   }
 
-  // Always link-code: request the 8-char code as soon as the server is ready.
+  // Phone known -> link-code; no phone -> QR in the terminal. The QR path
+  // requests nothing, so it can render on every refresh and wait for a scan.
   function handlePairing(client, sessionId, notify) {
     const phone = () => getSession(sessionId)?.pairing_phone || config.pairingPhone
 
@@ -171,8 +172,13 @@ export function createRuntime(logger) {
 
     client.on('auth_pairing_code', ({ code }) => {
       const p = phone()
-      logger.info({ sessionId }, `Enter on phone ${p}: ${formatCode(code)}`)
-      void notify?.(`*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`)
+      // Pairing code at startup goes to the console only: the owner chat does
+      // not exist yet, so `notify` is absent. Later sessions push it to chat.
+      logger.info({ sessionId }, `Pairing ${sessionId} nomor ${p}: ${formatCode(code)}`)
+      if (!notify) return
+      void notify(
+        `*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
+      )
     })
 
     // Re-arm: forceManual means the pending code died with its connection and
@@ -196,6 +202,12 @@ export function createRuntime(logger) {
     })
   }
 
+  // Startup sessions have no owner chat to notify into, so anything the pairing
+  // flow would send is printed to the log instead of silently dropped.
+  function consoleNotify(sessionId) {
+    return (text) => logger.info({ sessionId }, String(text).replace(/\n+/g, ' | '))
+  }
+
   async function startSession(sessionId, { notify } = {}) {
     if (clients.has(sessionId)) return clients.get(sessionId)
 
@@ -210,7 +222,7 @@ export function createRuntime(logger) {
       logger
     )
     clients.set(sessionId, client)
-    handlePairing(client, sessionId, notify)
+    handlePairing(client, sessionId, notify ?? consoleNotify(sessionId))
     connectWithRetry(client, sessionId, notify)
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
     setSessionStatus(sessionId, 'on')
@@ -244,7 +256,7 @@ export function createRuntime(logger) {
     handles.get(sessionId)?.close()
     handles.delete(sessionId)
     if (client) await client.disconnect().catch(() => {})
-    await startSession(sessionId)
+    await startSession(sessionId, { notify: consoleNotify(sessionId) })
   }
 
   async function stopSession(sessionId) {

@@ -100,6 +100,8 @@ nssm start WABot
 
 First run: the QR or pairing code prints to the terminal. Scan from **WhatsApp → Linked devices**. Subsequent runs reuse stored credentials — no re-pair.
 
+> Sesi pusat pertama **tidak bisa** dibuat lewat `SESIBUAT` (nomor bot wajib diisi, jadi selalu pairing code). Cara bootstrap-nya: hapus registry + kredensial session itu, lalu set `DEFAULT_SESSION` ke id-nya dan jalankan bot — tanpa `pairing_phone` runtime menampilkan QR di terminal.
+
 ## Custom prefix at runtime
 
 Default prefix comes from `COMMAND_PREFIX`. To change it per session at runtime, an owner sends:
@@ -185,8 +187,8 @@ Setup per session (dari nomor admin session):
 | `ENV` | `ENV` | Ringkasan config aktif (nilai sensitif dimasking) |
 | `CMD` | `CMD` | Daftar semua command terdaftar |
 
-### Pairing kode
-Setiap session baru memakai **kode pairing** (bukan QR): begitu `SESIBUAT` dijalankan, runtime langsung connect dan zapo memicu `auth_pairing_required` → bot minta kode 8 karakter ke WhatsApp lalu mengirimkannya balik ke chat super admin:
+### Pairing kode & QR
+Session dengan nomor WA terdaftar memakai **kode pairing**: begitu `SESIBUAT` dijalankan, runtime langsung connect dan minta kode 8 karakter ke WhatsApp lalu mengirimkannya balik ke chat super admin:
 
 ```
 *Pairing toko2*
@@ -198,7 +200,8 @@ Buka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepo
 
 - Nomor admin (token ke-2) dan nomor bot (token ke-3) **wajib** dan **tidak boleh sama** (`SESIBUAT.toko2.628555.628111`).
 - Kode juga dicetak di console log (`Enter on phone ...`).
-- QR di terminal hanya muncul kalau nomor WA tidak diketahui (fallback).
+- QR di terminal dipakai kalau nomor WA tidak diketahui (fallback) — mis. session bootstrap pertama dari `DEFAULT_SESSION` sebelum ada session di registry.
+- Session startup (tanpa `notify`) mencetak kode pairing / hasil pairing ke log, bukan dibuang.
 - Daftar session disimpan di `.data/sessions/_registry.sqlite`; semua session di registry otomatis di-connect saat start (kredensial tersimpan, jadi tidak pairing ulang).
 
 ### Onboarding supplier
