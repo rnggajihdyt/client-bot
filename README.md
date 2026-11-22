@@ -244,12 +244,12 @@ mitra: BELI.PULSA10.0812xxxx
   │
   ├─ 1. Saldo dipotong, trx disimpan status='proses',
   │     snapshot komisi tiap uplink disimpan di komisi_dibagikan
-  ├─ 2. POST {ICS_BASE_URL}/trx  (product_code, dest_number, ref_id_custom = idTrx)
+  ├─ 2. POST {ICS_BASE_URL}/api/reseller/trx  (product_code, dest_number, ref_id_custom = idTrx)
   │     ditolak langsung → status 'gagal', refund penuh, mitra diberi tahu
   │
   ├─ 3a. Webhook ICS → POST {WEBHOOK_BASE_URL}/webhook/<token>/<sessionId>
   │      { refid, status, kode_produk, nomor_tujuan, supplier_trxid, note }
-  └─ 3b. Cron 60 dtk: pending > 60 dtk dicek GET /reseller/trx/:refid  (jaring pengaman)
+  └─ 3b. Cron 60 dtk: pending > 60 dtk dicek GET /api/reseller/trx/:refid  (jaring pengaman)
          │
          ├─ success → status 'sukses', SN disimpan, komisi dibayar, mitra dinotifikasi
          └─ failed  → status 'gagal', harga_efektif direfund penuh

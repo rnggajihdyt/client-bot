@@ -514,9 +514,11 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   db.raw.prepare(`UPDATE agen SET saldo = 200000 WHERE nohp = '628222'`).run()
 
   // 1) Beli singkat tunggal tanpa BELI dan tanpa PIN: KODE.TUJUAN
+  icsOrders.length = 0
   const r1 = await say('628222', 'xda13.08777777')
   assert.match(r1, /Transaksi diproses/)
   assert.match(r1, /Tujuan: 08777777/)
+  assert.match(icsOrders[0]?.url ?? '', /\/api\/reseller\/trx$/)
   const id1 = r1.match(/ID: (T\d+)/)[1]
   finalize(db, id1, { status: 'sukses', sn: 'SN-PERTAMA' })
 

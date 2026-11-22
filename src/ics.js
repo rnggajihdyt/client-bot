@@ -1,5 +1,5 @@
 // Thin client for the ICS Store reseller API (supplier side of every BELI).
-// Docs: GET /api/reseller/products, POST /trx, GET /reseller/trx/:refid.
+// Endpoints: GET /api/reseller/products, POST /api/reseller/trx, GET /api/reseller/trx/:refid.
 const TIMEOUT_MS = 20_000
 
 function join(base, path) {
@@ -35,10 +35,10 @@ async function call(baseUrl, apiKey, path, { method = 'GET', body } = {}) {
 export const ics = {
   products: (baseUrl, apiKey) => call(baseUrl, apiKey, '/api/reseller/products'),
   order: (baseUrl, apiKey, { productCode, dest, refId }) =>
-    call(baseUrl, apiKey, '/trx', {
+    call(baseUrl, apiKey, '/api/reseller/trx', {
       method: 'POST',
       body: { product_code: productCode, dest_number: dest, ref_id_custom: refId },
     }),
   status: (baseUrl, apiKey, refId) =>
-    call(baseUrl, apiKey, `/reseller/trx/${encodeURIComponent(refId)}`),
+    call(baseUrl, apiKey, `/api/reseller/trx/${encodeURIComponent(refId)}`),
 }
