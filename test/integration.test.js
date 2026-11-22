@@ -612,8 +612,8 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // TDEP kedua kali ditolak
   assert.match(await say('628111', `TDEP.${dep2.id_deposit}.1234`), /sudah sukses/)
 
-  // TPAY hapus rekening
-  assert.match(await say('628111', 'TPAY.HAPUS.BCA'), /dihapus/)
+  // HPAY hapus rekening
+  assert.match(await say('628111', 'HPAY.BCA'), /dihapus/)
   assert.equal(db.depositSettings().channels.length, 0)
 })
 

@@ -178,10 +178,10 @@ register({
   },
 })
 
-// ---- TPAY: admin atur channel pembayaran ----
+// ---- TPAY (tambah payment) / HPAY (hapus payment) / TPAY.JAM ----
 register({
   name: 'tpay',
-  description: 'Admin: TPAY.BANK.NO.A/N | TPAY.HAPUS.BANK | TPAY.JAM.08.00-23.00',
+  description: 'Admin: TPAY.BANK.NO.A/N — tambah rekening deposit | TPAY.JAM.08.00-23.00 — jam tiket',
   async handler({ client, event, args, isAdmin, db }) {
     const jid = event.key.remoteJid
     if (!isAdmin) {
@@ -192,21 +192,12 @@ register({
     if (!sub) {
       await client.message.send(
         jid,
-        'Gunakan format:\nTPAY.BANK.NO.A/N — tambah rekening\nTPAY.HAPUS.BANK — hapus rekening\nTPAY.JAM.08.00-23.00 — jam tiket'
+        'Gunakan format:\nTPAY.BANK.NO.A/N — tambah rekening\nTPAY.JAM.08.00-23.00 — jam tiket'
       )
       return
     }
 
     const key = sub.toLowerCase()
-    if (key === 'hapus') {
-      const bank = (rest[0] ?? '').toLowerCase()
-      const { channels } = db.depositSettings()
-      const next = channels.filter((c) => c.bank.toLowerCase() !== bank)
-      db.setSetting('deposit_channels', next.map((c) => `${c.bank}|${c.no}|${c.an}`).join(','))
-      await client.message.send(jid, next.length === channels.length ? `Rekening ${rest[0]} tidak ada` : `Rekening ${rest[0]} dihapus`)
-      return
-    }
-
     if (key === 'jam') {
       const raw = rest.join('.').replace(/\s/g, '')
       const m = raw.match(/^(\d{1,2}[.:]\d{2})-(\d{1,2}[.:]\d{2})$/)
@@ -233,5 +224,31 @@ register({
     next.push({ bank: sub, no: noDigits, an })
     db.setSetting('deposit_channels', next.map((c) => `${c.bank}|${c.no}|${c.an}`).join(','))
     await client.message.send(jid, `Rekening ${sub.toUpperCase()} ${noDigits}${an ? ` A.N ${an}` : ''} disimpan.\nTotal channel: ${next.length}`)
+  },
+})
+
+// ---- HPAY: hapus rekening deposit ----
+register({
+  name: 'hpay',
+  description: 'Admin: HPAY.BANK — hapus rekening deposit',
+  async handler({ client, event, args, isAdmin, db }) {
+    const jid = event.key.remoteJid
+    if (!isAdmin) {
+      await client.message.send(jid, ADMIN_ONLY)
+      return
+    }
+    const bank = (args[0] ?? '').toLowerCase()
+    if (!bank) {
+      await client.message.send(jid, 'Gunakan format: HPAY.BANK')
+      return
+    }
+    const { channels } = db.depositSettings()
+    const next = channels.filter((c) => c.bank.toLowerCase() !== bank)
+    if (next.length === channels.length) {
+      await client.message.send(jid, `Rekening ${args[0]} tidak ada`)
+      return
+    }
+    db.setSetting('deposit_channels', next.map((c) => `${c.bank}|${c.no}|${c.an}`).join(','))
+    await client.message.send(jid, `Rekening ${args[0]} dihapus`)
   },
 })

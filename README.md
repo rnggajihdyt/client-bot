@@ -216,7 +216,8 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `KSAL` | `KSAL.NOHP.NOMINAL.PIN` | Kurangi saldo mitra berdasarkan nomor HP (cek saldo cukup, tidak boleh minus) + catat mutasi & kirim notifikasi |
 | `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
-| `TPAY` | `TPAY.BANK.NO.A/N` | Tambah/ubah rekening deposit (beberapa bank = baris berbeda di tiket). `TPAY.HAPUS.BANK` hapus, `TPAY.JAM.08.00-23.00` atur jam tiket |
+| `TPAY` | `TPAY.BANK.NO.A/N` | Tambah/ubah rekening deposit (banyak bank = baris berbeda di tiket). `TPAY.JAM.08.00-23.00` atur jam tiket |
+| `HPAY` | `HPAY.BANK` | Hapus rekening deposit |
 | `TDEP` | `TDEP.IDDEPOSIT.PIN` | Konfirmasi tiket deposit lunas → saldo mitra bertambah + notifikasi |
 
 ### Super admin (OWNERS)
@@ -259,7 +260,7 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, baris terminal (`sukses`/`gagal`/`batal`) mengabaikan webhook telat.
-- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (bisa banyak bank), jam tiket via `TPAY.JAM.08.00-23.00`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra.
+- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (tambah, bisa banyak bank) dan dihapus via `HPAY.BANK`; jam tiket via `TPAY.JAM.08.00-23.00`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra.
 - **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` hanya untuk tiket deposit, bukan order.
 - **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
@@ -355,7 +356,7 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/deposit.js      TIKET/TPAY/TDEP/BTL — tiket deposit + kode unik + konfirmasi admin
+src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/BTL — tiket deposit + kode unik + konfirmasi admin
 src/commands/supplier.js    BELI/CEK/REK/APIKEY
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
