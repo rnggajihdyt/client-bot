@@ -12,6 +12,7 @@ import {
 } from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
 import { ensureFreshCatalog } from '../catalog.js'
+import { normalizeNohp } from '../utils.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -174,6 +175,26 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
         tujuan: item.tujuan,
         status: 'gagal',
         detail: 'Produk sedang gangguan/tidak tersedia',
+        saldo: freshMitra.saldo,
+      }),
+    }
+  }
+  // Same destination still in flight = a retry/double tap, not a new sale.
+  // Blocking it here stops the second POST (and its saldo deduction) before it
+  // ever reaches the supplier.
+  const dest = normalizeNohp(item.tujuan)
+  const inFlight = db
+    .pendingTransaksiOf(freshMitra.id, 200)
+    .find((t) => normalizeNohp(t.tujuan) === dest)
+  if (inFlight) {
+    return {
+      ok: false,
+      line: formatOrderStatus({
+        nama,
+        kode,
+        tujuan: item.tujuan,
+        status: 'gagal',
+        detail: `Tujuan masih diproses (${inFlight.id_trx})`,
         saldo: freshMitra.saldo,
       }),
     }

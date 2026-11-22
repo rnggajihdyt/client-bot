@@ -256,6 +256,7 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, `batal` (via `BTL`) mengabaikan webhook telat.
+- **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
 - Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (`MKP` per produk jika ada, else general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
 - Buyer dinotifikasi via nomor tersimpan di `agen`; client offline hanya di-log — state tetap benar, `SAL`/`CEK` menunjukkan kebenarannya.

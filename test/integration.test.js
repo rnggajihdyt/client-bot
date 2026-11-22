@@ -482,6 +482,24 @@ test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', as
   finalize(db, idTrx, { status: 'sukses' })
 })
 
+test('tujuan masih proses: order kedua ke nomor sama ditolak, tidak kirim ke supplier', async () => {
+  db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
+  const first = await say('628222', 'BELI.PULSA10.0813001')
+  assert.match(first, /DIPROSES/)
+  const saldoSetelahPertama = db.findAgenByNohp('628222').saldo
+
+  const second = await say('628222', 'BELI.PULSA10.0813001')
+  assert.match(second, /Tujuan masih diproses/)
+  assert.equal(db.findAgenByNohp('628222').saldo, saldoSetelahPertama, 'saldo tidak terpotong lagi')
+
+  const other = await say('628222', 'BELI.PULSA10.0813002')
+  assert.match(other, /DIPROSES/, 'nomor tujuan lain tetap bisa')
+
+  finalize(db, first.match(/ID: (T\d+)/)[1], { status: 'gagal' })
+  finalize(db, other.match(/ID: (T\d+)/)[1], { status: 'gagal' })
+  db.raw.prepare(`DELETE FROM transaksi WHERE tujuan IN ('0813001','0813002')`).run()
+})
+
 test('LAP admin: seluruh session (Omzet = Modal + Komisi Jaringan + Profit)', async () => {
   const r = await say('628111', 'LAP.BULAN')
   assert.match(r, /\*Laporan Sesi\*/)
@@ -640,9 +658,9 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
           message: 'Saldo operasional tidak cukup. Saldo Anda: Rp 0, Dibutuhkan: Rp 100',
         }),
     })
-    await say('628222', 'xda13.08777777')
+    await say('628222', 'xda13.08555999')
     const mitraMsg = sent.find((m) => m.jid === '628222@s.whatsapp.net')?.text ?? ''
-    assert.match(mitraMsg, /^XL Data 13GB XDA13\.08777777 GAGAL\. Sistem sedang gangguan sementara.*Sal 1\.911\.411 @\d\d:\d\d$/)
+    assert.match(mitraMsg, /^XL Data 13GB XDA13\.08555999 GAGAL\. Sistem sedang gangguan sementara.*Sal 1\.911\.411 @\d\d:\d\d$/)
     assert.doesNotMatch(mitraMsg, /ICS/i)
     assert.doesNotMatch(mitraMsg, /Saldo operasional|Saldo Anda|Dibutuhkan|Rp 0|Rp 100/i)
     // saldo mitra tetap penuh (refunded)
@@ -675,7 +693,7 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
       status: 400,
       text: async () => JSON.stringify({ success: false, message: 'Nomor tujuan tidak valid di ICS Store' }),
     })
-    const errMitra = await say('628222', 'xda13.08777777')
+    const errMitra = await say('628222', 'xda13.08555997')
     assert.match(errMitra, /Nomor tujuan tidak valid/)
     assert.doesNotMatch(errMitra, /ICS/i)
   } finally {
