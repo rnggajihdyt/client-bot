@@ -393,6 +393,42 @@ test('LPRDK list produk', async () => {
   assert.match(r, /available/)
 })
 
+test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async () => {
+  const target = db.findAgenByNohp('628222')
+  const saldoAwal = target.saldo
+
+  // mitra biasa ditolak
+  assert.equal(await say('628222', 'TSAL.628222.10000.1234'), 'Khusus admin')
+  // PIN salah & nominal invalid ditolak
+  assert.equal(await say('628111', 'TSAL.628222.10000.9999'), 'PIN salah')
+  assert.match(await say('628111', 'TSAL.628222.0.1234'), /Nominal harus bilangan bulat > 0/)
+  assert.match(await say('628111', 'TSAL.628222.-5000.1234'), /Nominal harus bilangan bulat > 0/)
+  assert.match(await say('628111', 'TSAL.628999999.10000.1234'), /tidak ditemukan/)
+
+  // admin isi saldo memakai format 08... (normalisasi ke 628...)
+  await say('628111', 'TSAL.08222.25000.1234')
+  assert.equal(db.findAgenById(target.id).saldo, saldoAwal + 25000)
+  // admin dapat konfirmasi & user tujuan dapat notifikasi
+  assert.ok(
+    sent.some((m) => m.jid === '628111@s.whatsapp.net' && /ditambah 25\.000/.test(m.text)),
+    'konfirmasi ke admin'
+  )
+  assert.ok(
+    sent.some((m) => m.jid === '628222@s.whatsapp.net' && /Saldo Anda telah ditambah 25\.000/.test(m.text)),
+    'notifikasi ke user tujuan'
+  )
+  // tercatat di mutasi (REK)
+  const rek = await say('628222', 'REK')
+  assert.match(rek, /kredit 25\.000/)
+  assert.match(rek, /Tambah saldo oleh OWN01/)
+
+  // admin isi saldo sendiri: saldo bertambah tanpa notifikasi ganda
+  const adminAwal = db.findAgenByNohp('628111').saldo
+  await say('628111', 'TSAL.628111.10000.1234')
+  assert.equal(db.findAgenByNohp('628111').saldo, adminAwal + 10000)
+  assert.equal(sent.length, 1, 'isi saldo sendiri tidak kirim pesan ganda')
+})
+
 test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   assert.match(await say('628111', 'MKP.2000'), /Markup general/)

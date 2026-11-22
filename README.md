@@ -211,6 +211,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | Perintah | Format | Keterangan |
 |---|---|---|
 | `APIKEY` | `APIKEY.KEY` | Simpan API key ICS (validasi dulu), balas URL webhook |
+| `TSAL` | `TSAL.NOHP.NOMINAL.PIN` | Tambah saldo mitra berdasarkan nomor HP (termasuk nomor paralel) + catat mutasi & kirim notifikasi |
 | `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
 
