@@ -177,7 +177,7 @@ Begitu sesi pertama kali connect — sesi baru maupun resume — bot mengirim pr
 1. Selama belum ada key valid: setiap pesan admin dijawab prompt API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang dilayani; perintah uang terkunci.
 2. Admin kirim `APIKEY.<KEY>` (atau paste key hex 64 karakter langsung). Key **diuji dulu** ke `GET /api/reseller/products` — kalau ICS menolak, key tidak disimpan dan prompt diulang.
 3. Key valid → tersimpan di DB sesi (`settings.ics_apikey`) + produk langsung tersinkron; bot mengirim **URL webhook** sesi.
-4. Salin URL itu ke dashboard ICS → Webhook. `SYNC` kapan saja untuk tarik ulang produk.
+4. Salin URL itu ke dashboard ICS → Webhook. Katalog produk selanjutnya otomatis tersinkron lewat cache TTL (`CH`/`BELI`) dan cron berkala (`SYNC_INTERVAL_MIN`).
 
 > `WEBHOOK_BASE_URL` wajib bisa diakses publik oleh ICS (port → `WEBHOOK_PORT`). Token webhook acak 24 byte per sesi, stabil, disimpan di DB sesi.
 
@@ -211,7 +211,6 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | Perintah | Format | Keterangan |
 |---|---|---|
 | `APIKEY` | `APIKEY.KEY` | Simpan API key ICS (validasi dulu), balas URL webhook |
-| `SYNC` | `SYNC` | Tarik ulang katalog dari ICS |
 | `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
 
@@ -234,7 +233,7 @@ Perintah owner bekerja dari **semua** sesi yang hidup — tidak butuh baris agen
 
 ### Menu
 
-`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` stub (`Fitur belum tersedia`). `PRDK` dihapus — katalog hanya dari `SYNC`.
+`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` stub (`Fitur belum tersedia`). `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
 
 ## Alur transaksi (supplier ICS, async dua fase)
 
@@ -343,7 +342,8 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY/SYNC
+src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY
+src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/commands/prefix.js      setprefix (owner only)
 src/report.js               parseRange (HARI/BULAN/tanggal) untuk LAP/LAPTRX

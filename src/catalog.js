@@ -109,10 +109,19 @@ export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = (
   }
 
   try {
+    const t0 = Date.now()
     const stats = await syncCatalog(db, { apiKey: cfg.apiKey, now })
+    const durationMs = Date.now() - t0
+    logger?.info?.(
+      `[cache-sync] ${sessionId ?? db.path}: ${stats.total} produk (${stats.available} online, ${stats.removed} removed) dalam ${durationMs}ms`,
+      { sessionId, total: stats.total, available: stats.available, removed: stats.removed, durationMs }
+    )
     return { synced: true, fresh: true, ...stats }
   } catch (err) {
-    logger?.warn?.({ sessionId, err: err?.message }, 'catalog refresh gagal, pakai cache DB')
+    logger?.warn?.(`[cache-sync] ${sessionId ?? db.path} gagal, pakai cache DB: ${err?.message}`, {
+      sessionId,
+      err: err?.message,
+    })
     return { synced: false, fresh: false, error: err }
   }
 }
@@ -129,11 +138,16 @@ export async function syncAllSessions(logger, sessionIds, { staggerMs = 1_500, s
     try {
       const key = db.getSetting('ics_apikey')
       if (!key) continue
+      const t0 = Date.now()
       const stats = await syncCatalog(db, { apiKey: key })
-      logger?.info?.({ sessionId: id, total: stats.total, available: stats.available, removed: stats.removed }, 'cron sync produk selesai')
+      const durationMs = Date.now() - t0
+      logger?.info?.(
+        `[cron-sync] ${id}: ${stats.total} produk (${stats.available} online, ${stats.removed} removed) dalam ${durationMs}ms`,
+        { sessionId: id, total: stats.total, available: stats.available, removed: stats.removed, durationMs }
+      )
       results.push({ sessionId: id, ...stats })
     } catch (err) {
-      logger?.warn?.({ sessionId: id, err: err?.message }, 'cron sync produk gagal')
+      logger?.warn?.(`[cron-sync] ${id} gagal: ${err?.message}`, { sessionId: id, err: err?.message })
       results.push({ sessionId: id, error: err?.message })
     } finally {
       db.close()
@@ -147,17 +161,24 @@ export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, stagge
   const everyMs = resolveSyncIntervalMs(intervalMs)
   if (everyMs <= 0) return { stop: () => {} }
 
+  const intervalMin = Math.round(everyMs / 60_000)
+  const ttlSec = Math.round(resolveCatalogTtlMs() / 1000)
   let running = false
   const timer = setInterval(async () => {
     if (running) return
     running = true
     try {
-      await syncAllSessions(logger, getSessionIds(), { staggerMs })
+      const ids = getSessionIds()
+      logger?.info?.(`[cron-sync] mulai cek ${ids.length} sesi`, { sessions: ids.length })
+      await syncAllSessions(logger, ids, { staggerMs })
     } finally {
       running = false
     }
   }, everyMs)
   timer.unref?.()
-  logger?.info?.({ intervalMin: Math.round(everyMs / 60_000) }, 'catalog sync cron started')
+  logger?.info?.(`[cron-sync] aktif (interval ${intervalMin} menit, cache TTL ${ttlSec} dtk)`, {
+    intervalMin,
+    ttlSec,
+  })
   return { stop: () => clearInterval(timer) }
 }

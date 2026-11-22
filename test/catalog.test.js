@@ -137,11 +137,20 @@ test('syncAllSessions (cron) melewati sesi tanpa apikey dan sync sesi ber-apikey
   failNext = false
   mockProducts = [{ code: 'CRON1', name: 'Cron Produk', price: 3000, type: 'xda', status: 'available', stock: 2 }]
 
-  const res = await syncAllSessions(null, ['owner', 'toko_cron', 'nonexistent'], { staggerMs: 0 })
+  const logs = []
+  const mockLogger = {
+    info: (msg, meta) => logs.push({ level: 'info', msg, meta }),
+    warn: (msg, meta) => logs.push({ level: 'warn', msg, meta }),
+  }
+
+  const res = await syncAllSessions(mockLogger, ['owner', 'toko_cron', 'nonexistent'], { staggerMs: 0 })
   assert.equal(fetchCalls, 1)
   assert.equal(res.length, 1)
   assert.equal(res[0].sessionId, 'toko_cron')
   assert.equal(res[0].total, 1)
+  assert.equal(logs.length, 1)
+  assert.match(logs[0].msg, /\[cron-sync\] toko_cron: 1 produk \(1 online, 0 removed\)/)
+  assert.equal(logs[0].meta.sessionId, 'toko_cron')
 })
 
 after(() => {

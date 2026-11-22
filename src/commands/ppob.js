@@ -55,7 +55,6 @@ for (const [name, text] of Object.entries(FORMATS)) {
 const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Laporan Sesi : LAP[HARI|BULAN|YYYY-MM-DD]
 • API Key Supplier : APIKEY.KEY
-• Sync Produk : SYNC
 • List Produk : LPRDK
 • Markup General : MKP.NOMINAL
 • Markup per Produk : MKP.KODE.NOMINAL`

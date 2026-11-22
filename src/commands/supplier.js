@@ -5,7 +5,7 @@ import { ics } from '../ics.js'
 import { webhookUrl, icsConfig } from '../webhook.js'
 import { finalize, snapshotCommission } from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
-import { ensureFreshCatalog, syncCatalog } from '../catalog.js'
+import { ensureFreshCatalog } from '../catalog.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -44,25 +44,6 @@ register({
     } catch (err) {
       log?.warn({ err: err?.message }, 'apikey ditolak ICS')
       await client.message.send(event.key.remoteJid, `API key ditolak: ${err.message}`)
-    }
-  },
-})
-
-// ---- SYNC ----
-register({
-  name: 'sync',
-  description: 'Admin: tarik ulang produk dari supplier ICS',
-  async handler({ client, event, isAdmin, db, log }) {
-    if (!isAdmin) {
-      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
-      return
-    }
-    try {
-      const r = await syncCatalog(db, { apiKey: icsConfig(db).apiKey })
-      await client.message.send(event.key.remoteJid, `Sync selesai. ${r.total} produk diterima, ${r.available} tersedia.`)
-    } catch (err) {
-      log?.error({ err: err?.message }, 'sync produk gagal')
-      await client.message.send(event.key.remoteJid, `Gagal sync produk: ${err.message}`)
     }
   },
 })

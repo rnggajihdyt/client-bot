@@ -362,16 +362,12 @@ test('kirim gagal (nack 401) tidak menjatuhkan handler', async () => {
 
 // ---- multi-session: admin role, per-product markup, LAP, super admin ----
 
-test('PRDK dihapus: SYNC menggantikan', async () => {
+test('PRDK & SYNC dihapus: katalog disinkron otomatis lewat cron + cache TTL', async () => {
   const before = db.listProduk().length
   assert.match(await say('628111', 'PRDK.X.X.100'), /\*Super admin\*/) // tak dikenal: menu owner
+  assert.match(await say('628111', 'SYNC'), /\*Super admin\*/) // SYNC dihapus
+  assert.equal(await say('628222', 'SYNC'), undefined) // mitra: teks tak dikenal diabaikan
   assert.equal(db.listProduk().length, before)
-  const r = await say('628111', 'SYNC')
-  assert.match(r, /Sync selesai\. 1 produk diterima, 1 tersedia\./)
-})
-
-test('SYNC ditolak untuk mitra', async () => {
-  assert.equal(await say('628222', 'SYNC'), 'Khusus admin')
 })
 
 test('MKP per produk menimpa general', async () => {
@@ -592,9 +588,9 @@ test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar
   assert.match(await sayShop(`APIKEY.${goodHex2}`), /API key tersimpan\. Produk: 1 tersimpan \(1 online\)/)
   assert.equal(sdb.getSetting('ics_apikey'), goodHex2)
 
-  // setelah ada key, SAL & SYNC tidak lagi di-prompt
+  // setelah ada key, SAL & LPRDK tidak lagi di-prompt
   assert.doesNotMatch(await sayShop('SAL'), /API Key ICS belum diisi/)
-  assert.match(await sayShop('SYNC'), /Sync selesai/)
+  assert.match(await sayShop('LPRDK'), /PULSA10/)
   sdb.close()
 })
 
