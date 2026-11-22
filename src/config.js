@@ -17,8 +17,8 @@ export const config = {
   ownerPin: process.env.OWNER_PIN ?? '1234',
   // Human-like pacing: 'off' | 'fast' | 'normal' (auto 'off' under node --test)
   humanMode: process.env.HUMAN_MODE ?? '',
-  // Unknown sender handling: 'ignore' (silent) | 'once' (1x/24h) | 'always'
-  unknownSenderMode: (process.env.UNKNOWN_SENDER_MODE ?? 'ignore').toLowerCase(),
+  // Unknown sender handling (1:1 chats): 'always' | 'once' (1x/24h) | 'ignore'
+  unknownSenderMode: (process.env.UNKNOWN_SENDER_MODE ?? 'always').toLowerCase(),
   // Ignore group chats (@g.us) silently by default to reduce spam/ban risk.
   ignoreGroups: process.env.IGNORE_GROUPS !== 'false',
   // Product catalog cache TTL in seconds (on-demand refresh for CH/BELI)

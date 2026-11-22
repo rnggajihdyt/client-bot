@@ -118,7 +118,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
     const isSuper = owners.some((o) => numbers.includes(o))
     const isAdmin = Boolean(mitra && mitra.senior_id == null)
     if (!mitra && !isSuper) {
-      const mode = String(process.env.UNKNOWN_SENDER_MODE ?? config.unknownSenderMode ?? 'ignore').toLowerCase()
+      const mode = String(process.env.UNKNOWN_SENDER_MODE ?? config.unknownSenderMode ?? 'always').toLowerCase()
       if (mode === 'ignore') return
       if (mode === 'once') {
         const key = numbers[0] ?? event.key.remoteJid

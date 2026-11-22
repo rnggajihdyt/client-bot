@@ -101,13 +101,16 @@ async function say(nohp, text, extra = {}) {
   return last()
 }
 
-test('nomor asing & pesan grup diabaikan diam-diam (default ignore), mode once/always tetap bekerja', async () => {
-  // Default UNKNOWN_SENDER_MODE=ignore: tidak membalas nomor asing
-  assert.equal(await say('629999', 'SAL'), undefined)
-  assert.equal(sent.length, 0)
+test('nomor asing chat pribadi dibalas ditolak, pesan grup (@g.us) diabaikan diam-diam', async () => {
+  // Default UNKNOWN_SENDER_MODE=always: chat pribadi non-mitra dibalas "Anda bukan mitra kami"
+  assert.equal(await say('629999', 'SAL'), 'Anda bukan mitra kami')
 
-  // Default IGNORE_GROUPS=true: pesan grup (@g.us) diabaikan diam-diam meski dari owner
+  // Default IGNORE_GROUPS=true: pesan grup (@g.us) diabaikan diam-diam (baik non-mitra maupun owner)
   sent.length = 0
+  await handlers.message({
+    key: { remoteJid: '12036300000@g.us', participant: '629999@s.whatsapp.net', fromMe: false },
+    message: { conversation: 'SAL' },
+  })
   await handlers.message({
     key: { remoteJid: '12036300000@g.us', participant: '628111@s.whatsapp.net', fromMe: false },
     message: { conversation: 'SAL' },
@@ -119,9 +122,9 @@ test('nomor asing & pesan grup diabaikan diam-diam (default ignore), mode once/a
   assert.equal(await say('629998', 'SAL'), 'Anda bukan mitra kami')
   assert.equal(await say('629998', 'SAL'), undefined)
 
-  // Mode always: selalu balas
-  process.env.UNKNOWN_SENDER_MODE = 'always'
-  assert.equal(await say('629997', 'SAL'), 'Anda bukan mitra kami')
+  // Mode ignore: abaikan diam-diam
+  process.env.UNKNOWN_SENDER_MODE = 'ignore'
+  assert.equal(await say('629997', 'SAL'), undefined)
   delete process.env.UNKNOWN_SENDER_MODE
 })
 
@@ -553,9 +556,9 @@ test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
   assert.match(lap, /KUOTA/)
 })
 
-test('super admin nomor asing tetap diabaikan', async () => {
+test('super admin nomor asing tetap ditolak', async () => {
   const r = await say('628999', 'SESI')
-  assert.equal(r, undefined)
+  assert.equal(r, 'Anda bukan mitra kami')
 })
 
 test('super admin: SESIBUAT wajib NOMORWA + admin beda dengan nomor bot', async () => {

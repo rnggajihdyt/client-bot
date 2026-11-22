@@ -51,7 +51,7 @@ npm install
 | `SETTINGS_PATH` | `.auth/settings.json` | Setelan runtime per session (mis. prefix) |
 | `AUTOREAD` | `false` | `true` = tandai pesan masuk sudah dibaca (centang biru) setelah jeda baca singkat |
 | `HUMAN_MODE` | `normal` | Perilaku natural: `normal` (<500ms total baca+ketik, idle offline 2-5m, warm-up 2-5s, jitter reconnect) \| `fast` \| `off` (otomatis `off` di test) |
-| `UNKNOWN_SENDER_MODE` | `ignore` | Nomor asing non-mitra: `ignore` (abaikan diam-diam) \| `once` (balas maks 1x/24 jam) \| `always` |
+| `UNKNOWN_SENDER_MODE` | `always` | Nomor asing non-mitra (chat pribadi): `always` (balas "Anda bukan mitra kami") \| `once` (1x/24 jam) \| `ignore` (diam) |
 | `IGNORE_GROUPS` | `true` | `true` = abaikan pesan grup (`@g.us`) secara diam-diam |
 | `OWNER_PIN` | `1234` | PIN awal admin yang di-seed `SESIBUAT` (segera ganti via `GP`) |
 | `LOG_LEVEL` | `info` | Level Pino |
