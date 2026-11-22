@@ -451,8 +451,10 @@ export function openDb(path) {
   db.getTransaksi = (idTrx) =>
     raw
       .prepare(
-        `SELECT t.*, a.nohp AS agen_nohp, a.kode AS agen_kode
-         FROM transaksi t LEFT JOIN agen a ON a.id = t.agen_id
+        `SELECT t.*, a.nohp AS agen_nohp, a.kode AS agen_kode, a.senior_id AS agen_senior_id, p.nama AS produk_nama
+         FROM transaksi t
+         LEFT JOIN agen a ON a.id = t.agen_id
+         LEFT JOIN produk p ON p.id = t.produk_id
          WHERE t.id_trx = ?`
       )
       .get(idTrx)

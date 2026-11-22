@@ -51,13 +51,18 @@ export function handleWebhook(logger, { sessionId, token, raw }) {
     } catch {
       throw new Error('body bukan JSON')
     }
-    const { refid, status, note, supplier_trxid: stx } = payload ?? {}
+    const { refid, status, note, message, supplier_trxid: stx } = payload ?? {}
     if (!refid || !status) throw new Error('refid/status wajib ada')
 
     logger.child({ sessionId }).info({ refid, status, kode: payload.kode_produk }, 'webhook received')
     const mapped = status === 'success' ? 'sukses' : status === 'failed' ? 'gagal' : null
     if (!mapped) return // pending/unknown: nothing to settle yet
-    const r = finalize(db, refid, { status: mapped, sn: note ?? '', supplierTrxId: stx ?? '' })
+    const r = finalize(db, refid, {
+      status: mapped,
+      sn: mapped === 'sukses' ? (note ?? '') : '',
+      reason: mapped === 'gagal' ? (note || message || '') : '',
+      supplierTrxId: stx ?? '',
+    })
     if (r) notifyBuyer(logger, sessionId, r)
   } finally {
     db.close()
@@ -121,7 +126,12 @@ export async function pollPending(logger, sessionId) {
       if (!mapped) continue
       const db2 = openDb(sessionPath(sessionId))
       try {
-        const done = finalize(db2, trx.id_trx, { status: mapped, sn: d.sn ?? '', supplierTrxId: d.supplier_trxid ?? '' })
+        const done = finalize(db2, trx.id_trx, {
+          status: mapped,
+          sn: mapped === 'sukses' ? (d.sn ?? '') : '',
+          reason: mapped === 'gagal' ? (d.message ?? d.note ?? '') : '',
+          supplierTrxId: d.supplier_trxid ?? '',
+        })
         if (done) notifyBuyer(logger, sessionId, done)
       } finally {
         db2.close()

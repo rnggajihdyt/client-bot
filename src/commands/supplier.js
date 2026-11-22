@@ -3,7 +3,13 @@ import { verifyPin } from '../auth.js'
 import { formatRupiah } from '../money.js'
 import { ics } from '../ics.js'
 import { webhookUrl, icsConfig } from '../webhook.js'
-import { finalize, snapshotCommission } from '../orders.js'
+import {
+  finalize,
+  formatOrderStatus,
+  isUpstreamBalanceError,
+  sanitizeOrderErrorForMitra,
+  snapshotCommission,
+} from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
 import { ensureFreshCatalog } from '../catalog.js'
 
@@ -51,36 +57,10 @@ register({
 // ---- BELI (fleksibel: [BELI.]KODE.TUJUAN[.PIN], bolak-balik, multi baris/nomor) ----
 const DEST_RE = /^\+?\d{4,20}(?:,\+?\d{4,20})*$/
 const CODE_RE = /^[A-Za-z][A-Za-z0-9_-]*$/
-const UPSTREAM_BALANCE_RE =
-  /saldo\s*(?:operasional|reseller|anda)?.*(?:tidak\s*cukup|habis|kurang)|insufficient\s*balance|dibutuhkan\s*:\s*rp/i
-const INTERNAL_ERR_RE =
-  /respons\s*bukan\s*json|http\s*[45]\d\d|invalid\s*token|api\s*key|unauthorized|forbidden|timeout|timed\s*out|aborted|fetch\s*failed|econn|enotfound/i
 const BALANCE_ALERT_COOLDOWN_MS = 10 * 60 * 1000
 const lastBalanceAlert = new Map() // dbPath -> epoch ms
 
-export function isUpstreamBalanceError(msg) {
-  return UPSTREAM_BALANCE_RE.test(String(msg ?? ''))
-}
-
-// Sensor nama supplier (ICS) & detail internal (seperti saldo operasional admin)
-// agar tidak bocor ke downline/uplink.
-export function sanitizeOrderErrorForMitra(rawMsg) {
-  const s = String(rawMsg ?? '').trim()
-  if (!s || isUpstreamBalanceError(s)) {
-    return 'Sistem sedang gangguan sementara, silakan coba lagi nanti atau hubungi admin.'
-  }
-  if (INTERNAL_ERR_RE.test(s)) {
-    return 'Layanan sedang gangguan sementara, silakan coba lagi nanti.'
-  }
-  const cleaned = s
-    .replace(/^\s*ICS(?:\s*Store)?\s*[:\-–—]\s*/i, '')
-    .replace(/\bICS\s*Store\b/gi, 'server')
-    .replace(/\bICS\b/gi, 'server')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^[\s:.\-–—]+/, '')
-    .trim()
-  return cleaned || 'Layanan sedang gangguan sementara, silakan coba lagi nanti.'
-}
+export { isUpstreamBalanceError, sanitizeOrderErrorForMitra }
 
 // Parse one line into one or more { kode, tujuan, pin } order items.
 export function parseOrderLine(line, lookupProduct) {
@@ -163,23 +143,53 @@ function parseOrderBatch(rawText, lookupProduct) {
 // so multi-item batches deduct accurately in order.
 async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log }) {
   const freshMitra = db.findAgenById(mitraId)
-  if (!freshMitra) return { ok: false, item, error: 'Akun mitra tidak ditemukan' }
-  if (item.pin && !verifyPin(item.pin, freshMitra.pin_hash)) {
-    return { ok: false, item, error: PIN_SALAH }
+  if (!freshMitra) {
+    return {
+      ok: false,
+      line: formatOrderStatus({ kode: item.kode, tujuan: item.tujuan, status: 'gagal', detail: 'Akun mitra tidak ditemukan', saldo: 0 }),
+    }
   }
   const p = db.effectivePrice(freshMitra.id, String(item.kode).toUpperCase())
-  if (!p) return { ok: false, item, error: 'Produk tidak ditemukan' }
+  const kode = p?.kode ?? String(item.kode).toUpperCase()
+  const nama = p?.nama ?? ''
+
+  if (item.pin && !verifyPin(item.pin, freshMitra.pin_hash)) {
+    return {
+      ok: false,
+      line: formatOrderStatus({ nama, kode, tujuan: item.tujuan, status: 'gagal', detail: PIN_SALAH, saldo: freshMitra.saldo }),
+    }
+  }
+  if (!p) {
+    return {
+      ok: false,
+      line: formatOrderStatus({ kode, tujuan: item.tujuan, status: 'gagal', detail: 'Produk tidak ditemukan', saldo: freshMitra.saldo }),
+    }
+  }
   if (!p.aktif || p.status_supplier !== 'available') {
-    return { ok: false, item, error: 'Produk sedang gangguan/tidak tersedia' }
+    return {
+      ok: false,
+      line: formatOrderStatus({
+        nama,
+        kode,
+        tujuan: item.tujuan,
+        status: 'gagal',
+        detail: 'Produk sedang gangguan/tidak tersedia',
+        saldo: freshMitra.saldo,
+      }),
+    }
   }
   if (freshMitra.saldo < p.hargaEfektif) {
-    return { ok: false, item, error: 'Saldo tidak cukup' }
+    return {
+      ok: false,
+      line: formatOrderStatus({ nama, kode, tujuan: item.tujuan, status: 'gagal', detail: 'Saldo tidak cukup', saldo: freshMitra.saldo }),
+    }
   }
 
   const idTrx = `T${Date.now()}${Math.floor(Math.random() * 900 + 100)}`
+  const saldoSetelah = freshMitra.saldo - p.hargaEfektif
   db.tx(() => {
     db.addSaldo(freshMitra.id, -p.hargaEfektif)
-    db.addMutasi(freshMitra.id, 'debit', p.hargaEfektif, freshMitra.saldo - p.hargaEfektif, `Beli ${p.kode} (${idTrx})`)
+    db.addMutasi(freshMitra.id, 'debit', p.hargaEfektif, saldoSetelah, `Beli ${p.kode} (${idTrx})`)
     db.insertTransaksi({
       idTrx,
       agenId: freshMitra.id,
@@ -199,7 +209,7 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
     await ics.order(cfg.baseUrl, cfg.apiKey, { productCode: p.kode, dest: item.tujuan, refId: idTrx })
   } catch (err) {
     log?.error({ err: err?.message, idTrx }, 'order ICS gagal')
-    finalize(db, idTrx, { status: 'gagal' }) // supplier never took it: refund now
+    const settled = finalize(db, idTrx, { status: 'gagal' }) // supplier never took it: refund now
     if (!isAdmin && isUpstreamBalanceError(err?.message)) {
       const root = db.root()
       const last = lastBalanceAlert.get(db.path) ?? 0
@@ -214,10 +224,25 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
       }
     }
     const reason = isAdmin ? err.message : sanitizeOrderErrorForMitra(err?.message)
-    return { ok: false, item, error: `Transaksi gagal: ${reason}\nSaldo dikembalikan.`, refunded: true }
+    const saldoRefund = settled?.saldoAkhir ?? freshMitra.saldo
+    return {
+      ok: false,
+      line: formatOrderStatus({ nama, kode, tujuan: item.tujuan, status: 'gagal', detail: reason, saldo: saldoRefund }),
+    }
   }
 
-  return { ok: true, item, idTrx, produk: p }
+  return {
+    ok: true,
+    line: formatOrderStatus({
+      nama,
+      kode,
+      tujuan: item.tujuan,
+      status: 'proses',
+      idTrx,
+      harga: p.hargaEfektif,
+      saldo: saldoSetelah,
+    }),
+  }
 }
 
 async function runOrderBatch(ctx, items) {
@@ -236,30 +261,7 @@ async function runOrderBatch(ctx, items) {
     results.push(await executeOneOrder({ client, db, mitraId: mitra.id, isAdmin, cfg, item, log, sessionId }))
   }
 
-  // Single-item order: keep the classic concise reply format.
-  if (results.length === 1) {
-    const r = results[0]
-    if (!r.ok) {
-      await client.message.send(event.key.remoteJid, r.error)
-      return
-    }
-    await client.message.send(
-      event.key.remoteJid,
-      `Transaksi diproses\nID: ${r.idTrx}\nProduk: ${r.produk.nama}\nTujuan: ${r.item.tujuan}\nHarga: ${formatRupiah(r.produk.hargaEfektif)}\n\nStatus akhir dikirim otomatis ke nomor ini.`
-    )
-    return
-  }
-
-  // Multi-item batch: one combined summary reply.
-  const lines = results.map((r, i) =>
-    r.ok
-      ? `${i + 1}. ${r.produk.kode} → ${r.item.tujuan}: Diproses (ID: ${r.idTrx}, Harga: ${formatRupiah(r.produk.hargaEfektif)})`
-      : `${i + 1}. ${r.item.kode} → ${r.item.tujuan}: Gagal — ${r.error.replace(/\n+/g, ' ')}`
-  )
-  await client.message.send(
-    event.key.remoteJid,
-    `*Hasil Transaksi (${results.length} item):*\n${lines.join('\n')}\n\nStatus akhir dikirim otomatis ke nomor ini.`
-  )
+  await client.message.send(event.key.remoteJid, results.map((r) => r.line).join('\n'))
 }
 
 // Called by handler.js when text isn't a registered command: detects direct

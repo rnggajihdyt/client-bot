@@ -290,8 +290,7 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 
   // B tetap bisa transaksi dengan harga penuh (modal 9500 + 1000 + 500 = 11000)
   const beli = await say('628444', 'BELI.PULSA10.081234567')
-  assert.match(beli, /Transaksi diproses/)
-  assert.match(beli, /Harga: 11\.000/)
+  assert.match(beli, /^Pulsa 10 PULSA10\.081234567 DIPROSES\. ID: T\d+ Hrg 11\.000 Sal 39\.000 @\d\d:\d\d$/)
   const idTrx = beli.match(/ID: (T\d+)/)[1]
   assert.equal(icsOrders.at(-1).body.ref_id_custom, idTrx)
 
@@ -319,13 +318,13 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 
 test('BELI ditolak saat saldo kurang', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 100 WHERE nohp = '628444'`).run()
-  assert.equal(await say('628444', 'BELI.PULSA10.0812'), 'Saldo tidak cukup')
+  assert.match(await say('628444', 'BELI.PULSA10.0812'), /^Pulsa 10 PULSA10\.0812 GAGAL\. Saldo tidak cukup\. Sal 100 @\d\d:\d\d$/)
 })
 
 test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
   const r = await say('628444', 'BELI.PULSA10.08123')
-  assert.match(r, /Transaksi diproses/)
+  assert.match(r, /PULSA10\.08123 DIPROSES\./)
   const idTrx = r.match(/ID: (T\d+)/)[1]
   finalize(db, idTrx, { status: 'sukses' })
 
@@ -471,7 +470,7 @@ test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', as
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   assert.match(await say('628111', 'MKP.2000'), /Markup general/)
   const r = await say('628222', 'BELI.PULSA10.0811999')
-  assert.match(r, /Harga: 12\.500/) // 9500 + admin 2000 + Ani 1000
+  assert.match(r, /Hrg 12\.500 Sal 37\.500 @\d\d:\d\d$/) // 9500 + admin 2000 + Ani 1000
   const idTrx = r.match(/ID: (T\d+)/)[1]
   finalize(db, idTrx, { status: 'sukses' })
 })
@@ -516,17 +515,14 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   // 1) Beli singkat tunggal tanpa BELI dan tanpa PIN: KODE.TUJUAN
   icsOrders.length = 0
   const r1 = await say('628222', 'xda13.08777777')
-  assert.match(r1, /Transaksi diproses/)
-  assert.match(r1, /Tujuan: 08777777/)
+  assert.match(r1, /^XL Data 13GB XDA13\.08777777 DIPROSES\. ID: T\d+ Hrg 21\.000 Sal 179\.000 @\d\d:\d\d$/)
   assert.match(icsOrders[0]?.url ?? '', /\/api\/reseller\/trx$/)
   const id1 = r1.match(/ID: (T\d+)/)[1]
   finalize(db, id1, { status: 'sukses', sn: 'SN-PERTAMA' })
 
   // 2) Format bolak-balik tunggal: TUJUAN.KODE
   const r2 = await say('628222', '08777777.xda40')
-  assert.match(r2, /Transaksi diproses/)
-  assert.match(r2, /XL Data 40GB/)
-  assert.match(r2, /Tujuan: 08777777/)
+  assert.match(r2, /^XL Data 40GB XDA40\.08777777 DIPROSES\. ID: T\d+ Hrg 31\.000 Sal 148\.000 @\d\d:\d\d$/)
   const id2 = r2.match(/ID: (T\d+)/)[1]
   finalize(db, id2, { status: 'sukses', sn: 'SN-TERAKHIR' })
 
@@ -543,16 +539,18 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
     '628222',
     'xda13.08777777\nxda999.087878767\n0887878.xda40'
   )
-  assert.match(batch, /\*Hasil Transaksi \(3 item\):\*/)
-  assert.match(batch, /1\. XDA13 → 08777777: Diproses/)
-  assert.match(batch, /2\. XDA999 → 087878767: Gagal — Produk tidak ditemukan/)
-  assert.match(batch, /3\. XDA40 → 0887878: Diproses/)
+  const batchLines = batch.split('\n')
+  assert.equal(batchLines.length, 3)
+  assert.match(batchLines[0], /^XL Data 13GB XDA13\.08777777 DIPROSES\./)
+  assert.match(batchLines[1], /^XDA999\.087878767 GAGAL\. Produk tidak ditemukan\. Sal /)
+  assert.match(batchLines[2], /^XL Data 40GB XDA40\.0887878 DIPROSES\./)
 
   // 5) Multi nomor dipisah koma dalam 1 baris
   const multiComma = await say('628222', 'xda13.08111111,08222222')
-  assert.match(multiComma, /\*Hasil Transaksi \(2 item\):\*/)
-  assert.match(multiComma, /1\. XDA13 → 08111111: Diproses/)
-  assert.match(multiComma, /2\. XDA13 → 08222222: Diproses/)
+  const commaLines = multiComma.split('\n')
+  assert.equal(commaLines.length, 2)
+  assert.match(commaLines[0], /^XL Data 13GB XDA13\.08111111 DIPROSES\./)
+  assert.match(commaLines[1], /^XL Data 13GB XDA13\.08222222 DIPROSES\./)
 
   // 6) Teks acak bukan produk tetap diabaikan untuk mitra (tidak spam)
   assert.equal(await say('628222', 'kamar.1234567'), undefined)
@@ -560,7 +558,15 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
 
 test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink (+ alert ke admin)', async () => {
   const origFetch = globalThis.fetch
-  db.raw.prepare(`UPDATE agen SET saldo = 100000 WHERE nohp = '628222'`).run()
+  db.upsertProdukIcs({
+    code: 'XDA38',
+    name: 'XL AXIS Data 38Gb Reguler + Lokal (XDA38)',
+    price: 61000,
+    type: 'xda',
+    status: 'available',
+    stock: 10,
+  })
+  db.raw.prepare(`UPDATE agen SET saldo = 1911411 WHERE nohp = '628222'`).run()
   db.raw.prepare(`UPDATE agen SET saldo = 100000 WHERE nohp = '628111'`).run()
 
   try {
@@ -576,12 +582,11 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     })
     await say('628222', 'xda13.08777777')
     const mitraMsg = sent.find((m) => m.jid === '628222@s.whatsapp.net')?.text ?? ''
-    assert.match(mitraMsg, /Transaksi gagal: Sistem sedang gangguan sementara/)
-    assert.match(mitraMsg, /Saldo dikembalikan\./)
+    assert.match(mitraMsg, /^XL Data 13GB XDA13\.08777777 GAGAL\. Sistem sedang gangguan sementara.*Sal 1\.911\.411 @\d\d:\d\d$/)
     assert.doesNotMatch(mitraMsg, /ICS/i)
     assert.doesNotMatch(mitraMsg, /Saldo operasional|Saldo Anda|Dibutuhkan|Rp 0|Rp 100/i)
     // saldo mitra tetap penuh (refunded)
-    assert.equal(db.findAgenByNohp('628222').saldo, 100000)
+    assert.equal(db.findAgenByNohp('628222').saldo, 1911411)
     // admin menerima peringatan saldo supplier habis
     const adminAlert = sent.find((m) => m.jid === '628111@s.whatsapp.net')?.text ?? ''
     assert.match(adminAlert, /Peringatan Saldo Supplier/)
@@ -591,7 +596,20 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     const adminReply = await say('628111', 'xda13.08777777')
     assert.match(adminReply, /Saldo operasional tidak cukup/)
 
-    // 2) Error bisnis biasa (mis. nomor tujuan salah): kata ICS tetap disensor untuk downline/uplink
+    // 2) Format persis seperti contoh user: "<Nama> XDA38.085731409131 GAGAL. Nomor tujuan salah. Sal 1.911.411 @HH:MM"
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 400,
+      text: async () => JSON.stringify({ success: false, message: 'Nomor tujuan salah' }),
+    })
+    const errExact = await say('628222', 'XDA38.085731409131')
+    assert.match(
+      errExact,
+      /^XL AXIS Data 38Gb Reguler \+ Lokal XDA38\.085731409131 GAGAL\. Nomor tujuan salah\. Sal 1\.911\.411 @\d\d:\d\d$/
+    )
+    assert.doesNotMatch(errExact, /ICS/i)
+
+    // 3) Error bisnis biasa yang menyebut ICS tetap disensor untuk downline/uplink
     globalThis.fetch = async () => ({
       ok: false,
       status: 400,
