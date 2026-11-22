@@ -80,11 +80,21 @@ export function formatOrderStatus({ nama, kode, tujuan, status, detail = '', har
 
 // Commission snapshot taken when the order was placed (so later MP changes do
 // not retroactively move money). Stored in transaksi.komisi_dibagikan.
+// Walks every (child -> parent) edge in `db.chain(mitraId)` at arbitrary depth:
+// - If parent is Admin (senior_id == null): child.markup is Admin profit
+//   (included in transaksi.markup_admin), NEVER commission.
+// - If parent is a mitra/uplink (senior_id != null): parent earns child.markup.
 export function snapshotCommission(db, mitraId) {
-  return db
-    .ancestors(mitraId)
-    .filter((a) => a.senior_id != null && a.markup > 0)
-    .map((a) => ({ agen_id: a.id, kode: a.kode, nominal: a.markup }))
+  const nodes = db.chain(mitraId)
+  const shares = []
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const child = nodes[i]
+    const parent = nodes[i + 1]
+    if (parent.senior_id != null && child.markup > 0) {
+      shares.push({ agen_id: parent.id, kode: parent.kode, nominal: child.markup })
+    }
+  }
+  return shares
 }
 
 // Returns the settled row + status + updated saldo so the caller can notify the
@@ -102,7 +112,7 @@ export function finalize(db, idTrx, { status, sn = '', supplierTrxId = '', reaso
       const shares = JSON.parse(trx.komisi_dibagikan || '[]')
       for (const s of shares) {
         const a = db.findAgenById(s.agen_id)
-        if (!a) continue
+        if (!a || a.senior_id == null || !(s.nominal > 0)) continue
         const saldo = a.saldo
         db.addKomisi(a.id, s.nominal)
         db.addMutasi(a.id, 'komisi_masuk', s.nominal, saldo, `Komisi ${trx.produk_kode} dari ${trx.agen_kode}`)

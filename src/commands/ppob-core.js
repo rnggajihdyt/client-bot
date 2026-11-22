@@ -25,14 +25,20 @@ function requireDownline(ctx, kode) {
 register({
   name: 'sal',
   description: 'Cek saldo',
-  async handler({ client, event, mitra, deactivated, db }) {
+  async handler({ client, event, mitra, isAdmin, deactivated, db }) {
     const st = db.transaksiStats(mitra.id)
-    const text =
-      `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
-      `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
-      `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
-      `Ketik TUKAR utk ambil komisi` +
-      (deactivated ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.` : '')
+    const text = isAdmin
+      ? `Yth. Admin ${mitra.nama} ID: ${mitra.kode}\n` +
+        `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
+        `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)}\n\n` +
+        `Ketik LAP utk lihat laporan profit`
+      : `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
+        `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
+        `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
+        `Ketik TUKAR utk ambil komisi` +
+        (deactivated
+          ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.`
+          : '')
     await client.message.send(event.key.remoteJid, text)
   },
 })
@@ -277,14 +283,18 @@ register({ name: 'hapus', description: 'Hapus downline', handler: statusHandler(
 register({
   name: 'tukar',
   description: 'Tukar komisi ke saldo',
-  async handler({ client, event, mitra, db }) {
+  async handler({ client, event, mitra, isAdmin, db }) {
+    if (isAdmin) {
+      await client.message.send(event.key.remoteJid, 'Akun admin tidak memakai sistem komisi. Cek profit lewat LAP.')
+      return
+    }
     if (mitra.komisi <= 0) {
       await client.message.send(event.key.remoteJid, 'Komisi Anda 0')
       return
     }
     db.tx(() => {
       const newSaldo = mitra.saldo + mitra.komisi
-      db.addMutasi(mitra.id, 'komisi_masuk', -mitra.komisi, mitra.saldo, 'TUKAR komisi')
+      db.addMutasi(mitra.id, 'komisi_tukar', -mitra.komisi, mitra.saldo, 'TUKAR komisi')
       db.addMutasi(mitra.id, 'kredit', mitra.komisi, newSaldo, 'TUKAR komisi ke saldo')
       db.setSaldoKomisi(mitra.id, newSaldo, 0)
     })
@@ -423,13 +433,12 @@ register({
 // ---- BELI moved to commands/supplier.js (two-phase ICS flow) ----
 
 // ---- LAP ----
-// Admin = whole session. Uplink = its own network. Mitra = itself.
+// Admin = whole session. Any mitra with downlines = its own network. Leaf mitra = itself.
 register({
   name: 'lap',
   description: 'Laporan: LAP[HARI|BULAN|YYYY-MM-DD]',
   async handler({ client, event, mitra, args, isAdmin, db }) {
     const { from, to, label } = parseRange(args[0])
-    const root = db.root()
 
     if (isAdmin) {
       const sum = db.profitSummary({ from, to })
@@ -437,7 +446,8 @@ register({
       const head =
         `*Laporan Sesi* (${label})\n` +
         `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-        `Modal: ${formatRupiah(sum.modal)} Profit: ${formatRupiah(sum.profit)}`
+        `Modal: ${formatRupiah(sum.modal)} Komisi Jaringan: ${formatRupiah(sum.komisi)}\n` +
+        `Profit: ${formatRupiah(sum.profit)}`
       const lines = list.map(
         (t) => `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`
       )
@@ -445,9 +455,10 @@ register({
       return
     }
 
-    // Uplink: direct child of the root gets the whole network report.
-    if (root && mitra.senior_id === root.id) {
-      const ids = [mitra.id, ...db.descendants(mitra.id)]
+    // Any uplink/reseller at any depth who has downlines gets the whole network report.
+    const desc = db.descendants(mitra.id)
+    if (desc.length > 0) {
+      const ids = [mitra.id, ...desc]
       const sum = db.profitSummary({ agenIds: ids, from, to })
       const komisi = db.commissionEarned(mitra.id, from, to)
       await client.message.send(

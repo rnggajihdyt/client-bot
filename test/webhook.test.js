@@ -19,7 +19,8 @@ function seed() {
   const sessionId = `toko${++seq}`
   const db = openDb(sessionPath(sessionId))
   const root = db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 1000, pin: '1234' })
-  const m = db.createAgen({ nama: 'Mitra', kota: '', nohp: '628222', seniorId: root.id, markup: 500, pin: '1234' })
+  const uplink = db.createAgen({ nama: 'Uplink', kota: '', nohp: '628222', seniorId: root.id, markup: 500, pin: '1234' })
+  const m = db.createAgen({ nama: 'Mitra', kota: '', nohp: '628333', seniorId: uplink.id, markup: 700, pin: '1234' })
   db.upsertProdukIcs({ code: 'PULSA10', name: 'Pulsa 10', price: 9500, status: 'available' })
   db.raw.prepare(`UPDATE agen SET saldo = 20000 WHERE id = ?`).run(m.id)
   const p = db.effectivePrice(m.id, 'PULSA10')
@@ -35,7 +36,7 @@ function seed() {
       markupAdmin: p.adminMarkup,
       markupTotal: p.markupTotal,
       hargaEfektif: p.hargaEfektif,
-      komisiDibagikan: [{ agen_id: root.id, kode: root.kode, nominal: 1000 }],
+      komisiDibagikan: [{ agen_id: uplink.id, kode: uplink.kode, nominal: 700 }],
       status: 'proses',
     })
   })
@@ -57,23 +58,24 @@ test('webhook token salah / session asing ditolak tanpa buat file', () => {
   assert.equal(existsSync(sessionPath('hantu')), false)
 })
 
-test('webhook sukses: status + SN tersimpan, komisi dibayar sekali', () => {
+test('webhook sukses: status + SN tersimpan, komisi dibayar sekali (admin tidak dapat komisi)', () => {
   const { db, sessionId, token } = seed()
   const raw = JSON.stringify({ refid: 'T1', status: 'success', kode_produk: 'PULSA10', nomor_tujuan: '0812', supplier_trxid: 'S1', note: 'SN123' })
   handleWebhook(logger, { sessionId, token, raw })
   const t = db.getTransaksi('T1')
   assert.equal(t.status, 'sukses')
   assert.equal(t.sn, 'SN123')
-  assert.equal(db.findAgenByNohp('628111').komisi, 1000)
+  assert.equal(db.findAgenByNohp('628111').komisi, 0, 'admin tidak pernah dapat komisi')
+  assert.equal(db.findAgenByNohp('628222').komisi, 700)
 
   handleWebhook(logger, { sessionId, token, raw }) // duplikat
-  assert.equal(db.findAgenByNohp('628111').komisi, 1000)
+  assert.equal(db.findAgenByNohp('628222').komisi, 700)
   db.close()
 })
 
 test('webhook gagal: saldo penuh dikembalikan', () => {
   const { db, sessionId, token } = seed()
-  const before = db.findAgenByNohp('628222').saldo
+  const before = db.findAgenByNohp('628333').saldo
   handleWebhook(logger, {
     sessionId,
     token,
@@ -81,7 +83,7 @@ test('webhook gagal: saldo penuh dikembalikan', () => {
   })
   const t = db.getTransaksi('T1')
   assert.equal(t.status, 'gagal')
-  assert.equal(db.findAgenByNohp('628222').saldo, before + t.harga_efektif)
+  assert.equal(db.findAgenByNohp('628333').saldo, before + t.harga_efektif)
   db.close()
 })
 

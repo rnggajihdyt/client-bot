@@ -212,10 +212,24 @@ export function openDb(path) {
 
   function priceWithNodes(p, nodes) {
     const root = nodes[nodes.length - 1]
-    const adminMarkup = p.markup != null ? p.markup : root ? root.markup : 0
+    const baseAdminMarkup = p.markup != null ? p.markup : root ? root.markup : 0
+    // Markup on Admin's direct child (A in [C, B, A, Admin]) was set by Admin
+    // via DAFTAR/MP, so it belongs to Admin's profit — never commission.
+    const directChild = root && root.senior_id == null && nodes.length >= 2 ? nodes[nodes.length - 2] : null
+    const resellerMarkup = directChild ? directChild.markup : 0
+    const adminMarkup = baseAdminMarkup + resellerMarkup
     const chainMarkup = nodes.slice(0, -1).reduce((s, a) => s + a.markup, 0)
-    const markupTotal = adminMarkup + chainMarkup
-    return { ...p, adminMarkup, markupTotal, hargaEfektif: p.harga_modal + markupTotal }
+    const markupTotal = baseAdminMarkup + chainMarkup
+    const networkMarkup = markupTotal - adminMarkup
+    return {
+      ...p,
+      baseAdminMarkup,
+      resellerMarkup,
+      adminMarkup,
+      networkMarkup,
+      markupTotal,
+      hargaEfektif: p.harga_modal + markupTotal,
+    }
   }
 
   // Effective price = modal + admin markup (per-product override, else general)
@@ -388,6 +402,7 @@ export function openDb(path) {
                 COALESCE(SUM(harga_efektif), 0) AS omzet,
                 COALESCE(SUM(harga_modal), 0) AS modal,
                 COALESCE(SUM(markup_admin), 0) AS profit,
+                COALESCE(SUM(markup_total - markup_admin), 0) AS komisi,
                 COALESCE(SUM(markup_total), 0) AS markup
          FROM transaksi
          WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${scope}`

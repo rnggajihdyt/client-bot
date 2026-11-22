@@ -41,11 +41,14 @@ test('markup beranak (recursive, root excluded)', () => {
   assert.equal(db.markupTotal(root.id), 0)
 })
 
-test('effectivePrice: general markup fallback', () => {
+test('effectivePrice: general markup fallback (+ markup reseller level 1 masuk profit admin)', () => {
   db.upsertProduk({ kode: 'PULSA10', nama: 'Pulsa 10', hargaModal: 9500 })
   const p = db.effectivePrice(doni.id, 'PULSA10')
   assert.equal(p.hargaEfektif, 9500 + 1500) // 11000
-  assert.equal(p.adminMarkup, 0)
+  assert.equal(p.baseAdminMarkup, 0)
+  assert.equal(p.resellerMarkup, 1000) // r1 (anak langsung admin)
+  assert.equal(p.adminMarkup, 1000) // profit admin = MKP 0 + r1 1000
+  assert.equal(p.networkMarkup, 500) // jatah komisi r1 dari doni
   assert.equal(db.effectivePrice(doni.id, 'NOTHING'), undefined)
 })
 
@@ -56,7 +59,9 @@ test('effectivePrice: per-product markup overrides general', () => {
   db.upsertProduk({ kode: 'DATA5', nama: 'Data 5', hargaModal: 15000 })
   db.setProdukMarkup('DATA5', 2000)
   const d = db.effectivePrice(r1.id, 'DATA5')
-  assert.equal(d.adminMarkup, 2000) // override, not general 300
+  assert.equal(d.baseAdminMarkup, 2000) // override, not general 300
+  assert.equal(d.adminMarkup, 2000 + 1000) // MKP produk 2000 + markup r1 1000
+  assert.equal(d.networkMarkup, 0)
   assert.equal(d.hargaEfektif, 15000 + 2000 + 1000)
   db.updateAgen(root.id, { markup: 0 })
 })

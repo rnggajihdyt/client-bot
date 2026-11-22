@@ -473,7 +473,8 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       const head =
         `*Transaksi ${id}* (${label})\n` +
         `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-        `Modal: ${formatRupiah(sum.modal)} Profit: ${formatRupiah(sum.profit)}`
+        `Modal: ${formatRupiah(sum.modal)} Komisi Jaringan: ${formatRupiah(sum.komisi)}\n` +
+        `Profit: ${formatRupiah(sum.profit)}`
       await reply(lines.length ? `${head}\n\n${lines.join('\n')}` : `${head}\n\nBelum ada transaksi`)
     } finally {
       sdb.close()

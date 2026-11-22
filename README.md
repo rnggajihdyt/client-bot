@@ -256,8 +256,8 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, `batal` (via `BTL`) mengabaikan webhook telat.
-- Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama).
-- Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (per produk jika ada, else general/root) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
+- Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
+- Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (`MKP` per produk jika ada, else general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
 - Buyer dinotifikasi via nomor tersimpan di `agen`; client offline hanya di-log — state tetap benar, `SAL`/`CEK` menunjukkan kebenarannya.
 
 ## Peran & data

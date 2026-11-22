@@ -128,11 +128,13 @@ test('nomor asing chat pribadi dibalas ditolak, pesan grup (@g.us) diabaikan dia
   delete process.env.UNKNOWN_SENDER_MODE
 })
 
-test('SAL format', async () => {
+test('SAL format (admin tanpa komisi/TUKAR)', async () => {
   const r = await say('628111', 'SAL')
-  assert.match(r, /^Yth\. Mitra Admin ID: OWN01/)
+  assert.match(r, /^Yth\. Admin Admin ID: OWN01/)
   assert.match(r, /Saldo: 0 Limit: 0/)
-  assert.match(r, /Ketik TUKAR utk ambil komisi/)
+  assert.doesNotMatch(r, /Komisi:|TUKAR/)
+  assert.match(r, /Ketik LAP utk lihat laporan profit/)
+  assert.match(await say('628111', 'TUKAR'), /tidak memakai sistem komisi/)
 })
 
 test('menu info tetap jalan', async () => {
@@ -299,10 +301,12 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
   assert.equal(b0.saldo, 39000)
   assert.equal(db.raw.prepare(`SELECT komisi FROM agen WHERE nohp = '628222'`).get().komisi, 0)
 
-  // supplier settle -> komisi A masuk walau nonaktif (markup A = 1000)
+  // supplier settle -> komisi A masuk walau nonaktif (markup yg A set pada B = 500;
+  // sedangkan markup A = 1000 yg diset Admin masuk profit admin, bukan komisi!)
   finalize(db, idTrx, { status: 'sukses', sn: 'SN123' })
   const a = db.raw.prepare(`SELECT komisi FROM agen WHERE nohp = '628222'`).get()
-  assert.equal(a.komisi, 1000)
+  assert.equal(a.komisi, 500)
+  assert.equal(db.findAgenByNohp('628111').komisi, 0, 'admin tidak menerima komisi')
 
   // A tidak bisa mencairkan komisi
   assert.equal(await say('628222', 'TUKAR'), 'Akun Anda nonaktif')
@@ -310,10 +314,10 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
   // aktifkan lagi -> komisi bisa dicairkan
   assert.match(await say('628111', 'AKTIF.RS00001.1234'), /DIAKTIFKAN/)
   const tukar = await say('628222', 'TUKAR')
-  assert.match(tukar, /1\.000/)
+  assert.match(tukar, /500/)
   const a2 = db.raw.prepare(`SELECT komisi, saldo FROM agen WHERE nohp = '628222'`).get()
   assert.equal(a2.komisi, 0)
-  assert.equal(a2.saldo, 1000)
+  assert.equal(a2.saldo, 500)
 })
 
 test('BELI ditolak saat saldo kurang', async () => {
@@ -331,7 +335,7 @@ test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
   const trx = db.raw.prepare(`SELECT * FROM transaksi WHERE tujuan = '08123' ORDER BY id DESC`).get()
   assert.equal(trx.produk_kode, 'PULSA10')
   assert.equal(trx.harga_modal, 9500)
-  assert.equal(trx.markup_admin, 0)
+  assert.equal(trx.markup_admin, 1000) // MKP 0 + markup A (1000) yg diset Admin
   assert.equal(trx.harga_efektif, 11000)
   assert.equal(trx.markup_total, 1500)
 
@@ -343,7 +347,10 @@ test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
   const sum = db.profitSummary({ from: '2000-01-01', to: '2100-01-01' })
   assert.equal(sum.trx, 2)
   assert.equal(sum.modal, 19000) // 9500 x 2
+  assert.equal(sum.profit, 2000) // 1000 x 2
+  assert.equal(sum.komisi, 1000) // 500 x 2
   assert.equal(sum.markup, 3000) // 1500 x 2
+  assert.equal(sum.omzet, sum.modal + sum.profit + sum.komisi)
 
   db.raw.prepare(`UPDATE produk SET harga_modal = 9500 WHERE kode = 'PULSA10'`).run()
 })
@@ -475,18 +482,71 @@ test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', as
   finalize(db, idTrx, { status: 'sukses' })
 })
 
-test('LAP admin: seluruh session', async () => {
+test('LAP admin: seluruh session (Omzet = Modal + Komisi Jaringan + Profit)', async () => {
   const r = await say('628111', 'LAP.BULAN')
   assert.match(r, /\*Laporan Sesi\*/)
-  // 3 trx sukses: markup_admin 2000 x 1 + 0 x 2
-  assert.match(r, /Profit: 2\.000/)
+  // 3 trx sukses:
+  // - 2x oleh B: profit admin 1000 (MKP 0 + A.markup 1000), komisi A 500
+  // - 1x oleh A: profit admin 3000 (MKP 2000 + A.markup 1000), komisi 0
+  assert.match(r, /Omzet: 34\.500/)
+  assert.match(r, /Modal: 28\.500/)
+  assert.match(r, /Komisi Jaringan: 1\.000/)
+  assert.match(r, /Profit: 5\.000/)
   assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
-test('LAP uplink: jaringannya sendiri', async () => {
+test('LAP uplink: jaringannya sendiri & TUKAR tidak menghapus histori komisi di LAP', async () => {
   const r = await say('628222', 'LAP.BULAN')
   assert.match(r, /\*Laporan Jaringan\*/)
+  // 2 trx sukses dari B @500 = 1.000 (tetap 1.000 walau 500 pertama sudah di-TUKAR)
   assert.match(r, /Komisi Anda: 1\.000/)
+})
+
+test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap level, LAP jaringan B)', async () => {
+  // B (628444, markup 500 dari A) mendaftarkan C (6285551) dengan markup 300
+  assert.match(await say('628444', 'DAFTAR.Citra.Depok.6285551.300.1234'), /RS00003/)
+  db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '6285551'`).run()
+  // Set MKP general = 200; A.markup = 1000 (dr admin), B.markup = 500 (dr A), C.markup = 300 (dr B)
+  assert.match(await say('628111', 'MKP.200'), /Markup general/)
+
+  const komABefore = db.findAgenByNohp('628222').komisi
+  const komBBefore = db.findAgenByNohp('628444').komisi
+
+  // C beli PULSA10 (modal 9500): bayar 9500 + 200 + 1000 + 500 + 300 = 11.500
+  const beliC = await say('6285551', 'PULSA10.08991234')
+  assert.match(beliC, /Hrg 11\.500/)
+  const idTrx = beliC.match(/ID: (T\d+)/)[1]
+  finalize(db, idTrx, { status: 'sukses', sn: 'SN-C' })
+
+  const trx = db.getTransaksi(idTrx)
+  assert.equal(trx.harga_modal, 9500)
+  assert.equal(trx.markup_admin, 1200) // MKP 200 + A.markup 1000
+  assert.equal(trx.markup_total, 2000) // 200 + 1000 + 500 + 300
+  assert.equal(trx.harga_efektif, 11500)
+
+  // Admin: komisi tetap 0 (masuk Profit), A dapat B.markup (500), B dapat C.markup (300)
+  assert.equal(db.findAgenByNohp('628111').komisi, 0)
+  assert.equal(db.findAgenByNohp('628222').komisi, komABefore + 500)
+  assert.equal(db.findAgenByNohp('628444').komisi, komBBefore + 300)
+
+  // Level B yang punya downline C mendapat *Laporan Jaringan* + Komisi Anda 300
+  const lapB = await say('628444', 'LAP.BULAN')
+  assert.match(lapB, /\*Laporan Jaringan\*/)
+  assert.match(lapB, /Komisi Anda: 300/)
+
+  // Uji juga saat A.markup = 0 (admin tanpa markup per-reseller): A TETAP dapat komisi 500 dari B!
+  assert.match(await say('628111', 'MP.RS00001.0.1234'), /Markup RS00001 diubah menjadi 0/)
+  const beliC2 = await say('6285551', 'PULSA10.08991235')
+  assert.match(beliC2, /Hrg 10\.500/) // 9500 + 200 + 0 + 500 + 300
+  const idTrx2 = beliC2.match(/ID: (T\d+)/)[1]
+  finalize(db, idTrx2, { status: 'sukses', sn: 'SN-C2' })
+  assert.equal(db.findAgenByNohp('628222').komisi, komABefore + 1000, 'A tetap dapat 500 meski A.markup = 0')
+  assert.equal(db.findAgenByNohp('628444').komisi, komBBefore + 600, 'B tetap dapat 300')
+  assert.equal(db.findAgenByNohp('628111').komisi, 0)
+
+  // Kembalikan state untuk test selanjutnya
+  assert.match(await say('628111', 'MP.RS00001.1000.1234'), /1\.000/)
+  assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
 test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', async () => {
