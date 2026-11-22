@@ -59,6 +59,8 @@ npm install
 | `WEBHOOK_PORT` | `8080` | Port lokal server webhook (`POST /webhook/<token>/<sessionId>`) |
 | `ICS_BASE_URL` | `https://api.ics-store.my.id` | Base URL API supplier ICS |
 | `ICS_API_KEY` | *(kosong)* | Fallback API key ICS kalau session belum punya key sendiri |
+| `PRODUCT_CACHE_TTL_SEC` | `60` | Cache TTL (detik) status & harga produk ICS untuk `CH`/`BELI` (single-flight refresh saat basi) |
+| `SYNC_INTERVAL_MIN` | `15` | Interval cron auto-sync katalog produk ICS (menit); `0` = matikan cron |
 | `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
 | `WATCH_CHANGES` | `true` | (supervisor) auto-restart child saat `index.js`, `src/**`, atau `.env` berubah tanpa mereset uptime |
 

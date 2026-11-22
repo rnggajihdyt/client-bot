@@ -1,31 +1,14 @@
 import { openDb } from './db.js'
 import { sessionPath } from './config.js'
 import { getSession } from './registry.js'
-import { webhookUrl, icsConfig } from './webhook.js'
-import { ics } from './ics.js'
+import { webhookUrl } from './webhook.js'
+import { syncCatalog } from './catalog.js'
 
 // A session without a valid supplier key cannot sell anything, so the key is
 // checked against ICS *before* it is stored. A typo fails here, loudly, instead
 // of surfacing at the first BELI with a customer's money on the line.
 export async function setupApiKey(db, key) {
-  const cfg = icsConfig(db)
-  const res = await ics.products(cfg.baseUrl, key)
-  const rows = Array.isArray(res?.data) ? res.data : []
-  db.tx(() => {
-    for (const p of rows) {
-      db.upsertProdukIcs({
-        code: p.code,
-        name: p.name,
-        price: p.price,
-        type: p.type,
-        category: p.category,
-        status: p.status,
-        stock: p.stock,
-      })
-    }
-    db.setSetting('ics_apikey', key)
-  })
-  return { total: rows.length, available: rows.filter((p) => p.status === 'available').length }
+  return syncCatalog(db, { apiKey: key, saveKey: true })
 }
 
 // Candidate key in a free-text reply, with or without the APIKEY. prefix.

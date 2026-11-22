@@ -1,0 +1,154 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import test, { after } from 'node:test'
+
+const dir = mkdtempSync(join(tmpdir(), 'catalog-test-'))
+process.env.SESSION_DIR = join(dir, 'sessions')
+
+const { openDb } = await import('../src/db.js')
+const { ensureFreshCatalog, resetCatalogCache, syncAllSessions, syncCatalog } = await import('../src/catalog.js')
+
+let fetchCalls = 0
+let mockProducts = []
+let failNext = false
+let fetchDelayMs = 0
+
+const origFetch = globalThis.fetch
+globalThis.fetch = async () => {
+  fetchCalls += 1
+  if (fetchDelayMs > 0) await new Promise((r) => setTimeout(r, fetchDelayMs))
+  if (failNext) {
+    return { ok: false, status: 500, text: async () => JSON.stringify({ success: false, message: 'ICS down' }) }
+  }
+  return {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ success: true, data: mockProducts }),
+  }
+}
+
+test('TTL cache: hit dalam 60 dtk tidak fetch ulang, miss setelah TTL menarik status terbaru', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop1.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
+
+  resetCatalogCache(db.path)
+  fetchCalls = 0
+  failNext = false
+  mockProducts = [{ code: 'XDA40', name: 'XL 40GB', price: 76000, type: 'xda', status: 'available', stock: 5 }]
+
+  let clock = 1_000_000
+  const r1 = await ensureFreshCatalog(db, { ttlMs: 60_000, now: () => clock })
+  assert.equal(r1.synced, true)
+  assert.equal(fetchCalls, 1)
+  assert.equal(db.effectivePrice(1, 'XDA40').status_supplier, 'available')
+
+  // Dalam 30 detik: cache hit, tidak panggil ICS
+  clock += 30_000
+  mockProducts = [{ code: 'XDA40', name: 'XL 40GB', price: 77000, type: 'xda', status: 'empty', stock: 0 }]
+  const r2 = await ensureFreshCatalog(db, { ttlMs: 60_000, now: () => clock })
+  assert.equal(r2.synced, false)
+  assert.equal(r2.fresh, true)
+  assert.equal(fetchCalls, 1)
+  assert.equal(db.effectivePrice(1, 'XDA40').status_supplier, 'available')
+
+  // Lewat 60 detik: cache basi, tunggu refresh (Opsi A) -> status berubah ke empty + harga baru
+  clock += 31_000
+  const r3 = await ensureFreshCatalog(db, { ttlMs: 60_000, now: () => clock })
+  assert.equal(r3.synced, true)
+  assert.equal(fetchCalls, 2)
+  const p = db.effectivePrice(1, 'XDA40')
+  assert.equal(p.status_supplier, 'empty')
+  assert.equal(p.aktif, 0)
+  assert.equal(p.harga_modal, 77000)
+
+  db.close()
+})
+
+test('single-flight: 5 panggilan paralel saat cache basi hanya memicu 1 request ICS', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop2.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  resetCatalogCache(db.path)
+  fetchCalls = 0
+  failNext = false
+  fetchDelayMs = 40
+  mockProducts = [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, type: 'cnd', status: 'available', stock: 10 }]
+
+  const results = await Promise.all(
+    Array.from({ length: 5 }, () => ensureFreshCatalog(db, { ttlMs: 60_000 }))
+  )
+  fetchDelayMs = 0
+  assert.equal(fetchCalls, 1, 'harus single-flight 1 request saja')
+  assert.ok(results.every((r) => r.synced && r.total === 1))
+  db.close()
+})
+
+test('produk hilang dari ICS ditandai removed tanpa menghapus markup produk yang bertahan', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop3.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
+  resetCatalogCache(db.path)
+  failNext = false
+  mockProducts = [
+    { code: 'P1', name: 'P1', price: 1000, type: 'cnd', status: 'available', stock: 5 },
+    { code: 'P2', name: 'P2', price: 2000, type: 'cnd', status: 'available', stock: 5 },
+  ]
+  await syncCatalog(db)
+  db.setProdukMarkup('P1', 350)
+
+  // P2 hilang dari respons ICS berikutnya
+  mockProducts = [{ code: 'P1', name: 'P1', price: 1100, type: 'cnd', status: 'available', stock: 4 }]
+  const stats = await syncCatalog(db)
+  assert.equal(stats.removed, 1)
+  assert.equal(db.effectivePrice(1, 'P1').markup, 350, 'markup P1 tetap terjaga')
+  assert.equal(db.effectivePrice(1, 'P1').hargaEfektif, 1450)
+  const p2 = db.effectivePrice(1, 'P2')
+  assert.equal(p2.aktif, 0)
+  assert.equal(p2.status_supplier, 'removed')
+  db.close()
+})
+
+test('fallback ke cache DB saat ICS error sementara pada ensureFreshCatalog', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop4.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  db.upsertProdukIcs({ code: 'OLD1', name: 'Old', price: 5000, type: 'cnd', status: 'available', stock: 3 })
+  resetCatalogCache(db.path)
+  failNext = true
+
+  const r = await ensureFreshCatalog(db, { ttlMs: 60_000 })
+  failNext = false
+  assert.equal(r.synced, false)
+  assert.equal(r.fresh, false)
+  assert.ok(r.error)
+  assert.equal(db.listProduk().length, 1, 'data cache lama tetap ada')
+  db.close()
+})
+
+test('syncAllSessions (cron) melewati sesi tanpa apikey dan sync sesi ber-apikey', async () => {
+  const ownerDb = openDb(join(dir, 'sessions', 'owner.sqlite'))
+  ownerDb.close()
+  const tokoDb = openDb(join(dir, 'sessions', 'toko_cron.sqlite'))
+  tokoDb.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  tokoDb.close()
+
+  fetchCalls = 0
+  failNext = false
+  mockProducts = [{ code: 'CRON1', name: 'Cron Produk', price: 3000, type: 'xda', status: 'available', stock: 2 }]
+
+  const res = await syncAllSessions(null, ['owner', 'toko_cron', 'nonexistent'], { staggerMs: 0 })
+  assert.equal(fetchCalls, 1)
+  assert.equal(res.length, 1)
+  assert.equal(res[0].sessionId, 'toko_cron')
+  assert.equal(res[0].total, 1)
+})
+
+after(() => {
+  globalThis.fetch = origFetch
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    // ignore Windows temp lock
+  }
+})

@@ -9,6 +9,7 @@ import './src/commands/supplier.js' // APIKEY/SYNC/CEK/REK/BTL
 import './src/commands/prefix.js' // setprefix (owner only)
 import './src/commands/owner.js' // status/sessions/restart/cmd/env (owner only)
 import { startWebhookServer, startPoller } from './src/webhook.js'
+import { startCatalogSyncCron } from './src/catalog.js'
 
 const logger = await createPinoLogger({ level: config.logLevel, pretty: true })
 
@@ -39,9 +40,11 @@ for (const sessionId of sessions) {
 // settles pendings the webhook never delivered.
 let webhookServer
 let poller
+let catalogCron
 try {
   webhookServer = startWebhookServer(logger)
   poller = startPoller(logger, () => [...runtime.clients.keys()])
+  catalogCron = startCatalogSyncCron(logger, () => [...runtime.clients.keys()])
 } catch (err) {
   logger.error({ err: err?.message }, 'webhook server gagal start')
 }
@@ -56,6 +59,7 @@ async function shutdown(reason = 'signal') {
   const force = setTimeout(() => process.exit(0), 4_000)
   force.unref?.()
   clearInterval(poller)
+  catalogCron?.stop()
   webhookServer?.close()
   await runtime.stopAll()
   closeRegistry()

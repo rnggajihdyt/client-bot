@@ -296,6 +296,22 @@ export function openDb(path) {
       .run(code, name, price, kat, status === 'available' ? 1 : 0, stock ?? 0, status ?? 'available', new Date().toISOString())
   }
 
+  // Mark products that vanished from ICS as inactive/removed without deleting
+  // rows so historical transaksi foreign keys remain intact.
+  db.markRemovedProduk = (activeCodes) => {
+    const now = new Date().toISOString()
+    const rows = raw.prepare(`SELECT kode, aktif, status_supplier FROM produk`).all()
+    const upd = raw.prepare(`UPDATE produk SET aktif = 0, stok = 0, status_supplier = 'removed', updated_at = ? WHERE kode = ?`)
+    let count = 0
+    for (const r of rows) {
+      if (!activeCodes.has(r.kode) && (r.aktif !== 0 || r.status_supplier !== 'removed')) {
+        upd.run(now, r.kode)
+        count += 1
+      }
+    }
+    return count
+  }
+
   // ---- per-session settings (ICS apikey, webhook token) ----
   db.getSetting = (key) => raw.prepare(`SELECT value FROM settings WHERE key = ?`).get(key)?.value
   db.setSetting = (key, value) =>

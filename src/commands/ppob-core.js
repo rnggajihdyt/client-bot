@@ -3,6 +3,7 @@ import { verifyPin, hashPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
 import { normalizeNohp } from '../utils.js'
+import { ensureFreshCatalog } from '../catalog.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'
@@ -48,7 +49,9 @@ function produkStatusLabel(p) {
 register({
   name: 'ch',
   description: 'Cek harga produk/kategori: CH.KODE atau CH.PREFIX[.HAL]',
-  async handler({ client, event, mitra, args, db }) {
+  async handler({ client, event, mitra, args, db, log, sessionId }) {
+    await ensureFreshCatalog(db, { logger: log, sessionId })
+
     const rawQuery = args[0]
     if (!rawQuery) {
       const cats = db.listKategori()

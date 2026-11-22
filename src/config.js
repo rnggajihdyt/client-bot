@@ -21,6 +21,10 @@ export const config = {
   unknownSenderMode: (process.env.UNKNOWN_SENDER_MODE ?? 'ignore').toLowerCase(),
   // Ignore group chats (@g.us) silently by default to reduce spam/ban risk.
   ignoreGroups: process.env.IGNORE_GROUPS !== 'false',
+  // Product catalog cache TTL in seconds (on-demand refresh for CH/BELI)
+  productCacheTtlSec: Number(process.env.PRODUCT_CACHE_TTL_SEC ?? 60),
+  // Background cron interval in minutes to auto-sync ICS products (0 = off)
+  syncIntervalMin: Number(process.env.SYNC_INTERVAL_MIN ?? 15),
 }
 
 export const sessionPath = (id) => `${config.sessionDir}/${id}.sqlite`

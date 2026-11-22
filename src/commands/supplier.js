@@ -5,6 +5,7 @@ import { ics } from '../ics.js'
 import { webhookUrl, icsConfig } from '../webhook.js'
 import { finalize, snapshotCommission } from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
+import { ensureFreshCatalog, syncCatalog } from '../catalog.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -57,7 +58,7 @@ register({
       return
     }
     try {
-      const r = await setupApiKey(db, db.getSetting('ics_apikey'))
+      const r = await syncCatalog(db, { apiKey: icsConfig(db).apiKey })
       await client.message.send(event.key.remoteJid, `Sync selesai. ${r.total} produk diterima, ${r.available} tersedia.`)
     } catch (err) {
       log?.error({ err: err?.message }, 'sync produk gagal')
@@ -72,7 +73,7 @@ register({
 register({
   name: 'beli',
   description: 'Beli produk: BELI.KODE.TUJUAN[.PIN]',
-  async handler({ client, event, mitra, args, db, log }) {
+  async handler({ client, event, mitra, args, db, log, sessionId }) {
     const [kode, tujuan, pin] = args
     if (!kode || !tujuan) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: BELI.KODE.TUJUAN.PIN')
@@ -87,6 +88,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Admin belum mengatur API key supplier')
       return
     }
+    await ensureFreshCatalog(db, { logger: log, sessionId })
     const p = db.effectivePrice(mitra.id, String(kode).toUpperCase())
     if (!p) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
