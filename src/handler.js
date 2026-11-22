@@ -11,6 +11,7 @@ import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
 import { webhookUrl, icsConfig } from './webhook.js'
 import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem, sessionReadyText } from './apikey.js'
+import { createHumanController } from './human.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -20,6 +21,7 @@ const owners = (process.env.OWNERS ?? '')
 
 const NOT_MITRA = 'Anda bukan mitra kami'
 const INACTIVE = 'Akun Anda nonaktif'
+const UNKNOWN_COOLDOWN_MS = 24 * 60 * 60 * 1000
 const SESSION_DIR = config.sessionDir
 const sessionPath = (id) => `${SESSION_DIR}/${id}.sqlite`
 
@@ -60,14 +62,18 @@ async function safeSend(client, jid, text, opts, log) {
 // Session directory lives in `.data/sessions/_registry.sqlite` so the super
 // admin manages every session from any connected number. `runtime` lets a
 // super admin connect a new session without restarting the process.
-export function attachHandlers(client, sessionId, logger, runtime = null) {
+export function attachHandlers(rawClient, sessionId, logger, runtime = null, human = null) {
   const log = logger.child({ sessionId })
+  const h = human ?? createHumanController(rawClient, sessionId, logger)
+  const client = h.client
   const prefixFor = () => getPrefix(sessionId, commandPrefix)
   const db = openDb(sessionPath(sessionId))
+  const unknownReplied = new Map()
   let dbClosed = false
   const closeDb = () => {
     if (dbClosed) return
     dbClosed = true
+    h.stop()
     db.close()
   }
 
@@ -92,13 +98,15 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     if (event.key.fromMe) return
     if (!event.key.remoteJid) return
 
+    // Group messages are ignored silently by default to avoid spam/ban triggers.
+    const ignoreGroups = (process.env.IGNORE_GROUPS ?? (config.ignoreGroups ? 'true' : 'false')) !== 'false'
+    if (ignoreGroups && event.key.remoteJid.endsWith('@g.us')) return
+
     const selectedId = extractSelectedId(event.message)
     const text = selectedId ?? extractText(event.message)
     if (!text) return
 
-    if (config.autoRead) await markRead(client, event)
-
-    // -- auth gate --
+    // -- auth gate (checked BEFORE markRead so strangers are never blue-ticked) --
     // Try every candidate number: in groups the chat JID is a group address,
     // so the sender's number may only appear on the *Alt field.
     const numbers = senderNumbers(event)
@@ -110,9 +118,22 @@ export function attachHandlers(client, sessionId, logger, runtime = null) {
     const isSuper = owners.some((o) => numbers.includes(o))
     const isAdmin = Boolean(mitra && mitra.senior_id == null)
     if (!mitra && !isSuper) {
+      const mode = String(process.env.UNKNOWN_SENDER_MODE ?? config.unknownSenderMode ?? 'ignore').toLowerCase()
+      if (mode === 'ignore') return
+      if (mode === 'once') {
+        const key = numbers[0] ?? event.key.remoteJid
+        const lastAt = unknownReplied.get(key) ?? 0
+        if (Date.now() - lastAt < UNKNOWN_COOLDOWN_MS) return
+        unknownReplied.set(key, Date.now())
+      }
+      await h.onIncoming()
+      if (config.autoRead) await markRead(client, event)
       await safeSend(client, event.key.remoteJid, NOT_MITRA, undefined, log)
       return
     }
+
+    await h.onIncoming()
+    if (config.autoRead) await markRead(client, event)
 
     const prefix = prefixFor()
 

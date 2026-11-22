@@ -5,6 +5,7 @@ import { store } from './store.js'
 import { attachHandlers } from './handler.js'
 import { setSessionStatus, getSession, isBootstrapSession, createSession } from './registry.js'
 import { runOnboarding } from './apikey.js'
+import { createHumanController, withJitter } from './human.js'
 
 const formatCode = (code) => code.match(/.{1,4}/g)?.join('-') ?? code
 
@@ -69,7 +70,7 @@ export function createRuntime(logger) {
     health.set(sessionId, h)
   }
 
-  function connectWithRetry(client, sessionId) {
+  function connectWithRetry(client, sessionId, human) {
     // Unbounded: a 10h uptime target must survive more than 10 drops.
     let attempt = 0
     let reconnecting = false
@@ -82,19 +83,22 @@ export function createRuntime(logger) {
       if (event.status === 'open') {
         attempt = 0
         logger.info({ sessionId }, 'connected')
-        // First open of this client: push the ICS apikey gate to the admin
-        // from this session's own client so their reply lands in this session.
-        // Resumed pairings never emit auth_paired, so this is the only hook
-        // that fires for both fresh and reconnected sessions.
+        // First open of this client: warm up briefly before going online and
+        // pushing the ICS apikey gate to the admin from this session's client.
         if (!onboarded) {
           onboarded = true
-          const sendToAdmin = (jid, text) => client.message.send(jid, text)
-          void runOnboarding(logger, sessionId, sendToAdmin).catch((err) =>
-            logger.warn({ sessionId, err: err?.message }, 'onboarding gagal')
-          )
+          void (async () => {
+            await human.onOpen()
+            if (clients.get(sessionId) !== client) return
+            const sendToAdmin = (jid, text) => client.message.send(jid, text)
+            await runOnboarding(logger, sessionId, sendToAdmin)
+          })().catch((err) => logger.warn({ sessionId, err: err?.message }, 'onboarding gagal'))
+        } else {
+          void human.onOpen().catch(() => {})
         }
         return
       }
+      human.onClose()
       // Always surface why: without the reason/code a flap loop is unguessable.
       logger.warn(
         { sessionId, reason: event.reason, code: event.code, isLogout: event.isLogout },
@@ -114,7 +118,8 @@ export function createRuntime(logger) {
       reconnecting = true
       try {
         for (;;) {
-          const delayMs = Math.min(60_000, 1_000 * 2 ** Math.min(attempt, 6))
+          const baseDelayMs = Math.min(60_000, 1_000 * 2 ** Math.min(attempt, 6))
+          const delayMs = withJitter(baseDelayMs, human.profile.jitterRatio)
           attempt += 1
           logger.info({ sessionId }, `reconnecting in ${delayMs}ms (attempt ${attempt})`)
           await new Promise((r) => setTimeout(r, delayMs))
@@ -229,7 +234,7 @@ export function createRuntime(logger) {
   async function startSession(sessionId, { notify } = {}) {
     if (clients.has(sessionId)) return clients.get(sessionId)
 
-    const client = new WaClient(
+    const rawClient = new WaClient(
       {
         store,
         sessionId,
@@ -239,11 +244,13 @@ export function createRuntime(logger) {
       },
       logger
     )
+    const human = createHumanController(rawClient, sessionId, logger)
+    const client = human.client
     clients.set(sessionId, client)
     handlePairing(client, sessionId, notify ?? consoleNotify(sessionId))
-    connectWithRetry(client, sessionId)
+    connectWithRetry(client, sessionId, human)
     client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
-    handles.set(sessionId, attachHandlers(client, sessionId, logger, api))
+    handles.set(sessionId, attachHandlers(client, sessionId, logger, api, human))
     setSessionStatus(sessionId, 'on')
 
     // connect() stays pending until paired; never await it here.

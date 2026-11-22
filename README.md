@@ -49,7 +49,10 @@ npm install
 | `STORE_PATH` | `.auth/state.sqlite` | File SQLite kredensial WhatsApp **semua** session |
 | `SESSION_DIR` | `.data/sessions` | DB PPOB per session: `<SESSION_DIR>/<sessionId>.sqlite` + `_registry.sqlite` |
 | `SETTINGS_PATH` | `.auth/settings.json` | Setelan runtime per session (mis. prefix) |
-| `AUTOREAD` | `false` | `true` = tandai pesan masuk sudah dibaca (centang biru) |
+| `AUTOREAD` | `false` | `true` = tandai pesan masuk sudah dibaca (centang biru) setelah jeda baca singkat |
+| `HUMAN_MODE` | `normal` | Perilaku natural: `normal` (<500ms total baca+ketik, idle offline 2-5m, warm-up 2-5s, jitter reconnect) \| `fast` \| `off` (otomatis `off` di test) |
+| `UNKNOWN_SENDER_MODE` | `ignore` | Nomor asing non-mitra: `ignore` (abaikan diam-diam) \| `once` (balas maks 1x/24 jam) \| `always` |
+| `IGNORE_GROUPS` | `true` | `true` = abaikan pesan grup (`@g.us`) secara diam-diam |
 | `OWNER_PIN` | `1234` | PIN awal admin yang di-seed `SESIBUAT` (segera ganti via `GP`) |
 | `LOG_LEVEL` | `info` | Level Pino |
 | `WEBHOOK_BASE_URL` | *(kosong)* | Base URL publik bot, mis. `https://bot.example.com` — menyusun URL webhook yang diberikan ke ICS |

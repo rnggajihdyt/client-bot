@@ -101,9 +101,28 @@ async function say(nohp, text, extra = {}) {
   return last()
 }
 
-test('nomor asing ditolak', async () => {
-  const r = await say('629999', 'SAL')
-  assert.equal(r, 'Anda bukan mitra kami')
+test('nomor asing & pesan grup diabaikan diam-diam (default ignore), mode once/always tetap bekerja', async () => {
+  // Default UNKNOWN_SENDER_MODE=ignore: tidak membalas nomor asing
+  assert.equal(await say('629999', 'SAL'), undefined)
+  assert.equal(sent.length, 0)
+
+  // Default IGNORE_GROUPS=true: pesan grup (@g.us) diabaikan diam-diam meski dari owner
+  sent.length = 0
+  await handlers.message({
+    key: { remoteJid: '12036300000@g.us', participant: '628111@s.whatsapp.net', fromMe: false },
+    message: { conversation: 'SAL' },
+  })
+  assert.equal(sent.length, 0)
+
+  // Mode once: balas sekali saja untuk nomor asing
+  process.env.UNKNOWN_SENDER_MODE = 'once'
+  assert.equal(await say('629998', 'SAL'), 'Anda bukan mitra kami')
+  assert.equal(await say('629998', 'SAL'), undefined)
+
+  // Mode always: selalu balas
+  process.env.UNKNOWN_SENDER_MODE = 'always'
+  assert.equal(await say('629997', 'SAL'), 'Anda bukan mitra kami')
+  delete process.env.UNKNOWN_SENDER_MODE
 })
 
 test('SAL format', async () => {
@@ -467,9 +486,9 @@ test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
   assert.match(lap, /KUOTA/)
 })
 
-test('super admin nomor asing tetap ditolak', async () => {
+test('super admin nomor asing tetap diabaikan', async () => {
   const r = await say('628999', 'SESI')
-  assert.equal(r, 'Anda bukan mitra kami')
+  assert.equal(r, undefined)
 })
 
 test('super admin: SESIBUAT wajib NOMORWA + admin beda dengan nomor bot', async () => {

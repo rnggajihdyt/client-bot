@@ -2,6 +2,7 @@ import { totalmem, freemem, uptime as osUptime, hostname, platform, release } fr
 import { register, listCommands } from './registry.js'
 import { formatRupiah } from '../money.js'
 import { config } from '../config.js'
+import { resolveHumanMode } from '../human.js'
 import * as registry from '../registry.js'
 
 // Utility commands for the super admin (OWNERS). Registered here so they live
@@ -145,6 +146,7 @@ register({
         `Sessions: ${config.sessionId} | dir: ${config.sessionDir}\n` +
         `Prefix: ${JSON.stringify(config.commandPrefix)} | pairing: ${config.pairingMode}\n` +
         `Store: ${config.storePath} | autoread: ${config.autoRead}\n` +
+        `Human: ${resolveHumanMode()} | unknown: ${config.unknownSenderMode} | ignoreGroups: ${config.ignoreGroups}\n` +
         `Owners: ${mask(process.env.OWNERS)} | pairingPhone: ${mask(config.pairingPhone)}\n` +
         `Node: ${process.version} | pid: ${process.pid}`
     )
