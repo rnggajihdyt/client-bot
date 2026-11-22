@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS mutasi (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mutasi_agen ON mutasi(agen_id);
+
+CREATE TABLE IF NOT EXISTS deposit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id_deposit TEXT UNIQUE NOT NULL,
+  agen_id INTEGER NOT NULL REFERENCES agen(id),
+  nominal INTEGER NOT NULL,
+  kode_unik INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  bank TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL,
+  selesai_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_deposit_agen ON deposit(agen_id);
+CREATE INDEX IF NOT EXISTS idx_deposit_status ON deposit(status);
 `
 
 // Additive migrations: SQLite has no "ADD COLUMN IF NOT EXISTS".
@@ -332,6 +347,43 @@ export function openDb(path) {
     raw
       .prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(key, String(value))
+
+  // ---- deposit tickets (TIKET / TPAY / BTL) ----
+  db.insertDeposit = ({ idDeposit, agenId, nominal, kodeUnik, total, bank = '', status = 'pending' }) => {
+    const { lastInsertRowid } = raw
+      .prepare(
+        `INSERT INTO deposit (id_deposit, agen_id, nominal, kode_unik, total, bank, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(idDeposit, agenId, nominal, kodeUnik, total, bank, status, new Date().toISOString())
+    return lastInsertRowid
+  }
+
+  db.getDeposit = (idDeposit) => raw.prepare(`SELECT d.*, a.nohp AS agen_nohp, a.kode AS agen_kode FROM deposit d JOIN agen a ON a.id = d.agen_id WHERE d.id_deposit = ?`).get(idDeposit)
+
+  // The mitra's still-open ticket (at most one at a time).
+  db.pendingDepositOf = (agenId) =>
+    raw.prepare(`SELECT * FROM deposit WHERE agen_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`).get(agenId)
+
+  db.setDepositStatus = (idDeposit, status) =>
+    raw
+      .prepare(`UPDATE deposit SET status = ?, selesai_at = ? WHERE id_deposit = ?`)
+      .run(status, new Date().toISOString(), idDeposit).changes
+
+  db.depositSettings = () => ({
+    // Admin-configurable payment channels: "BCA|2390922089|Muhammad Tasin, BRI|011...|..."
+    channels: (db.getSetting('deposit_channels') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        const [bank = '', no = '', an = ''] = s.split('|').map((x) => x.trim())
+        return { bank, no, an }
+      })
+      .filter((c) => c.bank && c.no),
+    open: db.getSetting('deposit_open') ?? '08.00',
+    close: db.getSetting('deposit_close') ?? '23.00',
+  })
 
   // ---- mutasi ----
   db.addMutasi = (agenId, tipe, nominal, saldoAkhir, keterangan = '') =>

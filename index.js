@@ -6,6 +6,7 @@ import './src/commands/demo.js' // registers the demo commands
 import './src/commands/ppob.js' // info / format1..4 menus
 import './src/commands/ppob-core.js' // SAL/CH/DAFTAR/TUKAR/dll
 import './src/commands/supplier.js' // APIKEY/BELI/CEK/REK
+import './src/commands/deposit.js' // TIKET/TPAY (BTL stays in ppob-core stubs until wired)
 import './src/commands/prefix.js' // setprefix (owner only)
 import './src/commands/owner.js' // status/sessions/restart/cmd/env (owner only)
 import { startWebhookServer, startPoller } from './src/webhook.js'

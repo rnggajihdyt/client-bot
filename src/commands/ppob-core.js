@@ -642,16 +642,5 @@ register({
   handler: (ctx) => adjustSaldo(ctx, -1),
 })
 
-// ---- stubs for not-yet-built features ----
-// BTL is reserved for cancelling a deposit (not an order); deposit itself is
-// not built yet, so both stay stubs until the deposit flow lands.
-const STUBS = { tiket: 'Tiket Deposit', btl: 'Batal Deposit' }
-for (const [name, label] of Object.entries(STUBS)) {
-  register({
-    name,
-    description: label,
-    handler({ client, event }) {
-      return client.message.send(event.key.remoteJid, 'Fitur belum tersedia')
-    },
-  })
-}
+// ---- end of ppob-core ----
+

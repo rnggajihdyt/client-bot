@@ -194,8 +194,9 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `BELI` / langsung | `KODE.TUJUAN[.PIN]` / `TUJUAN.KODE` / multi baris / `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS (bisa tanpa `BELI`, tanpa PIN, bolak-balik, multi baris/nomor); saldo ditahan, status `proses` sampai webhook/cron |
 | `CEK` | `CEK` / `CEK.TUJUAN` | Daftar pending sendiri / detail transaksi paling terakhir untuk nomor tujuan tsb (juga dukung `CEK.IDTRX`) |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
-| `BTL` | `BTL.IDDEPOSIT.PIN` | Stub — disiapkan untuk batal deposit (fitur deposit belum ada); transaksi order tidak bisa dibatalkan via BTL |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
+| `TIKET` | `TIKET.NOMINAL.PIN` | Buat tiket deposit + kode unik 3 digit. `TIKET` tanpa arg = tampilkan ulang tiket pending |
+| `BTL` | `BTL.IDDEPOSIT.PIN` | Batalkan tiket deposit sendiri yang masih `pending` |
 | `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline (senior = pengirim) |
 | `LDL` | `LDL` | Daftar downline langsung |
 | `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
@@ -215,6 +216,8 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `KSAL` | `KSAL.NOHP.NOMINAL.PIN` | Kurangi saldo mitra berdasarkan nomor HP (cek saldo cukup, tidak boleh minus) + catat mutasi & kirim notifikasi |
 | `LPRDK` | `LPRDK` | Daftar produk + modal + markup + status supplier |
 | `MKP` | `MKP.NOMINAL` / `MKP.KODE.NOMINAL` | Markup general (fallback) / per produk (menimpa general) |
+| `TPAY` | `TPAY.BANK.NO.A/N` | Tambah/ubah rekening deposit (beberapa bank = baris berbeda di tiket). `TPAY.HAPUS.BANK` hapus, `TPAY.JAM.08.00-23.00` atur jam tiket |
+| `TDEP` | `TDEP.IDDEPOSIT.PIN` | Konfirmasi tiket deposit lunas → saldo mitra bertambah + notifikasi |
 
 ### Super admin (OWNERS)
 
@@ -235,7 +238,7 @@ Perintah owner bekerja dari **semua** sesi yang hidup — tidak butuh baris agen
 
 ### Menu
 
-`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` & `BTL` stub (`Fitur belum tersedia`) menunggu fitur deposit. `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
+`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
 
 ## Alur transaksi (supplier ICS, async dua fase)
 
@@ -256,7 +259,8 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, baris terminal (`sukses`/`gagal`/`batal`) mengabaikan webhook telat.
-- **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` bukan untuk order — disiapkan untuk membatalkan **deposit** dan masih stub (`Fitur belum tersedia`) sampai fitur deposit dibangun.
+- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (bisa banyak bank), jam tiket via `TPAY.JAM.08.00-23.00`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra.
+- **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` hanya untuk tiket deposit, bukan order.
 - **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
 - Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (`MKP` per produk jika ada, else general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
@@ -275,7 +279,7 @@ mitra: BELI.PULSA10.0812xxxx
 | **Uplink** | anak langsung admin | Transaksi + `LAP` jaringannya sendiri |
 | **Mitra** | downline | Transaksi, kelola downline-nya sendiri |
 
-- **DB terpisah per session** (`.data/sessions/<id>.sqlite`): tabel `agen`, `agen_nomor`, `produk`, `transaksi`, `mutasi`, `settings`. Tidak ada data yang bocor antar admin.
+- **DB terpisah per session** (`.data/sessions/<id>.sqlite`): tabel `agen`, `agen_nomor`, `produk`, `transaksi`, `mutasi`, `deposit`, `settings`. Tidak ada data yang bocor antar admin.
 - **Registry** `.data/sessions/_registry.sqlite`: id, label, admin, nomor WA, status. Semua sesi di registry otomatis di-connect saat start.
 - **Kredensial WA** `.auth/state.sqlite` satu file untuk semua session, dipisah per `sessionId`.
 - Nomor paralel (`TNO`) membuat beberapa JID diakui sebagai mitra yang sama.
@@ -351,7 +355,8 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/supplier.js    BELI/CEK/REK/APIKEY (BTL pindah ke ppob-core sebagai stub deposit)
+src/commands/deposit.js      TIKET/TPAY/TDEP/BTL — tiket deposit + kode unik + konfirmasi admin
+src/commands/supplier.js    BELI/CEK/REK/APIKEY
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/commands/prefix.js      setprefix (owner only)

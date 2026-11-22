@@ -59,7 +59,10 @@ const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Kurang Saldo : KSAL.NOHP.NOMINAL.PIN
 • List Produk : LPRDK
 • Markup General : MKP.NOMINAL
-• Markup per Produk : MKP.KODE.NOMINAL`
+• Markup per Produk : MKP.KODE.NOMINAL
+• Rekening Deposit : TPAY.BANK.NO.A/N
+• Jam Tiket : TPAY.JAM.08.00-23.00
+• Konfirmasi Deposit : TDEP.IDDEPOSIT.PIN`
 
 const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 • Daftar Session : SESI

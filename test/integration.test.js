@@ -17,6 +17,7 @@ await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
 await import('../src/commands/ppob-core.js')
 await import('../src/commands/supplier.js')
+await import('../src/commands/deposit.js')
 await import('../src/commands/owner.js')
 const { finalize } = await import('../src/orders.js')
 openRegistry(join(dir, 'registry.sqlite'))
@@ -567,6 +568,55 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
+test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo, TPAY atur rekening', async () => {
+  db.raw.prepare(`UPDATE agen SET saldo = 0 WHERE nohp = '628222'`).run()
+  // admin atur rekening + jam
+  assert.match(await say('628111', 'TPAY.BCA.2390922089.Muhammad.Tasin'), /BCA 2390922089/)
+  assert.match(await say('628111', 'TPAY.JAM.08.00-23.00'), /08\.00 - 23\.00/)
+
+  const t1 = await say('628222', 'TIKET.1700000.1234')
+  assert.match(t1, /Tiket dibuat pada Tanggal \d\d\/\d\d \d\d:\d\d:\d\d WIB/)
+  assert.match(t1, /Silahkan Transfer Rp\. 1\.700\.\d{3}/) // nominal + kode unik 3 digit
+  assert.match(t1, /BCA 2390922089/)
+  assert.match(t1, /A\.N Muhammad Tasin/)
+  assert.match(t1, /Tiket Open jam 08\.00 - 23\.00/)
+  const depRow = db.pendingDepositOf(db.findAgenByNohp('628222').id)
+  assert.ok(depRow, 'tiket pending tersimpan')
+  assert.equal(depRow.nominal, 1700000)
+  assert.equal(depRow.total, 1700000 + depRow.kode_unik)
+
+  // tiket kedua diblokir selama pending
+  assert.match(await say('628222', 'TIKET.50000.1234'), /Masih ada tiket/)
+
+  // BTL milik orang lain ditolak; milik sendiri dibatalkan
+  assert.match(await say('628111', `BTL.${depRow.id_deposit}.1234`), /Tiket tidak ditemukan/)
+  assert.match(await say('628222', `BTL.${depRow.id_deposit}.1234`), /dibatalkan/)
+  assert.equal(db.getDeposit(depRow.id_deposit).status, 'batal')
+
+  // buat tiket baru lagi, lalu TDEP oleh admin
+  const t2 = await say('628222', 'TIKET.1700000.1234')
+  assert.match(t2, /Silahkan Transfer/)
+  const dep2 = db.pendingDepositOf(db.findAgenByNohp('628222').id)
+  assert.match(await say('628222', `TDEP.${dep2.id_deposit}.1234`), /Khusus admin/)
+  await say('628111', `TDEP.${dep2.id_deposit}.1234`)
+  assert.ok(
+    sent.some((s) => s.jid === '628111@s.whatsapp.net' && /lunas/.test(s.text)),
+    'admin dapat konfirmasi lunas'
+  )
+  assert.equal(db.findAgenByNohp('628222').saldo, 1700000)
+  // mitra dapat notifikasi
+  assert.ok(
+    sent.some((s) => s.jid === '628222@s.whatsapp.net' && /Saldo Anda ditambahkan Rp\. 1\.700\.000/.test(s.text)),
+    'notifikasi deposit ke mitra'
+  )
+  // TDEP kedua kali ditolak
+  assert.match(await say('628111', `TDEP.${dep2.id_deposit}.1234`), /sudah sukses/)
+
+  // TPAY hapus rekening
+  assert.match(await say('628111', 'TPAY.HAPUS.BCA'), /dihapus/)
+  assert.equal(db.depositSettings().channels.length, 0)
+})
+
 test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   const r = await say('628222', 'BELI.PULSA10.0811777')
@@ -576,8 +626,8 @@ test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit
   assert.match(await say('628222', `CEK.${idTrx}`), /Status: proses/)
   assert.match(await say('628222', 'REK'), /Beli PULSA10/)
 
-  // BTL tidak lagi membatalkan transaksi
-  assert.match(await say('628222', `BTL.${idTrx}.1234`), /Fitur belum tersedia/)
+  // BTL kini untuk tiket deposit; transaksi order tidak bisa dibatalkan
+  assert.match(await say('628222', `BTL.${idTrx}.1234`), /Tiket tidak ditemukan/)
   assert.equal(db.getTransaksi(idTrx).status, 'proses')
 
   finalize(db, idTrx, { status: 'gagal' })
