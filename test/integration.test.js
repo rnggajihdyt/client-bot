@@ -558,6 +558,53 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   assert.equal(await say('628222', 'kamar.1234567'), undefined)
 })
 
+test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink (+ alert ke admin)', async () => {
+  const origFetch = globalThis.fetch
+  db.raw.prepare(`UPDATE agen SET saldo = 100000 WHERE nohp = '628222'`).run()
+  db.raw.prepare(`UPDATE agen SET saldo = 100000 WHERE nohp = '628111'`).run()
+
+  try {
+    // 1) Saldo operasional ICS habis: downline/uplink TIDAK boleh melihat kata "ICS" maupun saldo admin
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({
+          success: false,
+          message: 'Saldo operasional tidak cukup. Saldo Anda: Rp 0, Dibutuhkan: Rp 100',
+        }),
+    })
+    await say('628222', 'xda13.08777777')
+    const mitraMsg = sent.find((m) => m.jid === '628222@s.whatsapp.net')?.text ?? ''
+    assert.match(mitraMsg, /Transaksi gagal: Sistem sedang gangguan sementara/)
+    assert.match(mitraMsg, /Saldo dikembalikan\./)
+    assert.doesNotMatch(mitraMsg, /ICS/i)
+    assert.doesNotMatch(mitraMsg, /Saldo operasional|Saldo Anda|Dibutuhkan|Rp 0|Rp 100/i)
+    // saldo mitra tetap penuh (refunded)
+    assert.equal(db.findAgenByNohp('628222').saldo, 100000)
+    // admin menerima peringatan saldo supplier habis
+    const adminAlert = sent.find((m) => m.jid === '628111@s.whatsapp.net')?.text ?? ''
+    assert.match(adminAlert, /Peringatan Saldo Supplier/)
+    assert.match(adminAlert, /Saldo operasional tidak cukup/)
+
+    // Admin sendiri yang transaksi tetap melihat detail aslinya
+    const adminReply = await say('628111', 'xda13.08777777')
+    assert.match(adminReply, /Saldo operasional tidak cukup/)
+
+    // 2) Error bisnis biasa (mis. nomor tujuan salah): kata ICS tetap disensor untuk downline/uplink
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 400,
+      text: async () => JSON.stringify({ success: false, message: 'Nomor tujuan tidak valid di ICS Store' }),
+    })
+    const errMitra = await say('628222', 'xda13.08777777')
+    assert.match(errMitra, /Nomor tujuan tidak valid/)
+    assert.doesNotMatch(errMitra, /ICS/i)
+  } finally {
+    globalThis.fetch = origFetch
+  }
+})
+
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
   await say('628111', 'SESIBUAT.toko2.628555.62856429274736.Toko Dua')
   const mk = sent.find((s) => /terdaftar/.test(s.text))?.text ?? ''

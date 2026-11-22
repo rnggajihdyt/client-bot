@@ -51,6 +51,36 @@ register({
 // ---- BELI (fleksibel: [BELI.]KODE.TUJUAN[.PIN], bolak-balik, multi baris/nomor) ----
 const DEST_RE = /^\+?\d{4,20}(?:,\+?\d{4,20})*$/
 const CODE_RE = /^[A-Za-z][A-Za-z0-9_-]*$/
+const UPSTREAM_BALANCE_RE =
+  /saldo\s*(?:operasional|reseller|anda)?.*(?:tidak\s*cukup|habis|kurang)|insufficient\s*balance|dibutuhkan\s*:\s*rp/i
+const INTERNAL_ERR_RE =
+  /respons\s*bukan\s*json|http\s*[45]\d\d|invalid\s*token|api\s*key|unauthorized|forbidden|timeout|timed\s*out|aborted|fetch\s*failed|econn|enotfound/i
+const BALANCE_ALERT_COOLDOWN_MS = 10 * 60 * 1000
+const lastBalanceAlert = new Map() // dbPath -> epoch ms
+
+export function isUpstreamBalanceError(msg) {
+  return UPSTREAM_BALANCE_RE.test(String(msg ?? ''))
+}
+
+// Sensor nama supplier (ICS) & detail internal (seperti saldo operasional admin)
+// agar tidak bocor ke downline/uplink.
+export function sanitizeOrderErrorForMitra(rawMsg) {
+  const s = String(rawMsg ?? '').trim()
+  if (!s || isUpstreamBalanceError(s)) {
+    return 'Sistem sedang gangguan sementara, silakan coba lagi nanti atau hubungi admin.'
+  }
+  if (INTERNAL_ERR_RE.test(s)) {
+    return 'Layanan sedang gangguan sementara, silakan coba lagi nanti.'
+  }
+  const cleaned = s
+    .replace(/^\s*ICS(?:\s*Store)?\s*[:\-–—]\s*/i, '')
+    .replace(/\bICS\s*Store\b/gi, 'server')
+    .replace(/\bICS\b/gi, 'server')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s:.\-–—]+/, '')
+    .trim()
+  return cleaned || 'Layanan sedang gangguan sementara, silakan coba lagi nanti.'
+}
 
 // Parse one line into one or more { kode, tujuan, pin } order items.
 export function parseOrderLine(line, lookupProduct) {
@@ -131,7 +161,7 @@ function parseOrderBatch(rawText, lookupProduct) {
 
 // Execute a single order item against DB + ICS. Re-reads mitra balance each time
 // so multi-item batches deduct accurately in order.
-async function executeOneOrder({ db, mitraId, cfg, item, log }) {
+async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log }) {
   const freshMitra = db.findAgenById(mitraId)
   if (!freshMitra) return { ok: false, item, error: 'Akun mitra tidak ditemukan' }
   if (item.pin && !verifyPin(item.pin, freshMitra.pin_hash)) {
@@ -170,23 +200,40 @@ async function executeOneOrder({ db, mitraId, cfg, item, log }) {
   } catch (err) {
     log?.error({ err: err?.message, idTrx }, 'order ICS gagal')
     finalize(db, idTrx, { status: 'gagal' }) // supplier never took it: refund now
-    return { ok: false, item, error: `Transaksi gagal: ${err.message}\nSaldo dikembalikan.`, refunded: true }
+    if (!isAdmin && isUpstreamBalanceError(err?.message)) {
+      const root = db.root()
+      const last = lastBalanceAlert.get(db.path) ?? 0
+      if (root?.nohp && Date.now() - last >= BALANCE_ALERT_COOLDOWN_MS) {
+        lastBalanceAlert.set(db.path, Date.now())
+        void client.message
+          .send(
+            `${root.nohp}@s.whatsapp.net`,
+            `*Peringatan Saldo Supplier*\nOrder ${p.kode} dari ${freshMitra.kode} gagal karena saldo ICS tidak cukup.\nDetail: ${err.message}`
+          )
+          .catch((e) => log?.warn({ err: e?.message }, 'alert saldo supplier ke admin gagal'))
+      }
+    }
+    const reason = isAdmin ? err.message : sanitizeOrderErrorForMitra(err?.message)
+    return { ok: false, item, error: `Transaksi gagal: ${reason}\nSaldo dikembalikan.`, refunded: true }
   }
 
   return { ok: true, item, idTrx, produk: p }
 }
 
 async function runOrderBatch(ctx, items) {
-  const { client, event, mitra, db, log, sessionId } = ctx
+  const { client, event, mitra, isAdmin, db, log, sessionId } = ctx
   const cfg = icsConfig(db)
   if (!cfg.apiKey) {
-    await client.message.send(event.key.remoteJid, 'Admin belum mengatur API key supplier')
+    await client.message.send(
+      event.key.remoteJid,
+      isAdmin ? 'Admin belum mengatur API key supplier' : 'Layanan transaksi sedang tidak aktif. Hubungi admin.'
+    )
     return
   }
 
   const results = []
   for (const item of items) {
-    results.push(await executeOneOrder({ db, mitraId: mitra.id, cfg, item, log, sessionId }))
+    results.push(await executeOneOrder({ client, db, mitraId: mitra.id, isAdmin, cfg, item, log, sessionId }))
   }
 
   // Single-item order: keep the classic concise reply format.
@@ -246,7 +293,10 @@ register({
     }
     const cfg = icsConfig(db)
     if (!cfg.apiKey) {
-      await client.message.send(event.key.remoteJid, 'Admin belum mengatur API key supplier')
+      await client.message.send(
+        event.key.remoteJid,
+        ctx.isAdmin ? 'Admin belum mengatur API key supplier' : 'Layanan transaksi sedang tidak aktif. Hubungi admin.'
+      )
       return
     }
     await ensureFreshCatalog(db, { logger: log, sessionId })
