@@ -457,6 +457,36 @@ export function openDb(path) {
       )
       .get(idTrx)
 
+  // Latest transaction matching a destination number (with 08 <-> 628 fallback).
+  // `agenIds` null = whole session (for admin); array = scoped to those agents.
+  db.getLatestTransaksiByTujuan = (tujuan, agenIds = null) => {
+    const rawTujuan = String(tujuan ?? '').trim()
+    if (!rawTujuan) return undefined
+    const ids = agenIds?.length ? agenIds : null
+    const scope = ids ? `AND t.agen_id IN (${ids.map(() => '?').join(',')})` : ''
+    const queryBy = (val) => {
+      const params = ids ? [val, ...ids] : [val]
+      return raw
+        .prepare(
+          `SELECT t.*, a.nohp AS agen_nohp, a.kode AS agen_kode
+           FROM transaksi t LEFT JOIN agen a ON a.id = t.agen_id
+           WHERE t.tujuan = ? ${scope}
+           ORDER BY t.id DESC LIMIT 1`
+        )
+        .get(...params)
+    }
+    const exact = queryBy(rawTujuan)
+    if (exact) return exact
+    const digits = rawTujuan.replace(/\D/g, '')
+    if (!digits) return undefined
+    if (digits !== rawTujuan) {
+      const byDigits = queryBy(digits)
+      if (byDigits) return byDigits
+    }
+    const alt = digits.startsWith('0') ? '62' + digits.slice(1) : digits.startsWith('62') ? '0' + digits.slice(2) : ''
+    return alt ? queryBy(alt) : undefined
+  }
+
   db.setTransaksiStatus = (idTrx, status) =>
     raw.prepare(`UPDATE transaksi SET status = ? WHERE id_trx = ?`).run(status, idTrx).changes
 

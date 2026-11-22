@@ -74,7 +74,7 @@ const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 • Semua Command : CMD`
 
 const MITRA_EXTRA = `*TRANSAKSI*
-• Cek Trx : CEK[.IDTRX]
+• Cek Trx : CEK[.TUJUAN]
 • Mutasi : REK
 • Batal Trx : BTL.IDTRX.PIN`
 

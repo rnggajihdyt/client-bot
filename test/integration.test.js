@@ -175,7 +175,7 @@ test('info uplink/mitra tanpa section admin', async () => {
   assert.match(up, /FORMAT 4/)
   assert.doesNotMatch(up, /KHUSUS ADMIN/)
   assert.doesNotMatch(up, /KHUSUS SUPER ADMIN/)
-  assert.match(up, /Cek Trx : CEK\[\.IDTRX\]/)
+  assert.match(up, /Cek Trx : CEK\[\.TUJUAN\]/)
 })
 
 test('CH untuk downline: modal + markup', async () => {
@@ -506,6 +506,54 @@ test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', as
   // webhook sukses telat tidak boleh mengubah batal
   assert.equal(finalize(db, idTrx, { status: 'sukses' }), null)
   assert.equal(db.getTransaksi(idTrx).status, 'batal')
+})
+
+test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.TUJUAN (ambil terakhir)', async () => {
+  db.upsertProdukIcs({ code: 'XDA13', name: 'XL Data 13GB', price: 20000, type: 'xda', status: 'available', stock: 10 })
+  db.upsertProdukIcs({ code: 'XDA40', name: 'XL Data 40GB', price: 30000, type: 'xda', status: 'available', stock: 10 })
+  db.raw.prepare(`UPDATE agen SET saldo = 200000 WHERE nohp = '628222'`).run()
+
+  // 1) Beli singkat tunggal tanpa BELI dan tanpa PIN: KODE.TUJUAN
+  const r1 = await say('628222', 'xda13.08777777')
+  assert.match(r1, /Transaksi diproses/)
+  assert.match(r1, /Tujuan: 08777777/)
+  const id1 = r1.match(/ID: (T\d+)/)[1]
+  finalize(db, id1, { status: 'sukses', sn: 'SN-PERTAMA' })
+
+  // 2) Format bolak-balik tunggal: TUJUAN.KODE
+  const r2 = await say('628222', '08777777.xda40')
+  assert.match(r2, /Transaksi diproses/)
+  assert.match(r2, /XL Data 40GB/)
+  assert.match(r2, /Tujuan: 08777777/)
+  const id2 = r2.match(/ID: (T\d+)/)[1]
+  finalize(db, id2, { status: 'sukses', sn: 'SN-TERAKHIR' })
+
+  // 3) CEK.TUJUAN memilih transaksi paling terakhir (id2, bukan id1) + dukung 628 <-> 08
+  const cek1 = await say('628222', 'CEK.08777777')
+  assert.match(cek1, new RegExp(`ID: ${id2}`))
+  assert.match(cek1, /Produk: XDA40/)
+  assert.match(cek1, /SN: SN-TERAKHIR/)
+  const cekAlt = await say('628222', 'CEK.628777777')
+  assert.match(cekAlt, new RegExp(`ID: ${id2}`))
+
+  // 4) Multi baris campuran (normal, bolak-balik, dan kode tidak ada)
+  const batch = await say(
+    '628222',
+    'xda13.08777777\nxda999.087878767\n0887878.xda40'
+  )
+  assert.match(batch, /\*Hasil Transaksi \(3 item\):\*/)
+  assert.match(batch, /1\. XDA13 → 08777777: Diproses/)
+  assert.match(batch, /2\. XDA999 → 087878767: Gagal — Produk tidak ditemukan/)
+  assert.match(batch, /3\. XDA40 → 0887878: Diproses/)
+
+  // 5) Multi nomor dipisah koma dalam 1 baris
+  const multiComma = await say('628222', 'xda13.08111111,08222222')
+  assert.match(multiComma, /\*Hasil Transaksi \(2 item\):\*/)
+  assert.match(multiComma, /1\. XDA13 → 08111111: Diproses/)
+  assert.match(multiComma, /2\. XDA13 → 08222222: Diproses/)
+
+  // 6) Teks acak bukan produk tetap diabaikan untuk mitra (tidak spam)
+  assert.equal(await say('628222', 'kamar.1234567'), undefined)
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {

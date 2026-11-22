@@ -12,6 +12,7 @@ import { parseRange } from './report.js'
 import { webhookUrl, icsConfig } from './webhook.js'
 import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem, sessionReadyText } from './apikey.js'
 import { createHumanController } from './human.js'
+import { tryDirectOrder } from './commands/supplier.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -213,8 +214,34 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       return
     }
 
+    const ctx = {
+      client,
+      event,
+      args: parsed.args,
+      rawText: text,
+      log,
+      sessionId,
+      owners,
+      prefix,
+      mitra,
+      isAdmin,
+      isSuper,
+      deactivated,
+      db,
+    }
+
     const command = getCommand(parsed.cmd)
     if (!command) {
+      // Direct shorthand order: KODE.TUJUAN[.PIN], swapped, or multi-line batch.
+      if (mitra && !deactivated) {
+        try {
+          if (await tryDirectOrder(ctx)) return
+        } catch (err) {
+          log.error({ err, rawText: text }, 'direct order failed')
+          await safeSend(client, event.key.remoteJid, 'Transaksi gagal diproses', { quote: event }, log)
+          return
+        }
+      }
       // Owner gets the session menu instead of silence; a mitra with no prefix
       // is ignored (typing random text must not spam the chat).
       if (isSuper) {
@@ -226,20 +253,6 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       return
     }
 
-    const ctx = {
-      client,
-      event,
-      args: parsed.args,
-      log,
-      sessionId,
-      owners,
-      prefix,
-      mitra,
-      isAdmin,
-      isSuper,
-      deactivated,
-      db,
-    }
     try {
       await command.handler(ctx)
     } catch (err) {

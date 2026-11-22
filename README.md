@@ -191,8 +191,8 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 |---|---|---|
 | `SAL` | `SAL` | Saldo, komisi, dalam proses, terpakai hari ini |
 | `CH` | `CH.KODE` / `CH.PREFIX.HAL` | Harga produk tunggal atau daftar harga per prefix kode/kategori dengan paginasi (contoh: `CH.XDA.1`) |
-| `BELI` | `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS; saldo ditahan, status `proses` sampai webhook/cron |
-| `CEK` | `CEK` / `CEK.IDTRX` | Daftar pending sendiri / detail satu transaksi |
+| `BELI` / langsung | `KODE.TUJUAN[.PIN]` / `TUJUAN.KODE` / multi baris / `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS (bisa tanpa `BELI`, tanpa PIN, bolak-balik, multi baris/nomor); saldo ditahan, status `proses` sampai webhook/cron |
+| `CEK` | `CEK` / `CEK.TUJUAN` | Daftar pending sendiri / detail transaksi paling terakhir untuk nomor tujuan tsb (juga dukung `CEK.IDTRX`) |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
 | `BTL` | `BTL.IDTRX.PIN` | Batalkan transaksi masih-`proses` + refund lokal |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
