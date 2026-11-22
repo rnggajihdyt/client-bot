@@ -235,7 +235,7 @@ Perintah owner bekerja dari **semua** sesi yang hidup — tidak butuh baris agen
 
 ### Menu
 
-`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` stub (`Fitur belum tersedia`). `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
+`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `TIKET` & `BTL` stub (`Fitur belum tersedia`) menunggu fitur deposit. `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
 
 ## Alur transaksi (supplier ICS, async dua fase)
 
@@ -351,7 +351,7 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY/TSAL/KSAL
+src/commands/supplier.js    BELI/CEK/REK/APIKEY (BTL pindah ke ppob-core sebagai stub deposit)
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/commands/prefix.js      setprefix (owner only)
