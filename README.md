@@ -194,7 +194,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `BELI` / langsung | `KODE.TUJUAN[.PIN]` / `TUJUAN.KODE` / multi baris / `BELI.KODE.TUJUAN[.PIN]` | Order ke ICS (bisa tanpa `BELI`, tanpa PIN, bolak-balik, multi baris/nomor); saldo ditahan, status `proses` sampai webhook/cron |
 | `CEK` | `CEK` / `CEK.TUJUAN` | Daftar pending sendiri / detail transaksi paling terakhir untuk nomor tujuan tsb (juga dukung `CEK.IDTRX`) |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
-| `BTL` | `BTL.IDTRX.PIN` | Batalkan transaksi masih-`proses` + refund lokal |
+| `BTL` | `BTL.IDDEPOSIT.PIN` | Stub — disiapkan untuk batal deposit (fitur deposit belum ada); transaksi order tidak bisa dibatalkan via BTL |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
 | `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline (senior = pengirim) |
 | `LDL` | `LDL` | Daftar downline langsung |
@@ -255,7 +255,8 @@ mitra: BELI.PULSA10.0812xxxx
          └─ failed  → status 'gagal', harga_efektif direfund penuh
 ```
 
-- Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, `batal` (via `BTL`) mengabaikan webhook telat.
+- Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, baris terminal (`sukses`/`gagal`/`batal`) mengabaikan webhook telat.
+- **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` bukan untuk order — disiapkan untuk membatalkan **deposit** dan masih stub (`Fitur belum tersedia`) sampai fitur deposit dibangun.
 - **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
 - Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (`MKP` per produk jika ada, else general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).

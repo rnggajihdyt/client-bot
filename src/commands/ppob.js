@@ -15,7 +15,7 @@ const FORMATS = {
 • Cek Trx : CEK.TUJUAN
 • Laporan : LAP
 • Mutasi : REK
-• Batal Trx : BTL.IDTRX.PIN
+• Batal Deposit : BTL.IDDEPOSIT.PIN
 
 *(Bisa tanpa PIN, spasi, bolak-balik & multi nomor)*`,
   format2: `*FORMAT 2 (DEPOSIT & TAMBAH AGEN)*
@@ -76,7 +76,7 @@ const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 const MITRA_EXTRA = `*TRANSAKSI*
 • Cek Trx : CEK[.TUJUAN]
 • Mutasi : REK
-• Batal Trx : BTL.IDTRX.PIN`
+• Batal Deposit : BTL.IDDEPOSIT.PIN`
 
 function extrasFor({ isAdmin, isSuper }) {
   return [isAdmin ? ADMIN_EXTRA : MITRA_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')

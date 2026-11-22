@@ -395,38 +395,6 @@ register({
 })
 
 // ---- BTL ----
-register({
-  name: 'btl',
-  description: 'Batalkan transaksi pending: BTL.IDTRX.PIN',
-  async handler({ client, event, mitra, args, db }) {
-    const [id, pin] = args
-    if (!id || !pin) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: BTL.IDTRX.PIN')
-      return
-    }
-    if (!verifyPin(pin, mitra.pin_hash)) {
-      await client.message.send(event.key.remoteJid, PIN_SALAH)
-      return
-    }
-    const trx = db.getTransaksi(id)
-    if (!trx || trx.agen_id !== mitra.id) {
-      await client.message.send(event.key.remoteJid, 'Transaksi tidak ditemukan')
-      return
-    }
-    if (trx.status !== 'proses') {
-      await client.message.send(event.key.remoteJid, `Transaksi sudah ${trx.status}, tidak bisa dibatalkan`)
-      return
-    }
-    // Local cancel only: refund here, mark batal. A later webhook for the same
-    // refid is ignored because batal is terminal in finalize().
-    db.tx(() => {
-      db.addSaldo(mitra.id, trx.harga_efektif)
-      db.addMutasi(mitra.id, 'kredit', trx.harga_efektif, mitra.saldo + trx.harga_efektif, `Batal ${trx.produk_kode} (${id})`)
-      db.setTransaksiStatus(id, 'batal')
-    })
-    await client.message.send(
-      event.key.remoteJid,
-      `Transaksi ${id} dibatalkan. Saldo ${formatRupiah(trx.harga_efektif)} dikembalikan.`
-    )
-  },
-})
+// Reserved for cancelling a deposit; deposit flow not built yet, so BTL is a
+// stub in ppob-core.js. Do not re-add the old local order-cancel here.
+

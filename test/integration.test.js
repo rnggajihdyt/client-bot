@@ -567,7 +567,7 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
-test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', async () => {
+test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   const r = await say('628222', 'BELI.PULSA10.0811777')
   const idTrx = r.match(/ID: (T\d+)/)[1]
@@ -576,13 +576,15 @@ test('CEK/REK/BTL: transaksi pending, refund batal, webhook telat diabaikan', as
   assert.match(await say('628222', `CEK.${idTrx}`), /Status: proses/)
   assert.match(await say('628222', 'REK'), /Beli PULSA10/)
 
-  assert.match(await say('628222', `BTL.${idTrx}.1234`), /dibatalkan/)
-  const saldo = db.raw.prepare(`SELECT saldo FROM agen WHERE nohp = '628222'`).get().saldo
-  assert.equal(saldo, 50000)
+  // BTL tidak lagi membatalkan transaksi
+  assert.match(await say('628222', `BTL.${idTrx}.1234`), /Fitur belum tersedia/)
+  assert.equal(db.getTransaksi(idTrx).status, 'proses')
 
-  // webhook sukses telat tidak boleh mengubah batal
+  finalize(db, idTrx, { status: 'gagal' })
+  assert.equal(db.getTransaksi(idTrx).status, 'gagal')
+  assert.equal(db.raw.prepare(`SELECT saldo FROM agen WHERE nohp = '628222'`).get().saldo, 50000)
+  // webhook telat untuk baris terminal diabaikan
   assert.equal(finalize(db, idTrx, { status: 'sukses' }), null)
-  assert.equal(db.getTransaksi(idTrx).status, 'batal')
 })
 
 test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.TUJUAN (ambil terakhir)', async () => {
