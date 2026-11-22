@@ -259,6 +259,10 @@ mitra: BELI.PULSA10.0812xxxx
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
 - Harga efektif mitra = `produk.harga_modal` (harga ICS) + markup admin (`MKP` per produk jika ada, else general) + total markup sepanjang jalur uplink→mitra (`WITH RECURSIVE`).
 - Buyer dinotifikasi via nomor tersimpan di `agen`; client offline hanya di-log — state tetap benar, `SAL`/`CEK` menunjukkan kebenarannya.
+- **Format balasan seragam**: Respon transaksi (awal, batch, maupun webhook/poller) mengikuti format standar:
+  `<Nama Produk> <KODE>.<TUJUAN> <STATUS>. <Keterangan/SN> Sal <saldo> @HH:MM`
+  *(contoh: `XL AXIS Data 38Gb Reguler + Lokal XDA38.085731409131 GAGAL. Nomor tujuan salah. Sal 1.911.411 @14:19`)*
+- **Sanitasi error supplier**: Pesan error teknis supplier (seperti kata "ICS" atau saldo operasional supplier habis) otomatis disanitasi menjadi pesan netral yang ramah untuk downline/uplink. Bila saldo supplier habis, sistem otomatis mengirimkan peringatan darurat ke nomor WhatsApp admin toko.
 
 ## Peran & data
 
@@ -329,11 +333,12 @@ Selesai — tanpa mengubah core. Handler menerima `{ client, event, args, log, s
 
 ```
 index.js                    entry: registry-only startup, webhook server, poller, graceful shutdown
-supervisor.js               auto-restart + cycle restart (npm run start:safe)
+supervisor.js               auto-restart + cycle restart + continuous uptime (npm run start:safe)
 src/config.js               env config
 src/store.js                store zapo bersama (SQLite) untuk semua session
 src/registry.js             daftar session (id, admin, nomor WA, status) — _registry.sqlite
 src/runtime.js              start/stop/rebuild session, pairing kode & QR, reconnect, watchdog
+src/human.js                layer perilaku human-like (<500ms delay, typing, presence, jitter)
 src/db.js                   per-session SQLite (agen/produk/transaksi/mutasi/settings) + openDb()
 src/handler.js              pesan → auth gate → dispatch + perintah super admin
 src/apikey.js               gate onboarding: validasi + simpan apikey ICS, prompt ke admin
@@ -344,7 +349,7 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY
+src/commands/supplier.js    BELI/CEK/REK/BTL/APIKEY/TSAL/KSAL
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)
 src/commands/prefix.js      setprefix (owner only)
@@ -355,12 +360,15 @@ src/parse.js                parser perintah PPOB (prefixless)
 src/settings.js             setelan runtime per session (prefix)
 src/helpers.js              send helpers (buttons/media)
 src/utils.js                text/parse/format helpers
+test/catalog.test.js        cache TTL, single-flight refresh, auto-sync cron
+test/human.test.js          human-like behavior, delay budget <500ms, typing/presence
 test/integration.test.js    end-to-end handler: gate, markup, transaksi, peran, sesi
 test/pairing-flow.test.js   state machine pairing (auth_qr/re-arm)
-test/runtime-reconnect.test.js  keputusan reconnect per close reason + watchdog
-test/webhook.test.js        webhook/token/finalize idempoten
 test/ppob.test.js           parser & harga efektif
+test/runtime-reconnect.test.js  keputusan reconnect per close reason + watchdog
+test/supervisor.test.js     supervisor file watcher & continuous uptime
 test/utils.test.js          utilitas + self-check
+test/webhook.test.js        webhook/token/finalize idempoten
 ```
 
 ## Pemecahan masalah
@@ -382,4 +390,5 @@ test/utils.test.js          utilitas + self-check
 npm test        # seluruh test (node:test)
 ```
 
-Cakupan: gate apikey & onboarding push, markup (general/per-produk/beranak), transaksi async + refund + idempoten webhook, peran admin/uplink/mitra/super, SESIBUAT wajib NOMORWA & admin ≠ bot, adopsi sesi bootstrap, keputusan reconnect & watchdog, webhook token salah/asing.
+75 test cases (9 suites) lulus 100%:
+Cakupan: gate apikey & onboarding push, markup multi-level berjenjang tanpa batas kedalaman (profit admin vs komisi uplink), mutasi saldo TSAL/KSAL, transaksi async + refund + idempoten webhook/poller cron, format respon seragam, sanitasi error supplier, peran admin/uplink/mitra/super, SESIBUAT wajib NOMORWA & admin ≠ bot, adopsi sesi bootstrap, keputusan reconnect & watchdog, perilaku human-like (<500ms), cache katalog TTL & single-flight refresh, serta supervisor uptime kontinu.
