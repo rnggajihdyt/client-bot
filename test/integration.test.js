@@ -572,14 +572,13 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   db.raw.prepare(`UPDATE agen SET saldo = 0 WHERE nohp = '628222'`).run()
   // admin atur rekening + jam
   assert.match(await say('628111', 'TPAY.BCA.2390922089.Muhammad.Tasin'), /BCA 2390922089/)
-  assert.match(await say('628111', 'TPAY.JAM.08.00-23.00'), /08\.00 - 23\.00/)
 
   const t1 = await say('628222', 'TIKET.1700000.1234')
   assert.match(t1, /Tiket dibuat pada Tanggal \d\d\/\d\d \d\d:\d\d:\d\d WIB/)
   assert.match(t1, /Silahkan Transfer Rp\. 1\.700\.\d{3}/) // nominal + kode unik 3 digit
   assert.match(t1, /BCA 2390922089/)
   assert.match(t1, /A\.N Muhammad Tasin/)
-  assert.match(t1, /Tiket Open jam 08\.00 - 23\.00/)
+  assert.match(t1, /Ketik CS$/)
   const depRow = db.pendingDepositOf(db.findAgenByNohp('628222').id)
   assert.ok(depRow, 'tiket pending tersimpan')
   assert.equal(depRow.nominal, 1700000)

@@ -62,7 +62,6 @@ const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Markup per Produk : MKP.KODE.NOMINAL
 • Rekening Deposit : TPAY.BANK.NO.A/N
 • Hapus Rekening : HPAY.BANK
-• Jam Tiket : TPAY.JAM.08.00-23.00
 • Konfirmasi Deposit : TDEP.IDDEPOSIT.PIN`
 
 const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*

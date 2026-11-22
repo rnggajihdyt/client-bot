@@ -26,7 +26,7 @@ function uniqueCode(db) {
 }
 
 function ticketText(db, dep) {
-  const { channels, open, close } = db.depositSettings()
+  const { channels } = db.depositSettings()
   const { tanggal, jam } = wib(new Date(dep.created_at))
   if (!channels.length) {
     return `*Tiket ${dep.id_deposit}*\nNominal: ${formatRupiah(dep.nominal)}\n\nAdmin belum mengatur rekening tujuan transfer. Hubungi CS.`
@@ -39,8 +39,7 @@ function ticketText(db, dep) {
     `${rek}\n` +
     (an ? `A.N ${an}\n` : '') +
     `\n\nJika 10 menit Saldo tidak bertambah silahkan lapor CS\n` +
-    `Ketik CS\n` +
-    `Tiket Open jam ${open} - ${close}`
+    `Ketik CS`
   )
 }
 
@@ -178,10 +177,10 @@ register({
   },
 })
 
-// ---- TPAY (tambah payment) / HPAY (hapus payment) / TPAY.JAM ----
+// ---- TPAY: tambah rekening deposit ----
 register({
   name: 'tpay',
-  description: 'Admin: TPAY.BANK.NO.A/N — tambah rekening deposit | TPAY.JAM.08.00-23.00 — jam tiket',
+  description: 'Admin: TPAY.BANK.NO.A/N — tambah rekening deposit',
   async handler({ client, event, args, isAdmin, db }) {
     const jid = event.key.remoteJid
     if (!isAdmin) {
@@ -190,27 +189,11 @@ register({
     }
     const [sub, ...rest] = args
     if (!sub) {
-      await client.message.send(
-        jid,
-        'Gunakan format:\nTPAY.BANK.NO.A/N — tambah rekening\nTPAY.JAM.08.00-23.00 — jam tiket'
-      )
+      await client.message.send(jid, 'Gunakan format: TPAY.BANK.NO.A/N')
       return
     }
 
     const key = sub.toLowerCase()
-    if (key === 'jam') {
-      const raw = rest.join('.').replace(/\s/g, '')
-      const m = raw.match(/^(\d{1,2}[.:]\d{2})-(\d{1,2}[.:]\d{2})$/)
-      if (!m) {
-        await client.message.send(jid, 'Format jam: TPAY.JAM.08.00-23.00')
-        return
-      }
-      db.setSetting('deposit_open', m[1].replace(':', '.'))
-      db.setSetting('deposit_close', m[2].replace(':', '.'))
-      await client.message.send(jid, `Jam tiket diubah menjadi ${m[1]} - ${m[2]}`)
-      return
-    }
-
     // TPAY.BANK.NO.A/N — A/N may contain spaces (tokens are split on dots)
     const [no, ...anParts] = rest
     const noDigits = String(no ?? '').replace(/\D/g, '')

@@ -381,8 +381,6 @@ export function openDb(path) {
         return { bank, no, an }
       })
       .filter((c) => c.bank && c.no),
-    open: db.getSetting('deposit_open') ?? '08.00',
-    close: db.getSetting('deposit_close') ?? '23.00',
   })
 
   // ---- mutasi ----
