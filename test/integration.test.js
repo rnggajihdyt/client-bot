@@ -429,6 +429,41 @@ test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async 
   assert.equal(sent.length, 1, 'isi saldo sendiri tidak kirim pesan ganda')
 })
 
+test('KSAL: admin kurang saldo mitra via nomor HP + guard saldo cukup + mutasi', async () => {
+  const target = db.findAgenByNohp('628222')
+  const saldoAwal = target.saldo
+
+  // mitra biasa & PIN salah ditolak
+  assert.equal(await say('628222', 'KSAL.628222.5000.1234'), 'Khusus admin')
+  assert.equal(await say('628111', 'KSAL.628222.5000.9999'), 'PIN salah')
+
+  // nominal melebihi saldo ditolak (tidak boleh minus)
+  const over = await say('628111', `KSAL.08222.${saldoAwal + 1000}.1234`)
+  assert.match(over, /tidak cukup/)
+  assert.equal(db.findAgenById(target.id).saldo, saldoAwal)
+
+  // kurangi saldo via format 08...
+  await say('628111', 'KSAL.08222.10000.1234')
+  assert.equal(db.findAgenById(target.id).saldo, saldoAwal - 10000)
+  assert.ok(
+    sent.some((m) => m.jid === '628111@s.whatsapp.net' && /dikurangi 10\.000/.test(m.text)),
+    'konfirmasi ke admin'
+  )
+  assert.ok(
+    sent.some((m) => m.jid === '628222@s.whatsapp.net' && /Saldo Anda dikurangi 10\.000/.test(m.text)),
+    'notifikasi ke user tujuan'
+  )
+  const rek = await say('628222', 'REK')
+  assert.match(rek, /debit 10\.000/)
+  assert.match(rek, /Kurang saldo oleh OWN01/)
+
+  // admin kurangi saldo sendiri tanpa notifikasi ganda
+  const adminAwal = db.findAgenByNohp('628111').saldo
+  await say('628111', 'KSAL.628111.5000.1234')
+  assert.equal(db.findAgenByNohp('628111').saldo, adminAwal - 5000)
+  assert.equal(sent.length, 1)
+})
+
 test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   assert.match(await say('628111', 'MKP.2000'), /Markup general/)

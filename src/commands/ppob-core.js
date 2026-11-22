@@ -539,63 +539,96 @@ register({
   },
 })
 
-// ---- TSAL (admin: tambah saldo ke user berdasarkan nomor HP) ----
+// ---- TSAL / KSAL (admin: tambah/kurang saldo mitra berdasarkan nomor HP) ----
+async function adjustSaldo({ client, event, mitra, args, isAdmin, db, log }, direction) {
+  const isAdd = direction > 0
+  const cmdName = isAdd ? 'TSAL' : 'KSAL'
+  if (!isAdmin) {
+    await client.message.send(event.key.remoteJid, ADMIN_ONLY)
+    return
+  }
+  const [nohpRaw, nominalRaw, pin] = args
+  if (!nohpRaw || !nominalRaw || !pin) {
+    await client.message.send(event.key.remoteJid, `Gunakan format: ${cmdName}.NOHP.NOMINAL.PIN`)
+    return
+  }
+  if (!verifyPin(pin, mitra.pin_hash)) {
+    await client.message.send(event.key.remoteJid, PIN_SALAH)
+    return
+  }
+  const nohp = normalizeNohp(nohpRaw)
+  if (!nohp) {
+    await client.message.send(event.key.remoteJid, 'Nomor HP tidak valid')
+    return
+  }
+  const nominal = /^-/.test(String(nominalRaw).trim()) ? NaN : parseNumber(nominalRaw)
+  if (!Number.isInteger(nominal) || nominal <= 0) {
+    await client.message.send(event.key.remoteJid, 'Nominal harus bilangan bulat > 0')
+    return
+  }
+  const target = db.findAgenByNohp(nohp)
+  if (!target) {
+    await client.message.send(event.key.remoteJid, `Mitra dengan nomor ${nohp} tidak ditemukan`)
+    return
+  }
+
+  let saldoAkhir = 0
+  let insufficient = false
+  let currentSaldo = 0
+  db.tx(() => {
+    const fresh = db.findAgenById(target.id)
+    currentSaldo = fresh.saldo
+    if (!isAdd && fresh.saldo < nominal) {
+      insufficient = true
+      return
+    }
+    db.addSaldo(target.id, direction * nominal)
+    saldoAkhir = db.findAgenById(target.id).saldo
+    db.addMutasi(
+      target.id,
+      isAdd ? 'kredit' : 'debit',
+      nominal,
+      saldoAkhir,
+      `${isAdd ? 'Tambah' : 'Kurang'} saldo oleh ${mitra.kode}`
+    )
+  })
+
+  if (insufficient) {
+    await client.message.send(
+      event.key.remoteJid,
+      `Saldo ${target.nama} (${target.kode}) tidak cukup. Saldo saat ini: ${formatRupiah(currentSaldo)}.`
+    )
+    return
+  }
+
+  const verb = isAdd ? 'ditambah' : 'dikurangi'
+  await client.message.send(
+    event.key.remoteJid,
+    `Saldo ${target.nama} (${target.kode} / ${target.nohp}) ${verb} ${formatRupiah(nominal)}. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
+  )
+
+  if (target.id !== mitra.id) {
+    try {
+      await client.message.send(
+        `${target.nohp}@s.whatsapp.net`,
+        `Saldo Anda ${isAdd ? 'telah ditambah' : 'dikurangi'} ${formatRupiah(nominal)} oleh Admin. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
+      )
+    } catch (err) {
+      log?.warn({ err: err?.message, nohp: target.nohp }, `notifikasi ${cmdName.toLowerCase()} gagal`)
+    }
+  }
+}
+
 register({
   name: 'tsal',
   description: 'Admin: TSAL.NOHP.NOMINAL.PIN — tambah saldo mitra via nomor HP',
-  async handler({ client, event, mitra, args, isAdmin, db, log }) {
-    if (!isAdmin) {
-      await client.message.send(event.key.remoteJid, ADMIN_ONLY)
-      return
-    }
-    const [nohpRaw, nominalRaw, pin] = args
-    if (!nohpRaw || !nominalRaw || !pin) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: TSAL.NOHP.NOMINAL.PIN')
-      return
-    }
-    if (!verifyPin(pin, mitra.pin_hash)) {
-      await client.message.send(event.key.remoteJid, PIN_SALAH)
-      return
-    }
-    const nohp = normalizeNohp(nohpRaw)
-    if (!nohp) {
-      await client.message.send(event.key.remoteJid, 'Nomor HP tidak valid')
-      return
-    }
-    const nominal = /^-/.test(String(nominalRaw).trim()) ? NaN : parseNumber(nominalRaw)
-    if (!Number.isInteger(nominal) || nominal <= 0) {
-      await client.message.send(event.key.remoteJid, 'Nominal harus bilangan bulat > 0')
-      return
-    }
-    const target = db.findAgenByNohp(nohp)
-    if (!target) {
-      await client.message.send(event.key.remoteJid, `Mitra dengan nomor ${nohp} tidak ditemukan`)
-      return
-    }
+  handler: (ctx) => adjustSaldo(ctx, 1),
+})
 
-    let saldoAkhir = 0
-    db.tx(() => {
-      db.addSaldo(target.id, nominal)
-      saldoAkhir = db.findAgenById(target.id).saldo
-      db.addMutasi(target.id, 'kredit', nominal, saldoAkhir, `Tambah saldo oleh ${mitra.kode}`)
-    })
-
-    await client.message.send(
-      event.key.remoteJid,
-      `Saldo ${target.nama} (${target.kode} / ${target.nohp}) ditambah ${formatRupiah(nominal)}. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
-    )
-
-    if (target.id !== mitra.id) {
-      try {
-        await client.message.send(
-          `${target.nohp}@s.whatsapp.net`,
-          `Saldo Anda telah ditambah ${formatRupiah(nominal)} oleh Admin. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
-        )
-      } catch (err) {
-        log?.warn({ err: err?.message, nohp: target.nohp }, 'notifikasi tambah saldo gagal')
-      }
-    }
-  },
+register({
+  name: 'ksal',
+  description: 'Admin: KSAL.NOHP.NOMINAL.PIN — kurang saldo mitra via nomor HP',
+  handler: (ctx) => adjustSaldo(ctx, -1),
 })
 
 // ---- stubs for not-yet-built features ----
