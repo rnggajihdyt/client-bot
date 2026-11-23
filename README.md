@@ -204,7 +204,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel (beberapa WA satu akun) |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
-| `CS` | `CS.PESAN` / `CS.Konfirmasi transfer ID` | Teruskan pesan ke admin session (bisa dengan gambar). Format `Konfirmasi transfer <ID>` = konfirmasi tiket deposit, bukti transfer ikut diteruskan |
+| `CS` | `CS.PESAN` / `CS.<IDDEPOSIT>` | Teruskan pesan ke admin session (bisa dengan gambar). Pesan apa pun yang memuat ID tiket (`D0001`) dianggap konfirmasi transfer: admin dapat status tiket + bukti gambar |
 | `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringannya. Mitra: dirinya |
 
 ### Admin session
@@ -260,7 +260,7 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, baris terminal (`sukses`/`gagal`/`batal`) mengabaikan webhook telat.
-- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **ID pendek `D0001`** dan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (tambah, bisa banyak bank) dan dihapus via `HPAY.BANK`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra. Tiket menyertakan instruksi `CS.Konfirmasi transfer <ID>` — mitra kirim teks itu (boleh disertai gambar bukti transfer), bot meneruskan ke admin beserta status tiket.
+- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **ID pendek `D0001`** dan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (tambah, bisa banyak bank) dan dihapus via `HPAY.BANK`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra. Tiket menyertakan instruksi konfirmasi — mitra kirim pesan `CS` yang memuat ID tiket (mis. `CS D0001 sudah transfer`, boleh disertai gambar bukti), bot meneruskan ke admin beserta status tiket dan gambar buktinya.
 - **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` hanya untuk tiket deposit, bukan order.
 - **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
