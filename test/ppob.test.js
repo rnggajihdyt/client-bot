@@ -1,5 +1,6 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -116,6 +117,29 @@ test('profitSummary scope by agenIds', () => {
   assert.equal(all.markup, 1800)
   const none = db.profitSummary({ agenIds: [r1.id], from: '2000-01-01', to: '2100-01-01' })
   assert.equal(none.trx, 0)
+})
+
+test('migrasi: DB lama tanpa kolom deposit.bank tetap bisa TIKET', () => {
+  // Simulates a session DB created before `bank` existed on the deposit table.
+  const oldPath = join(dir, 'old-deposit.sqlite')
+  const raw = new DatabaseSync(oldPath)
+  raw.exec(`CREATE TABLE deposit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_deposit TEXT UNIQUE NOT NULL,
+    agen_id INTEGER NOT NULL,
+    nominal INTEGER NOT NULL,
+    kode_unik INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+  )`)
+  raw.close()
+
+  const migrated = openDb(oldPath)
+  const cols = migrated.raw.prepare(`PRAGMA table_info(deposit)`).all().map((c) => c.name)
+  assert.ok(cols.includes('bank'), 'kolom bank ditambahkan')
+  assert.ok(cols.includes('selesai_at'), 'kolom selesai_at ditambahkan')
+  migrated.close()
 })
 
 test('parseRange', () => {

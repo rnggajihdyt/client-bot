@@ -107,6 +107,10 @@ const MIGRATIONS = {
     status_supplier: `ALTER TABLE produk ADD COLUMN status_supplier TEXT NOT NULL DEFAULT 'available'`,
     updated_at: `ALTER TABLE produk ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`,
   },
+  deposit: {
+    bank: `ALTER TABLE deposit ADD COLUMN bank TEXT NOT NULL DEFAULT ''`,
+    selesai_at: `ALTER TABLE deposit ADD COLUMN selesai_at TEXT NOT NULL DEFAULT ''`,
+  },
 }
 
 function migrate(raw) {
