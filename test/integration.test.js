@@ -174,6 +174,10 @@ test('info uplink/mitra tanpa section admin', async () => {
     'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.'
   )
 
+  // LDL memuat nomor WA downline
+  const ldl = await say('628111', 'LDL')
+  assert.match(ldl, /RS00001 — Ani \(Bandung\) \| 628222 \|/)
+
   // uplink biasa: tidak ada section admin/super admin, tapi ada CEK/REK/BTL
   const up = await say('628222', 'all')
   assert.match(up, /FORMAT 4/)

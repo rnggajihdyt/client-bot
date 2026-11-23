@@ -194,7 +194,9 @@ register({
       await client.message.send(event.key.remoteJid, 'Belum ada downline')
       return
     }
-    const lines = dl.map((d) => `• ${d.kode} — ${d.nama} (${d.kota}) | markup ${formatRupiah(d.markup)} | ${d.aktif ? 'aktif' : 'nonaktif'}`)
+    const lines = dl.map(
+      (d) => `• ${d.kode} — ${d.nama} (${d.kota}) | ${d.nohp} | markup ${formatRupiah(d.markup)} | ${d.aktif ? 'aktif' : 'nonaktif'}`
+    )
     await client.message.send(event.key.remoteJid, `*Downline Anda:*\n${lines.join('\n')}`)
   },
 })
