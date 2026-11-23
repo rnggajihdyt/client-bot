@@ -195,7 +195,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `CEK` | `CEK` / `CEK.TUJUAN` | Daftar pending sendiri / detail transaksi paling terakhir untuk nomor tujuan tsb (juga dukung `CEK.IDTRX`) |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
-| `TIKET` | `TIKET.NOMINAL.PIN` | Buat tiket deposit + kode unik 3 digit. `TIKET` tanpa arg = tampilkan ulang tiket pending |
+| `TIKET` | `TIKET.NOMINAL.PIN` | Buat tiket deposit + kode unik 3 digit, ID pendek `D0001`. `TIKET` tanpa arg = tampilkan ulang tiket pending |
 | `BTL` | `BTL.IDDEPOSIT.PIN` | Batalkan tiket deposit sendiri yang masih `pending` |
 | `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline (senior = pengirim) |
 | `LDL` | `LDL` | Daftar downline langsung |
@@ -204,7 +204,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel (beberapa WA satu akun) |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
-| `CS` | `CS.PESAN` | Teruskan pesan ke admin session |
+| `CS` | `CS.PESAN` / `CS.Konfirmasi transfer ID` | Teruskan pesan ke admin session (bisa dengan gambar). Format `Konfirmasi transfer <ID>` = konfirmasi tiket deposit, bukti transfer ikut diteruskan |
 | `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringannya. Mitra: dirinya |
 
 ### Admin session
@@ -260,7 +260,7 @@ mitra: BELI.PULSA10.0812xxxx
 ```
 
 - Penyelesaian **selalu** lewat `src/orders.js:finalize()` — idempoten: `sukses` kedua diabaikan, baris terminal (`sukses`/`gagal`/`batal`) mengabaikan webhook telat.
-- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (tambah, bisa banyak bank) dan dihapus via `HPAY.BANK`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra.
+- **Deposit via tiket** (`src/commands/deposit.js`): mitra `TIKET.NOMINAL.PIN` → tiket dengan **ID pendek `D0001`** dan **kode unik 3 digit** (total transfer = nominal + kode unik, pembeda antar transfer). Rekening tujuan diatur admin via `TPAY.BANK.NO.A/N` (tambah, bisa banyak bank) dan dihapus via `HPAY.BANK`. Mitra membatalkan dengan `BTL.IDDEPOSIT.PIN`; admin mengonfirmasi lunas dengan `TDEP.IDDEPOSIT.PIN` → saldo bertambah, mutasi tercatat, notifikasi ke mitra. Satu tiket pending per mitra. Tiket menyertakan instruksi `CS.Konfirmasi transfer <ID>` — mitra kirim teks itu (boleh disertai gambar bukti transfer), bot meneruskan ke admin beserta status tiket.
 - **Tidak ada pembatalan order**: order yang sudah `proses` hanya berakhir lewat webhook/poller (`sukses`/`gagal`). `BTL` hanya untuk tiket deposit, bukan order.
 - **Anti order ganda per tujuan**: selama masih ada transaksi `proses` ke nomor tujuan yang sama (dinormalisasi `08…`/`628…`), order berikutnya ditolak lokal (`GAGAL. Tujuan masih diproses (ID)`) — tidak ada potong saldo, tidak ada POST ke supplier. Ini menahan retry transport WhatsApp maupun tap ganda. Tujuan lain tetap jalan.
 - Komisi dibayar **hanya** saat `sukses`, sesuai snapshot saat order (markup diubah belakangan tidak memengaruhi trx lama). Admin **tidak memakai sistem komisi**: seluruh margin admin (`MKP` general/per-produk + markup yang dipasang admin pada reseller langsungnya) langsung masuk ke **Profit Admin** (`markup_admin`), sedangkan tiap markup pada level di bawahnya masuk sebagai **komisi** uplink masing-masing tanpa batas kedalaman (`Omzet = Modal + Profit Admin + Komisi Jaringan`).
@@ -356,7 +356,7 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/BTL — tiket deposit + kode unik + konfirmasi admin
+src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/BTL — tiket deposit + id pendek + kode unik + konfirmasi admin
 src/commands/supplier.js    BELI/CEK/REK/APIKEY
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)

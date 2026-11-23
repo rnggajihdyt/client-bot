@@ -25,6 +25,20 @@ function uniqueCode(db) {
   return Math.floor(Math.random() * 900) + 100
 }
 
+// Short human-friendly ticket id: D + 4 digits. Wraps when the block is used up.
+function nextDepositId(db) {
+  // Only D + exactly 4 digits counts; legacy long ids are ignored.
+  const row = db.raw
+    .prepare(`SELECT MAX(CAST(SUBSTR(id_deposit, 2) AS INTEGER)) AS n FROM deposit WHERE id_deposit GLOB 'D[0-9][0-9][0-9][0-9]'`)
+    .get()
+  const exists = db.raw.prepare(`SELECT 1 FROM deposit WHERE id_deposit = ?`)
+  let n = (row?.n ?? 0) % 9999
+  do {
+    n = (n % 9999) + 1
+  } while (exists.get(`D${String(n).padStart(4, '0')}`))
+  return `D${String(n).padStart(4, '0')}`
+}
+
 function ticketText(db, dep) {
   const { channels } = db.depositSettings()
   const { tanggal, jam } = wib(new Date(dep.created_at))
@@ -39,7 +53,8 @@ function ticketText(db, dep) {
     `${rek}\n` +
     (an ? `A.N ${an}\n` : '') +
     `\n\nJika 10 menit Saldo tidak bertambah silahkan lapor CS\n` +
-    `Ketik CS`
+    `Ketik CS\n` +
+    `\nJika sudah transfer, konfirmasi dengan mengetik CS.Konfirmasi transfer ${dep.id_deposit} (bisa disertai bukti transfer)`
   )
 }
 
@@ -85,7 +100,7 @@ register({
 
     const kodeUnik = uniqueCode(db)
     const total = nominal + kodeUnik
-    const idDeposit = `D${Date.now()}${Math.floor(Math.random() * 90 + 10)}`
+    const idDeposit = nextDepositId(db)
     db.insertDeposit({ idDeposit, agenId: mitra.id, nominal, kodeUnik, total, bank: channels[0].bank })
 
     await client.message.send(jid, ticketText(db, db.getDeposit(idDeposit)))

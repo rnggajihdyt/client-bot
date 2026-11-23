@@ -303,9 +303,13 @@ register({
 })
 
 // ---- CS ----
+// `CS.Konfirmasi transfer <ID>` is also how a deposit gets confirmed: the admin
+// receives the message plus the transfer proof (image) if one was attached.
+const DEPOSIT_CONFIRM_RE = /konfirmasi\s+transfer\s+(\S+)/i
+
 register({
   name: 'cs',
-  description: 'Hubungi admin: CS.PESAN',
+  description: 'Hubungi admin: CS.PESAN (bisa dengan gambar)',
   async handler({ client, event, mitra, args, log, db }) {
     const pesan = args.join(' ')
     if (!pesan) {
@@ -318,9 +322,35 @@ register({
       await client.message.send(event.key.remoteJid, 'Admin session belum terdaftar')
       return
     }
+
+    const adminJid = `${root.nohp}@s.whatsapp.net`
+    const idDeposit = pesan.match(DEPOSIT_CONFIRM_RE)?.[1]?.toUpperCase()
+    if (idDeposit) {
+      const dep = db.getDeposit(idDeposit)
+      const status = !dep
+        ? 'tiket tidak ditemukan'
+        : dep.agen_id !== mitra.id
+          ? 'tiket milik mitra lain'
+          : `${dep.status} — Rp. ${formatRupiah(dep.total)} (nominal ${formatRupiah(dep.nominal)} + kode ${dep.kode_unik})`
+      const header =
+        `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})\nPesan: "${pesan}"`
+      try {
+        const image = event.message?.imageMessage
+        if (image) await client.message.send(adminJid, { image, caption: header })
+        else await client.message.send(adminJid, header)
+      } catch (e) {
+        log.error({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed')
+      }
+      await client.message.send(
+        event.key.remoteJid,
+        `Konfirmasi tiket ${idDeposit} sudah diteruskan ke Admin/CS.\n\nID: ${mitra.kode}\nMohon tunggu, saldo akan ditambahkan setelah dicek.`
+      )
+      return
+    }
+
     try {
       await client.message.send(
-        `${root.nohp}@s.whatsapp.net`,
+        adminJid,
         `*CS dari Mitra*\nID: ${mitra.kode}\nNama: ${mitra.nama}\nPesan: "${pesan}"`
       )
     } catch (e) {
