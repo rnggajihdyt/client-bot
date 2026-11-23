@@ -65,6 +65,7 @@ const client = {
       sent.push({ jid, text })
       return { id: 'x' }
     },
+    downloadBytes: async () => new Uint8Array([1, 2, 3]),
     sendReceipt: async () => {},
   },
 }
@@ -582,7 +583,7 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   const depRow = db.pendingDepositOf(db.findAgenByNohp('628222').id)
   assert.ok(depRow, 'tiket pending tersimpan')
   assert.match(depRow.id_deposit, /^D\d{4}$/, 'id deposit pendek')
-  assert.match(t1, new RegExp(`CS\\.Konfirmasi transfer ${depRow.id_deposit}`))
+  assert.match(t1, new RegExp(`mengetik CS dan menyertakan ID tiket ${depRow.id_deposit}`))
   assert.equal(depRow.nominal, 1700000)
   assert.equal(depRow.total, 1700000 + depRow.kode_unik)
 
@@ -613,34 +614,40 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // TDEP kedua kali ditolak
   assert.match(await say('628111', `TDEP.${dep2.id_deposit}.1234`), /sudah sukses/)
 
-  // CS.Konfirmasi transfer: diteruskan ke admin + bukti gambar
+  // Pesan CS apa pun yang memuat ID deposit = konfirmasi (bukti gambar ikut)
   const t3 = await say('628222', 'TIKET.50000.1234')
   const dep3 = db.pendingDepositOf(db.findAgenByNohp('628222').id)
-  assert.match(t3, new RegExp(`CS\\.Konfirmasi transfer ${dep3.id_deposit}`))
+  assert.match(t3, new RegExp(`mengetik CS dan menyertakan ID tiket ${dep3.id_deposit}`))
 
   sent.length = 0
   await handlers.message({
     key: { remoteJid: '628222@s.whatsapp.net', fromMe: false },
     message: {
-      imageMessage: { caption: `CS.Konfirmasi transfer ${dep3.id_deposit}`, mimetype: 'image/jpeg' },
+      imageMessage: { caption: `CS.${dep3.id_deposit} sudah saya transfer`, mimetype: 'image/jpeg' },
     },
     pushName: 'tester',
   })
   const toAdmin = sent.find((s) => s.jid === '628111@s.whatsapp.net')
   assert.ok(toAdmin, 'konfirmasi diteruskan ke admin')
-  assert.equal(toAdmin.text.image?.mimetype, 'image/jpeg', 'gambar bukti ikut diteruskan')
+  assert.equal(toAdmin.text.type, 'image', 'bukti diunggah ulang sebagai gambar')
+  assert.equal(toAdmin.text.mimetype, 'image/jpeg')
   assert.match(toAdmin.text.caption, /Konfirmasi Transfer/)
   assert.match(toAdmin.text.caption, /pending/)
   assert.match(sent[sent.length - 1].text, /sudah diteruskan ke Admin\/CS/)
 
-  // tiket milik mitra lain / ID tidak ada tetap diteruskan, ditandai tidak valid
+  // tanpa kata "konfirmasi" tetap terdeteksi; ID tidak ada tetap diteruskan
   sent.length = 0
   await handlers.message({
     key: { remoteJid: '628222@s.whatsapp.net', fromMe: false },
-    message: { conversation: 'CS.Konfirmasi transfer D9999' },
+    message: { conversation: 'CS transfer d9999 cek ya' },
     pushName: 'tester',
   })
   assert.match(sent.find((s) => s.jid === '628111@s.whatsapp.net').text, /tiket tidak ditemukan/)
+
+  // CS biasa (tanpa ID) tetap jadi pesan CS
+  sent.length = 0
+  await say('628222', 'CS.tolong cek harga paket')
+  assert.match(sent.find((s) => s.jid === '628111@s.whatsapp.net').text, /CS dari Mitra/)
 
   // HPAY hapus rekening
   assert.match(await say('628111', 'HPAY.BCA'), /dihapus/)

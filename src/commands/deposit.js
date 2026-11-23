@@ -53,7 +53,7 @@ function ticketText(db, dep) {
     `${rek}\n` +
     (an ? `A.N ${an}\n` : '') +
     `\nKetik CS\n` +
-    `\nJika sudah transfer, konfirmasi dengan mengetik CS.Konfirmasi transfer ${dep.id_deposit} (bisa disertai bukti transfer)`
+    `\nJika sudah transfer, konfirmasi dengan mengetik CS dan menyertakan ID tiket ${dep.id_deposit} (bisa disertai bukti transfer)`
   )
 }
 

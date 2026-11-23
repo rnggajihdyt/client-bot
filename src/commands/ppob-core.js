@@ -303,16 +303,18 @@ register({
 })
 
 // ---- CS ----
-// `CS.Konfirmasi transfer <ID>` is also how a deposit gets confirmed: the admin
-// receives the message plus the transfer proof (image) if one was attached.
-const DEPOSIT_CONFIRM_RE = /konfirmasi\s+transfer\s+(\S+)/i
+// Any CS message that carries a deposit id (D0001 … D9999) is treated as a
+// transfer confirmation; the id must exist and belong to the sender. The admin
+// receives it with the transfer proof (image) if one was attached.
+const DEPOSIT_ID_RE = /\bD\d{4}\b/i
 
 register({
   name: 'cs',
   description: 'Hubungi admin: CS.PESAN (bisa dengan gambar)',
   async handler({ client, event, mitra, args, log, db }) {
     const pesan = args.join(' ')
-    if (!pesan) {
+    const idDeposit = pesan.match(DEPOSIT_ID_RE)?.[0]?.toUpperCase()
+    if (!pesan && !idDeposit) {
       await client.message.send(event.key.remoteJid, 'Gunakan format: CS.PESAN')
       return
     }
@@ -324,7 +326,6 @@ register({
     }
 
     const adminJid = `${root.nohp}@s.whatsapp.net`
-    const idDeposit = pesan.match(DEPOSIT_CONFIRM_RE)?.[1]?.toUpperCase()
     if (idDeposit) {
       const dep = db.getDeposit(idDeposit)
       const status = !dep
@@ -333,13 +334,26 @@ register({
           ? 'tiket milik mitra lain'
           : `${dep.status} — Rp. ${formatRupiah(dep.total)} (nominal ${formatRupiah(dep.nominal)} + kode ${dep.kode_unik})`
       const header =
-        `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})\nPesan: "${pesan}"`
-      try {
-        const image = event.message?.imageMessage
-        if (image) await client.message.send(adminJid, { image, caption: header })
-        else await client.message.send(adminJid, header)
-      } catch (e) {
-        log.error({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed')
+        `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})` +
+        (pesan ? `\nPesan: "${pesan}"` : '')
+      // The proof has to be re-uploaded from its bytes: the incoming
+      // imageMessage proto carries encrypted CDN fields that only work for the
+      // sender's own message, so forwarding the proto lands as a blank bubble.
+      const image = event.message?.imageMessage
+      let forwarded = false
+      if (image) {
+        try {
+          const bytes = await client.message.downloadBytes(event)
+          await client.message.send(adminJid, { type: 'image', media: bytes, mimetype: image.mimetype, caption: header })
+          forwarded = true
+        } catch (e) {
+          log.error({ err: e?.message, idDeposit }, 'gagal unduh bukti transfer')
+        }
+      }
+      if (!forwarded) {
+        await client.message
+          .send(adminJid, image ? `${header}\n\n(bukti transfer gagal diteruskan, minta mitra kirim ulang)` : header)
+          .catch((e) => log.error({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed'))
       }
       await client.message.send(
         event.key.remoteJid,
