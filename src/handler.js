@@ -33,11 +33,11 @@ const SUPER_COMMANDS = new Set(['sesi', 'sesibuat', 'sesion', 'sesioff', 'sesiha
 const SUPER_ONLY_COMMANDS = new Set(['status', 'sessions', 'cmd', 'env', 'restart'])
 
 // A deactivated mitra may still read its own status and the menus.
-const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'info', 'all', 'menu', 'help'])
+const ALLOWED_WHEN_INACTIVE = new Set(['sal', 'format', 'all', 'menu', 'help'])
 
 // While the session has no supplier key only these get through; the key itself
 // is accepted from any reply (see the setup gate in handleMessage).
-const ALLOWED_WITHOUT_APIKEY = new Set(['info', 'all', 'menu', 'help', 'cs'])
+const ALLOWED_WITHOUT_APIKEY = new Set(['format', 'all', 'menu', 'help', 'cs'])
 
 // Incoming button/list replies arrive as ordinary `message` events with a
 // buttonsResponseMessage / listResponseMessage payload — not a separate event.

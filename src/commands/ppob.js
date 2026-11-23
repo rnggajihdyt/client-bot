@@ -93,9 +93,9 @@ function withExtras(text, ctx) {
   return extra ? `${text}\n\n${extra}` : text
 }
 
-// "info" = panduan + command khusus sesuai role.
+// "format" = panduan + command khusus sesuai role.
 register({
-  name: 'info',
+  name: 'format',
   description: 'Panduan transaksi (+ command admin/owner bila berhak)',
   handler({ client, event, ...ctx }) {
     return client.message.send(event.key.remoteJid, withExtras(FORMATS.info, ctx))

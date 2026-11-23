@@ -30,8 +30,8 @@ assert.deepEqual(splitArgs('  a   b  '), ['a', 'b'])
 
 // parseCommand with empty prefix => every text is a command
 {
-  const r = parseCommand('Info', '')
-  assert.ok(r && r.cmd === 'info')
+  const r = parseCommand('Format', '')
+  assert.ok(r && r.cmd === 'format')
   assert.deepEqual(r.args, [])
   const r2 = parseCommand('TUKAR 100', '')
   assert.ok(r2 && r2.cmd === 'tukar')

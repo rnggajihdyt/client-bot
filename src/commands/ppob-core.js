@@ -176,7 +176,7 @@ register({
     try {
       await client.message.send(
         `${nohpD}@s.whatsapp.net`,
-        `Yth. ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.`
+        `Yth. ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.`
       )
     } catch (err) {
       log?.warn({ err, nohp: nohpD }, 'welcome downline failed')
@@ -236,7 +236,7 @@ function downlineNotice(target, active) {
   return (
     `Yth. ${target.nama}, Akun anda dengan Kode Agen ${target.kode} telah ${state}. ` +
     `Saldo sekarang ${formatRupiah(target.saldo)}. ` +
-    `Ketik INFO untuk mengetahui format-format transaksi.`
+    `Ketik FORMAT untuk mengetahui format-format transaksi.`
   )
 }
 

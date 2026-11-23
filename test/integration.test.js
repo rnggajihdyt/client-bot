@@ -147,7 +147,7 @@ test('menu info tetap jalan', async () => {
 
 test('info admin & super admin dapat section khusus', async () => {
   // 628111 = admin session DAN super admin (OWNERS)
-  const r = await say('628111', 'info')
+  const r = await say('628111', 'format')
   assert.match(r, /PANDUAN TRANSAKSI/)
   assert.match(r, /KHUSUS ADMIN/)
   assert.match(r, /APIKEY\.KEY/)
@@ -172,7 +172,7 @@ test('info uplink/mitra tanpa section admin', async () => {
   assert.ok(welcome, 'welcome message sent to downline')
   assert.equal(
     welcome.text,
-    'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik INFO untuk mengetahui format-format transaksi.'
+    'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.'
   )
 
   // LDL memuat nomor WA downline
@@ -185,6 +185,14 @@ test('info uplink/mitra tanpa section admin', async () => {
   assert.doesNotMatch(up, /KHUSUS ADMIN/)
   assert.doesNotMatch(up, /KHUSUS SUPER ADMIN/)
   assert.match(up, /Cek Trx : CEK\[\.TUJUAN\]/)
+
+  // FORMAT = panduan + section role (mitra: tanpa section admin)
+  const fmt = await say('628222', 'format')
+  assert.match(fmt, /PANDUAN TRANSAKSI/)
+  assert.match(fmt, /TRANSAKSI/)
+  assert.doesNotMatch(fmt, /KHUSUS ADMIN/)
+  // INFO sudah tidak ada: tidak dibalas apa pun (mitra tanpa prefix diabaikan)
+  assert.equal(await say('628222', 'info'), undefined)
 })
 
 test('CH untuk downline: modal + markup', async () => {
@@ -275,7 +283,7 @@ test('nonaktif: SAL & info boleh dengan keterangan, sisanya diblokir', async () 
   const sal = await say('628222', 'SAL')
   assert.match(sal, /^Yth\. Mitra Ani ID: RS00001/)
   assert.match(sal, /Akun Anda sedang DINONAKTIFKAN/)
-  assert.match(await say('628222', 'info'), /PANDUAN TRANSAKSI/)
+  assert.match(await say('628222', 'format'), /PANDUAN TRANSAKSI/)
   assert.match(await say('628222', 'all'), /FORMAT 4/)
   assert.equal(await say('628222', 'LDL'), 'Akun Anda nonaktif')
   assert.equal(await say('628222', 'CH.PULSA10'), 'Akun Anda nonaktif')
@@ -943,7 +951,7 @@ test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar
   assert.match(await sayShop('SAL'), /API Key ICS belum diisi/)
   assert.match(await sayShop('BELI.PULSA10.0812'), /API Key ICS belum diisi/)
   // info/menu tetap boleh
-  assert.doesNotMatch(await sayShop('info'), /API Key ICS belum diisi/)
+  assert.doesNotMatch(await sayShop('format'), /API Key ICS belum diisi/)
 
   // key salah format -> prompt lagi
   assert.match(await sayShop('APIKEY.salah'), /API Key ICS belum diisi/)
@@ -1082,7 +1090,7 @@ test('utilitas owner jalan di session tanpa agen owner (nomor pusat)', async () 
   assert.match(last(), /\*Sessions:\*/)
 
   sent.length = 0
-  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'info' } })
+  await h.message({ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false }, message: { conversation: 'format' } })
   // session ini tak punya agen owner: perintah non-owner jatuh ke menu super admin
   assert.match(last(), /\*Super admin\*/)
 

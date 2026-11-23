@@ -174,7 +174,7 @@ Baris registry `Bootstrap (QR)` (admin & nomor bot kosong) **diadopsi**, bukan d
 
 Begitu sesi pertama kali connect — sesi baru maupun resume — bot mengirim prompt ke **nomor admin**:
 
-1. Selama belum ada key valid: setiap pesan admin dijawab prompt API key (tanpa batas waktu). Hanya `info`/`all`/`menu`/`help`/`CS` yang dilayani; perintah uang terkunci.
+1. Selama belum ada key valid: setiap pesan admin dijawab prompt API key (tanpa batas waktu). Hanya `format`/`all`/`menu`/`help`/`CS` yang dilayani; perintah uang terkunci.
 2. Admin kirim `APIKEY.<KEY>` (atau paste key hex 64 karakter langsung). Key **diuji dulu** ke `GET /api/reseller/products` — kalau ICS menolak, key tidak disimpan dan prompt diulang.
 3. Key valid → tersimpan di DB sesi (`settings.ics_apikey`) + produk langsung tersinkron; bot mengirim **URL webhook** sesi.
 4. Salin URL itu ke dashboard ICS → Webhook. Katalog produk selanjutnya otomatis tersinkron lewat cache TTL (`CH`/`BELI`) dan cron berkala (`SYNC_INTERVAL_MIN`).
@@ -241,7 +241,7 @@ Perintah owner bekerja dari **semua** sesi yang hidup — tidak butuh baris agen
 
 ### Menu
 
-`info` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
+`format` / `all` menambahkan section sesuai peran: **KHUSUS ADMIN** untuk admin session, **KHUSUS SUPER ADMIN** untuk `OWNERS`, **TRANSAKSI** (`CEK`, `REK`, `BTL`) untuk mitra. `format1`–`format4` selalu verbatim. `PRDK` & `SYNC` dihapus — katalog otomatis sinkron dari ICS (cron + cache TTL).
 
 ## Alur transaksi (supplier ICS, async dua fase)
 
@@ -286,7 +286,7 @@ mitra: BELI.PULSA10.0812xxxx
 - **Registry** `.data/sessions/_registry.sqlite`: id, label, admin, nomor WA, status. Semua sesi di registry otomatis di-connect saat start.
 - **Kredensial WA** `.auth/state.sqlite` satu file untuk semua session, dipisah per `sessionId`.
 - Nomor paralel (`TNO`) membuat beberapa JID diakui sebagai mitra yang sama.
-- Mitra nonaktif hanya bisa `SAL`/`info`/`all`/`menu`/`help` sampai diaktifkan ulang uplink.
+- Mitra nonaktif hanya bisa `SAL`/`format`/`all`/`menu`/`help` sampai diaktifkan ulang uplink.
 
 ## Penyesuaian
 
@@ -356,7 +356,7 @@ src/orders.js               finalize transaksi: sukses (komisi) / gagal (refund)
 src/webhook.js              server webhook ICS + cron poller pending
 src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
-src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
+src/commands/ppob.js        menu format/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
 src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/TLIST/BTL — tiket deposit + id pendek + kode unik + konfirmasi admin
 src/commands/supplier.js    BELI/CEK/REK/APIKEY
