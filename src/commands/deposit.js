@@ -52,8 +52,7 @@ function ticketText(db, dep) {
     `Silahkan Transfer Rp. ${formatRupiah(dep.total)}\n` +
     `${rek}\n` +
     (an ? `A.N ${an}\n` : '') +
-    `\n\nJika 10 menit Saldo tidak bertambah silahkan lapor CS\n` +
-    `Ketik CS\n` +
+    `\nKetik CS\n` +
     `\nJika sudah transfer, konfirmasi dengan mengetik CS.Konfirmasi transfer ${dep.id_deposit} (bisa disertai bukti transfer)`
   )
 }
