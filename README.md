@@ -195,12 +195,13 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `CEK` | `CEK` / `CEK.TUJUAN` | Daftar pending sendiri / detail transaksi paling terakhir untuk nomor tujuan tsb (juga dukung `CEK.IDTRX`) |
 | `REK` | `REK` | 15 mutasi saldo & komisi terakhir |
 | `TUKAR` | `TUKAR` | Pindahkan komisi ke saldo |
-| `TIKET` | `TIKET.NOMINAL.PIN` | Buat tiket deposit + kode unik 3 digit, ID pendek `D0001`. `TIKET` tanpa arg = tampilkan ulang tiket pending |
+| `TIKET` | `TIKET.NOMINAL.PIN` / `TIKET.IDDEPOSIT` | Buat tiket deposit + kode unik 3 digit, ID pendek `D0001`. `TIKET` tanpa arg = tampilkan ulang tiket pending; `TIKET.D0001` = status tiket itu (pending/sukses/batal) |
 | `BTL` | `BTL.IDDEPOSIT.PIN` | Batalkan tiket deposit sendiri yang masih `pending` |
 | `DAFTAR` | `DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN` | Tambah downline (senior = pengirim) |
 | `LDL` | `LDL` | Daftar downline langsung |
 | `MP` | `MP.KODE.MARKUP.PIN` | Ubah markup downline |
 | `NA` / `AKTIF` / `HAPUS` | `NA.KODE.PIN` dst | Nonaktifkan / aktifkan / hapus downline |
+| `GPN` | `GPN.KODE.PINBARU.PIN` | Reset PIN downline (mitra lupa PIN) — PIN baru dikirim ke WA downline |
 | `TNO` / `HNO` / `LNO` | `TNO.NOHP.PIN` dst | Kelola nomor paralel (beberapa WA satu akun) |
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
@@ -219,6 +220,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `TPAY` | `TPAY.BANK.NO.A/N` | Tambah/ubah rekening deposit (banyak bank = baris berbeda di tiket) |
 | `HPAY` | `HPAY.BANK` | Hapus rekening deposit |
 | `TDEP` | `TDEP.IDDEPOSIT.PIN` | Konfirmasi tiket deposit lunas → saldo mitra bertambah + notifikasi |
+| `TLIST` | `TLIST` | Daftar semua tiket deposit pending (kode, mitra, nominal, kode unik, rekening, waktu) untuk dicocokkan dengan mutasi |
 
 ### Super admin (OWNERS)
 
@@ -356,7 +358,7 @@ src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu info/format1-4 verbatim + section per peran
 src/commands/ppob-core.js   SAL/CH/DAFTAR/LDL/MP/TUKAR/dll
-src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/BTL — tiket deposit + id pendek + kode unik + konfirmasi admin
+src/commands/deposit.js      TIKET/TPAY/HPAY/TDEP/TLIST/BTL — tiket deposit + id pendek + kode unik + konfirmasi admin
 src/commands/supplier.js    BELI/CEK/REK/APIKEY
 src/catalog.js              cache TTL + single-flight refresh (CH/BELI) + cron auto-sync ICS
 src/commands/owner.js       STATUS/SESSIONS/RESTART/ENV/CMD (owner only)

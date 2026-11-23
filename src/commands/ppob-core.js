@@ -281,6 +281,43 @@ register({ name: 'na', description: 'Nonaktifkan downline', handler: statusHandl
 register({ name: 'aktif', description: 'Aktifkan downline', handler: statusHandler('AKTIF', 'diaktifkan') })
 register({ name: 'hapus', description: 'Hapus downline', handler: statusHandler('HAPUS', 'dihapus') })
 
+// ---- GPN: reset PIN downline (mitra lupa PIN) ----
+register({
+  name: 'gpn',
+  description: 'Reset PIN downline: GPN.KODE.PINBARU.PIN',
+  async handler({ client, event, mitra, args, db, log }) {
+    const jid = event.key.remoteJid
+    if (args.length < 3) {
+      await client.message.send(jid, 'Gunakan format: GPN.KODE.PINBARU.PIN')
+      return
+    }
+    const [kode, pinBaru] = args
+    if (!requirePin({ mitra, args })) {
+      await client.message.send(jid, PIN_SALAH)
+      return
+    }
+    const target = requireDownline({ mitra, db }, kode)
+    if (!target) {
+      await client.message.send(jid, NOT_DOWNLINE)
+      return
+    }
+    if (!/^\d{4,}$/.test(pinBaru || '')) {
+      await client.message.send(jid, 'PIN baru minimal 4 digit angka')
+      return
+    }
+    db.updateAgen(target.id, { pin_hash: hashPin(pinBaru) })
+    await client.message.send(jid, `PIN ${target.kode} direset.`)
+    try {
+      await client.message.send(
+        `${target.nohp}@s.whatsapp.net`,
+        `PIN akun ${target.kode} Anda telah direset oleh admin menjadi ${pinBaru}. Segera ganti dengan GP.PINBARU.PINLAMA.`
+      )
+    } catch (err) {
+      log?.warn({ err, nohp: target.nohp }, 'reset pin notice failed')
+    }
+  },
+})
+
 // ---- TUKAR ----
 register({
   name: 'tukar',

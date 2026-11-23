@@ -1,5 +1,6 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert'
+import { verifyPin } from '../src/auth.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -656,6 +657,31 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // HPAY hapus rekening
   assert.match(await say('628111', 'HPAY.BCA'), /dihapus/)
   assert.equal(db.depositSettings().channels.length, 0)
+
+  // TIKET.ID — cek status tiket (pending maupun sukses)
+  assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: pending/)
+  assert.match(await say('628222', `TIKET.${dep2.id_deposit}`), /Status: sukses/)
+  assert.match(await say('628222', 'TIKET.D9999'), /PIN salah|Tiket tidak ditemukan/)
+
+  // TLIST — admin lihat tiket pending; mitra ditolak
+  assert.match(await say('628222', 'TLIST'), /Khusus admin/)
+  const tlist = await say('628111', 'TLIST')
+  assert.match(tlist, new RegExp(`${dep3.id_deposit} — RS00001`))
+  assert.match(tlist, /50\.000 \+ \d{3}/)
+
+  // GPN — admin reset PIN downline
+  assert.match(await say('628222', 'GPN.RS00001'), /GPN\.KODE/)
+  assert.match(await say('628111', 'GPN.RS00001.5678.9999'), /PIN salah/)
+  sent.length = 0
+  await say('628111', 'GPN.RS00001.5678.1234')
+  assert.ok(sent.some((s) => s.jid === '628111@s.whatsapp.net' && /PIN RS00001 direset/.test(s.text)))
+  assert.ok(verifyPin('5678', db.findAgenByNohp('628222').pin_hash))
+  const notice = sent.find((s) => s.jid === '628222@s.whatsapp.net')
+  assert.match(notice.text, /direset oleh admin menjadi 5678/)
+  // balikkan PIN ke 1234 untuk tes berikutnya
+  sent.length = 0
+  await say('628222', 'GP.1234.5678')
+  assert.ok(verifyPin('1234', db.findAgenByNohp('628222').pin_hash), 'PIN kembali 1234')
 })
 
 test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit', async () => {

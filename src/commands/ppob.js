@@ -20,6 +20,7 @@ const FORMATS = {
 *(Bisa tanpa PIN, spasi, bolak-balik & multi nomor)*`,
   format2: `*FORMAT 2 (DEPOSIT & TAMBAH AGEN)*
 • Tiket Deposit : TIKET.NOMINAL.PIN
+• Cek Tiket : TIKET.IDDEPOSIT
 • Tambah Agen : DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN
 • Hubungi Admin : CS.PESAN`,
   format3: `*FORMAT 3 (KELOLA DOWNLINE & MARKUP)*
@@ -27,7 +28,8 @@ const FORMATS = {
 • Ubah Markup : MP.ID.MARKUP.PIN
 • Nonaktifkan : NA.ID.PIN
 • Aktifkan : AKTIF.ID.PIN
-• Hapus Agen : HAPUS.ID.PIN`,
+• Hapus Agen : HAPUS.ID.PIN
+• Reset PIN : GPN.ID.PINBARU.PIN`,
   format4: `*FORMAT 4 (PENGATURAN AKUN & PIN)*
 • Ganti PIN : GP.PINBARU.PINLAMA
 • Ubah Nama : UN.NAMA.PIN
@@ -62,6 +64,7 @@ const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Markup per Produk : MKP.KODE.NOMINAL
 • Rekening Deposit : TPAY.BANK.NO.A/N
 • Hapus Rekening : HPAY.BANK
+• Daftar Tiket Pending : TLIST
 • Konfirmasi Deposit : TDEP.IDDEPOSIT.PIN`
 
 const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*

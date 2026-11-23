@@ -57,12 +57,36 @@ function ticketText(db, dep) {
   )
 }
 
+// Status ringkas satu tiket, dipakai TIKET.D0001 (mitra) dan TLIST (admin).
+function depositStatusText(dep) {
+  const { tanggal, jam } = wib(new Date(dep.created_at))
+  const done = dep.selesai_at ? wib(new Date(dep.selesai_at)) : null
+  return (
+    `*Tiket ${dep.id_deposit}*\n` +
+    `Status: ${dep.status}\n` +
+    `Nominal: ${formatRupiah(dep.nominal)} + kode ${dep.kode_unik} = ${formatRupiah(dep.total)}\n` +
+    `Rekening: ${dep.bank || 'BANK'}\n` +
+    `Dibuat: ${tanggal} ${jam} WIB` +
+    (done ? `\nSelesai: ${done.tanggal} ${done.jam} WIB` : '')
+  )
+}
+
 // ---- TIKET ----
 register({
   name: 'tiket',
   description: 'Buat tiket deposit: TIKET.NOMINAL.PIN',
   async handler({ client, event, mitra, args, db }) {
     const jid = event.key.remoteJid
+    // TIKET.D0001 — status satu tiket (semua status, bukan cuma pending).
+    if (/^d\d{4}$/i.test(args[0] ?? '')) {
+      const dep = db.getDeposit(args[0].toUpperCase())
+      if (!dep || dep.agen_id !== mitra.id) {
+        await client.message.send(jid, 'Tiket tidak ditemukan')
+        return
+      }
+      await client.message.send(jid, depositStatusText(dep))
+      return
+    }
     const pending = db.pendingDepositOf(mitra.id)
     if (!args.length) {
       if (pending) {
@@ -247,5 +271,28 @@ register({
     }
     db.setSetting('deposit_channels', next.map((c) => `${c.bank}|${c.no}|${c.an}`).join(','))
     await client.message.send(jid, `Rekening ${args[0]} dihapus`)
+  },
+})
+
+// ---- TLIST: admin lihat semua tiket pending (buat cocokkan mutasi) ----
+register({
+  name: 'tlist',
+  description: 'Admin: TLIST — daftar tiket deposit pending',
+  async handler({ client, event, isAdmin, db }) {
+    const jid = event.key.remoteJid
+    if (!isAdmin) {
+      await client.message.send(jid, ADMIN_ONLY)
+      return
+    }
+    const rows = db.pendingDeposits()
+    if (!rows.length) {
+      await client.message.send(jid, 'Tidak ada tiket pending')
+      return
+    }
+    const lines = rows.map((d) => {
+      const { tanggal, jam } = wib(new Date(d.created_at))
+      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} (${d.agen_nohp})\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam}`
+    })
+    await client.message.send(jid, `*Tiket Pending (${rows.length}):*\n${lines.join('\n')}`)
   },
 })

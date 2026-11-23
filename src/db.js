@@ -369,6 +369,16 @@ export function openDb(path) {
   db.pendingDepositOf = (agenId) =>
     raw.prepare(`SELECT * FROM deposit WHERE agen_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`).get(agenId)
 
+  // All open tickets in the session — admin's matching list.
+  db.pendingDeposits = () =>
+    raw
+      .prepare(
+        `SELECT d.*, a.kode AS agen_kode, a.nohp AS agen_nohp, a.nama AS agen_nama
+           FROM deposit d JOIN agen a ON a.id = d.agen_id
+          WHERE d.status = 'pending' ORDER BY d.id`
+      )
+      .all()
+
   db.setDepositStatus = (idDeposit, status) =>
     raw
       .prepare(`UPDATE deposit SET status = ?, selesai_at = ? WHERE id_deposit = ?`)
