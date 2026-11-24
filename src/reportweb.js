@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { config, sessionPath } from './config.js'
 import { listSessions } from './registry.js'
+import { reportCode } from './reportcode.js'
 
 // Read-only report API. Opens each session DB read-only: the bot's own process
 // owns writes, and a report request must never migrate or lock a live DB.
@@ -180,8 +181,27 @@ function viewerFrom(db, url) {
   return db.prepare(`SELECT * FROM agen WHERE senior_id IS NULL ORDER BY id LIMIT 1`).get()
 }
 
-function query(req, res, url) {
-  const session = url.searchParams.get('session')
+// Resolve a per-user report code back to (session, viewer). Codes are derived
+// from the agen list, so a code cannot be minted for an agen that never existed.
+export function resolveReportCode(code) {
+  const want = String(code ?? '').toLowerCase()
+  if (!/^[a-z0-9]{6,16}$/.test(want)) return null
+  for (const s of listSessions()) {
+    const db = openSession(s.id)
+    if (!db) continue
+    try {
+      for (const a of db.prepare(`SELECT id, kode FROM agen`).all()) {
+        if (reportCode(s.id, a.kode) === want) return { session: s.id, kode: a.kode }
+      }
+    } finally {
+      db.close()
+    }
+  }
+  return null
+}
+
+function query(req, res, url, forced = null) {
+  const session = forced ? forced.session : url.searchParams.get('session')
   const db = openSession(session)
   if (!db) {
     res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'session tidak ditemukan' }))
@@ -193,7 +213,10 @@ function query(req, res, url) {
       res.writeHead(404).end()
       return
     }
-    const viewer = viewerFrom(db, url)
+    // A per-user link pins the viewer: ?viewer= cannot widen the scope.
+    const viewer = forced
+      ? db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(forced.kode)
+      : viewerFrom(db, url)
     if (!viewer) {
       res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'agen tidak ditemukan di session ini' }))
       return
@@ -304,6 +327,32 @@ function sessionsFor() {
 export function startReportServer(logger) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost')
+    // Per-user link: /<kode>/report. The code itself is the credential (it is
+    // scoped to one agen), so the dashboard is served and its API calls use the
+    // code's own session + viewer — the generic token check does not apply.
+    const userLink = url.pathname.match(/^\/([a-z0-9]{6,16})\/report\/?$/i)
+    if (userLink) {
+      const resolved = resolveReportCode(userLink[1])
+      if (!resolved) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('kode report tidak dikenal')
+        return
+      }
+      if (url.searchParams.get('api')) {
+        const apiUrl = new URL(url)
+        apiUrl.pathname = `/api/${url.searchParams.get('api')}`
+        return query(req, res, apiUrl, resolved)
+      }
+      try {
+        const html = readFileSync(HTML_PATH, 'utf8').replace(
+          '<title>',
+          `<script>window.__REPORT_PIN=${JSON.stringify(resolved)};</script><title>`
+        )
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html)
+      } catch {
+        res.writeHead(500).end('web/report.html tidak ditemukan')
+      }
+      return
+    }
     if (!allowed(req, url)) {
       res.writeHead(401, { 'Content-Type': 'text/plain' }).end('unauthorized: set REPORT_TOKEN atau akses dari localhost')
       return

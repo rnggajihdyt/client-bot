@@ -9,9 +9,13 @@ const dir = mkdtempSync(join(tmpdir(), 'reportweb-'))
 process.env.SESSION_DIR = dir
 
 const { openDb } = await import('../src/db.js')
-const { sessionReport } = await import('../src/reportweb.js')
+const { sessionReport, resolveReportCode } = await import('../src/reportweb.js')
+const { reportCode, reportUrl } = await import('../src/reportcode.js')
+const { openRegistry, createSession, closeRegistry } = await import('../src/registry.js')
 
 const db = openDb(join(dir, 'toko1.sqlite'))
+openRegistry(join(dir, 'registry.sqlite'))
+createSession({ id: 'toko1', adminNohp: '628111' })
 const admin = db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
 const mitra = db.createAgen({ nama: 'Ani', kota: 'Solo', nohp: '628222', seniorId: admin.id, markup: 500, pin: '1234' })
 
@@ -70,6 +74,18 @@ test('sessionReport: viewer mitra hanya melihat jaringannya sendiri', () => {
   assert.equal(adminView.agen.length, 2)
 })
 
+test('reportCode: 8 char, stabil, unik per session/agen; resolve balik', () => {
+  const code = reportCode('toko1', mitra.kode)
+  assert.match(code, /^[a-z0-9]{8}$/)
+  assert.equal(reportCode('toko1', mitra.kode), code)
+  assert.notEqual(reportCode('toko1', admin.kode), code)
+  assert.notEqual(reportCode('toko2', mitra.kode), code)
+  assert.deepEqual(resolveReportCode(code), { session: 'toko1', kode: mitra.kode })
+  assert.equal(resolveReportCode('zzzzzzzz'), null)
+  assert.equal(resolveReportCode('../../etc'), null)
+  assert.match(reportUrl('toko1', mitra.kode), new RegExp(`/${code}/report$`))
+})
+
 test('sessionReport: session tidak dikenal / path traversal ditolak', () => {
   assert.equal(sessionReport('tidakada'), null)
   assert.equal(sessionReport('../toko1'), null)
@@ -78,5 +94,6 @@ test('sessionReport: session tidak dikenal / path traversal ditolak', () => {
 
 after(() => {
   db.close()
+  closeRegistry()
   rmSync(dir, { recursive: true, force: true })
 })

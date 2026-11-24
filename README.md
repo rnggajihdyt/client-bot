@@ -64,6 +64,7 @@ npm install
 | `REPORT_PORT` | `8090` | Port web report (read-only dashboard per session) |
 | `REPORT_HOST` | `127.0.0.1` | Bind host web report |
 | `REPORT_TOKEN` | *(kosong)* | Token query `?token=...` untuk web report. Kosong = hanya localhost. Wajib di-set kalau dibuka dari luar |
+| `REPORT_BASE_URL` | *(kosong)* | Base URL publik untuk link report per user, mis. `https://report.example.com`. Kosong = `http://localhost:REPORT_PORT` (link hanya jalan di mesin bot) |
 | `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
 | `WATCH_CHANGES` | `true` | (supervisor) auto-restart child saat `index.js`, `src/**`, atau `.env` berubah tanpa mereset uptime |
 
@@ -353,6 +354,8 @@ Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/pr
 
 Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 
+**Link per user** (`SAL`/`LAP` menyertakan URL): `<REPORT_BASE_URL>/<KODE>/report` — kode 8 karakter, hash stabil dari kombinasi session + kode agen, jadi tidak ada `?session=`/`?viewer=` yang bisa melebarkan scope. Kode itu sendiri adalah kredensial: siapa pun yang pegang link melihat jaringan agen itu saja. Set `REPORT_BASE_URL` agar link bisa dibuka dari HP (mis. lewat tunnel/nginx yang meneruskan ke `REPORT_PORT`).
+
 - Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
 - Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>` (+ `&session=...&viewer=...` untuk scope tertentu).
 - DB dibuka **read-only** — report tidak pernah mengubah/memigrasi data bot, aman jalan berdampingan dengan bot.
@@ -376,6 +379,7 @@ src/ics.js                  client API ICS (products / trx / status)
 src/orders.js               finalize transaksi: sukses (komisi) / gagal (refund), idempoten
 src/webhook.js              server webhook ICS + cron poller pending
 src/reportweb.js            server web report read-only (API /api/*) + agregasi laporan
+src/reportcode.js           kode 8 karakter + URL report per user (SAL/LAP)
 web/report.html             UI dashboard report (tanpa build step)
 src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help

@@ -139,7 +139,7 @@
       </div>
     </div>
 
-    <div class="nav-label">Session</div>
+    <div class="nav-label" id="sessionLabel">Session</div>
     <div class="nav-list sessions" id="sessions"></div>
 
     <div class="nav-label" id="viewerLabel">Lihat sebagai</div>
@@ -301,9 +301,15 @@
     return p.toString();
   };
   const state = { session: null, viewer: '', from: '', to: '', status: '', dep: '', q: '', offset: 0, limit: 50 };
+  // Per-user link: window.__REPORT_PIN = {session, kode}. Pinned mode: no
+  // session switcher, API calls go to the pin endpoint with the code itself.
+  const pin = window.__REPORT_PIN || null;
 
   const api = async (path, extra = {}) => {
-    const r = await fetch(`/api/${path}?${qs({ session: state.session, viewer: state.viewer, from: state.from, to: state.to, ...extra })}`);
+    const url = pin
+      ? `${location.pathname.replace(/\/+$/, '')}?api=${path}&${qs({ from: state.from, to: state.to, ...extra })}`
+      : `/api/${path}?${qs({ session: state.session, viewer: state.viewer, from: state.from, to: state.to, ...extra })}`;
+    const r = await fetch(url);
     if (r.status === 401) {
       showNote('Unauthorized. Tambahkan ?token=... sesuai REPORT_TOKEN.', 'err');
       throw new Error('unauthorized');
@@ -570,7 +576,17 @@
   $('next').addEventListener('click', () => { state.offset += state.limit; loadAll(); });
 
   setRange('week');
-  if (params.get('session')) selectSession(params.get('session'));
+  if (pin) {
+    // Pinned per-user link: one session, one viewer, no switchers.
+    state.session = pin.session;
+    state.viewer = pin.kode;
+    $('viewerLabel').style.display = 'none';
+    $('sessionLabel').style.display = 'none';
+    $('viewers').innerHTML = '';
+    $('sessions').innerHTML = '';
+    document.querySelector('.promo p').textContent = 'Laporan jaringan Anda: angka mencakup Anda + semua downline.';
+    loadAll();
+  } else if (params.get('session')) selectSession(params.get('session'));
   else loadSessions();
 })();
 </script>

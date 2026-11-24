@@ -29,6 +29,8 @@ export const config = {
   reportPort: Number(process.env.REPORT_PORT ?? 8090),
   reportHost: process.env.REPORT_HOST ?? '127.0.0.1',
   reportToken: process.env.REPORT_TOKEN ?? '',
+  // Public base URL for per-user report links, e.g. https://report.example.com
+  reportBaseUrl: process.env.REPORT_BASE_URL ?? '',
 }
 
 export const sessionPath = (id) => `${config.sessionDir}/${id}.sqlite`
