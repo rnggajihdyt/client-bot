@@ -28,6 +28,7 @@
   .brand-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
   .brand-sub { font-size: 10px; color: var(--ink-3); }
   .nav-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; padding: 0 8px; }
+  .nav-label[hidden], .side-grow[hidden], .side-spacer[hidden], #guideBox[hidden], .nav-link[hidden] { display: none !important; }
   .nav-list { display: flex; flex-direction: column; gap: 4px; }
   .side-grow { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
   .side-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
@@ -139,28 +140,70 @@
   .grid2b { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .uplink-note { font-size: 11.5px; color: var(--ink-2); margin-top: 10px; }
 
+  .backdrop { display: none; }
+  .chart { min-height: 120px; }
+
   @media (max-width: 1200px) {
     .grid2, .grid2b { grid-template-columns: 1fr; }
   }
-  @media (max-width: 860px) {
-    .app { grid-template-columns: 1fr; }
-    .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-    .nav-list, .side-grow, .side-fixed { flex-direction: row; overflow-x: auto; }
-    .side-grow { flex: 0 0 auto; }
+
+  /* Tablet & below: sidebar becomes an overlay drawer, toggled from the header. */
+  @media (max-width: 900px) {
+    .app, .app.collapsed { grid-template-columns: minmax(0, 1fr); }
+    .sidebar {
+      position: fixed; inset: 0 auto 0 0; z-index: 30; width: 262px; max-width: 86vw;
+      height: 100vh; overflow-y: auto; border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform .18s ease; will-change: transform;
+    }
+    .app.open .sidebar { transform: none; box-shadow: 0 0 0 100vmax rgba(16,32,28,.35); }
+    .app.collapsed .sidebar { padding: 18px 14px; overflow-y: auto; }
+    .app.collapsed .sidebar > * { display: revert; }
+    .app.open .backdrop { display: block; position: fixed; inset: 0; z-index: 20; background: transparent; }
     .side-spacer { display: none; }
-    .sessions { flex-direction: row; min-height: 0; }
-    .promo { display: none; }
-    main { padding: 16px 14px 32px; }
-    .kpis { gap: 10px; }
+    .sessions:not(:empty) { min-height: 0; }
+    main { padding: 16px 14px 32px; max-width: none; }
     .filters { margin-left: 0; width: 100%; }
     .search { margin-left: 0; }
-    .search input { width: 130px; }
+  }
+
+  @media (max-width: 700px) {
+    header.top { gap: 10px; }
+    h1 { font-size: 18px; }
+    .kpis { gap: 10px; }
+    .kpi .val { font-size: 19px; }
+    .card { padding: 13px 14px; border-radius: 14px; }
+    .tablecard .head { gap: 8px; }
+    .search { width: 100%; }
+    .search input { width: 100%; min-width: 0; }
+    .chart { height: 160px; }
+  }
+
+  @media (max-width: 480px) {
+    body { font-size: 12.5px; }
+    main { padding: 12px 10px 28px; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .kpi .val { font-size: 16.5px; }
+    .kpi .lbl, .kpi .sub { font-size: 10px; }
+    .filters { gap: 6px; }
+    .pill, .date-in { height: 32px; font-size: 11px; padding: 0 10px; }
+    .date-in { flex: 1 1 42%; min-width: 0; }
+    .filters > span { display: none; }
+    .filters .btn { flex: 1 1 100%; height: 32px; }
+    table { font-size: 11.5px; }
+    th, td { padding: 8px; }
+    .chart { height: 140px; }
+    .pager { flex-wrap: wrap; justify-content: flex-start; }
+    .promo span { font-size: 14px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar { transition: none; }
   }
 </style>
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark">PB</div>
       <div>
@@ -204,9 +247,11 @@
     </div>
   </aside>
 
+  <div class="backdrop" id="backdrop"></div>
+
   <main>
     <header class="top">
-      <button class="side-toggle" id="sideToggle" title="Sembunyikan/tampilkan sidebar" aria-label="Sembunyikan/tampilkan sidebar">☰</button>
+      <button class="side-toggle" id="sideToggle" aria-controls="sidebar" aria-expanded="true" title="Sembunyikan/tampilkan sidebar" aria-label="Sembunyikan/tampilkan sidebar">☰</button>
       <div class="head-title">
         <h1 id="title">Laporan</h1>
         <div class="crumb" id="crumb">pilih session</div>
@@ -569,7 +614,7 @@
         ? `Session ${state.session} · ${rep.from} s/d ${rep.to}`
         : `Laporan Anda · ${rep.from} s/d ${rep.to}`;
       $('promoValue').textContent = rupiah(v.saldo);
-      $('navAgen').style.display = rep.admin ? '' : 'none';
+      $('navAgen').hidden = !rep.admin;
     } catch (err) {
       if (err.message !== 'unauthorized') showNote(err.message, 'err');
     }
@@ -578,7 +623,7 @@
   const loadViewers = async () => {
     const box = $('viewers');
     box.innerHTML = '';
-    $('viewerLabel').style.display = state.session ? '' : 'none';
+    $('viewerLabel').hidden = !state.session;
     if (!state.session) return;
     try {
       const r = await fetch(`/api/viewers?${qs({ session: state.session })}`);
@@ -662,8 +707,23 @@
 
   $('sideToggle').addEventListener('click', () => {
     const app = document.querySelector('.app');
-    app.classList.toggle('collapsed');
-    try { localStorage.setItem('ppob.side', app.classList.contains('collapsed') ? '0' : '1'); } catch { /* ignore */ }
+    if (app.classList.contains('open')) { app.classList.remove('open'); return; }
+    if (app.classList.contains('collapsed')) {
+      app.classList.remove('collapsed');
+      try { localStorage.setItem('ppob.side', '1'); } catch { /* ignore */ }
+      return;
+    }
+    if (window.matchMedia('(max-width: 900px)').matches) { app.classList.add('open'); return; }
+    app.classList.add('collapsed');
+    try { localStorage.setItem('ppob.side', '0'); } catch { /* ignore */ }
+  });
+  $('backdrop').addEventListener('click', () => document.querySelector('.app').classList.remove('open'));
+  $('sidebar').addEventListener('click', (e) => {
+    // Section links close the mobile drawer so the target is visible.
+    if (e.target.closest('.nav-link')) document.querySelector('.app').classList.remove('open');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') document.querySelector('.app').classList.remove('open');
   });
   try { if (localStorage.getItem('ppob.side') === '0') document.querySelector('.app').classList.add('collapsed'); } catch { /* ignore */ }
 
@@ -672,10 +732,10 @@
     // Pinned per-user link: one session, one viewer, no switchers.
     state.session = pin.session;
     state.viewer = pin.kode;
-    $('viewerLabel').style.display = 'none';
-    $('sessionLabel').style.display = 'none';
+    $('viewerLabel').hidden = true;
+    $('sessionLabel').hidden = true;
     // Empty switchers would still claim a row each: take them out of flow.
-    for (const id of ['viewers', 'sessions', 'sideSpacer']) $(id).style.display = 'none';
+    for (const id of ['viewers', 'sessions', 'sideSpacer']) $(id).hidden = true;
     document.querySelector('.promo p').textContent = 'Laporan Anda sendiri: transaksi, deposit, dan mutasi saldo.';
     loadAll();
   } else if (params.get('session')) selectSession(params.get('session'));
