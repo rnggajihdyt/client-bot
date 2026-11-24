@@ -28,7 +28,7 @@ const SESSION_DIR = config.sessionDir
 const sessionPath = (id) => `${SESSION_DIR}/${id}.sqlite`
 
 // Super admin (OWNERS) commands — handled before the mitra command table.
-const SUPER_COMMANDS = new Set(['sesi', 'sesibuat', 'sesion', 'sesioff', 'sesihapus', 'laptrx'])
+const SUPER_COMMANDS = new Set(['sesi', 'sesibuat', 'sesion', 'sesioff', 'sesihapus', 'laptrx', 'webreport'])
 
 // Owner-only utility commands: work for OWNERS even without an agen row here.
 const SUPER_ONLY_COMMANDS = new Set(['status', 'sessions', 'cmd', 'env', 'restart'])
