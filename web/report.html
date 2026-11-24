@@ -34,7 +34,6 @@
   .sessions { flex: 0 1 auto; min-height: 0; }
   .sessions:not(:empty) { flex: 1 1 auto; min-height: 80px; }
   .side-spacer { flex: 1 1 auto; min-height: 0; }
-  .side-spacer:has(~ .side-grow:not(:empty)) { flex: 0 0 0; }  .side-push { margin-top: 0; }
   .sess, .vw { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; width: 100%; }
   .sess:hover, .vw:hover { background: var(--subtle); }
   .sess.active, .vw.active { background: var(--primary); color: #fff; font-weight: 600; }
@@ -169,7 +168,7 @@
     <div class="nav-label" id="viewerLabel">Lihat sebagai</div>
     <div class="side-grow" id="viewers"></div>
 
-    <div class="side-spacer"></div>
+    <div class="side-spacer" id="sideSpacer"></div>
 
     <div class="nav-label">Bagian</div>
     <nav class="side-fixed" id="anchors">
@@ -668,8 +667,8 @@
     state.viewer = pin.kode;
     $('viewerLabel').style.display = 'none';
     $('sessionLabel').style.display = 'none';
-    $('viewers').innerHTML = '';
-    $('sessions').innerHTML = '';
+    // Empty switchers would still claim a row each: take them out of flow.
+    for (const id of ['viewers', 'sessions', 'sideSpacer']) $(id).style.display = 'none';
     document.querySelector('.promo p').textContent = 'Laporan Anda sendiri: transaksi, deposit, dan mutasi saldo.';
     loadAll();
   } else if (params.get('session')) selectSession(params.get('session'));
