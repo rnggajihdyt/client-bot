@@ -28,7 +28,9 @@
   .brand-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
   .brand-sub { font-size: 10px; color: var(--ink-3); }
   .nav-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; padding: 0 8px; }
-  .nav-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .nav-list { display: flex; flex-direction: column; gap: 4px; }
+  .side-grow { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .side-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
   .sessions { flex: 1; min-height: 80px; }
   .sess, .vw { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; width: 100%; }
   .sess:hover, .vw:hover { background: var(--subtle); }
@@ -134,7 +136,8 @@
   @media (max-width: 860px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-    .nav-list { flex-direction: row; overflow-x: auto; }
+    .nav-list, .side-grow, .side-fixed { flex-direction: row; overflow-x: auto; }
+    .side-grow { flex: 0 0 auto; }
     .sessions { flex-direction: row; min-height: 0; }
     .promo { display: none; }
     main { padding: 16px 14px 32px; }
@@ -157,13 +160,13 @@
     </div>
 
     <div class="nav-label" id="sessionLabel">Session</div>
-    <div class="nav-list sessions" id="sessions"></div>
+    <div class="side-grow sessions" id="sessions"></div>
 
     <div class="nav-label" id="viewerLabel">Lihat sebagai</div>
-    <div class="nav-list" id="viewers"></div>
+    <div class="side-grow" id="viewers"></div>
 
     <div class="nav-label">Bagian</div>
-    <nav class="nav-list" id="anchors">
+    <nav class="side-fixed" id="anchors">
       <a class="nav-link" href="#sec-kpi">Ringkasan</a>
       <a class="nav-link" href="#sec-chart">Grafik</a>
       <a class="nav-link" id="navAgen" href="#sec-agen">Mitra</a>
@@ -172,7 +175,7 @@
       <a class="nav-link" href="#sec-mut">Mutasi</a>
     </nav>
 
-    <div id="guideBox">
+    <div id="guideBox" class="side-fixed">
       <div class="nav-label">Command WhatsApp</div>
       <div class="guide">
         <code>SAL</code> cek saldo<br />
@@ -182,7 +185,7 @@
       </div>
     </div>
 
-    <div class="promo">
+    <div class="promo side-fixed">
       <b id="promoTitle">Ruang lingkup</b>
       <p>Angka dihitung dari jaringan Anda sendiri (Anda + semua downline).</p>
       <span id="promoValue">—</span>
