@@ -10,6 +10,7 @@ import './src/commands/deposit.js' // TIKET/TPAY (BTL stays in ppob-core stubs u
 import './src/commands/prefix.js' // setprefix (owner only)
 import './src/commands/owner.js' // status/sessions/restart/cmd/env (owner only)
 import { startWebhookServer, startPoller } from './src/webhook.js'
+import { startReportServer } from './src/reportweb.js'
 import { startCatalogSyncCron } from './src/catalog.js'
 
 const logger = await createPinoLogger({ level: config.logLevel, pretty: true })
@@ -42,8 +43,10 @@ for (const sessionId of sessions) {
 let webhookServer
 let poller
 let catalogCron
+let reportServer
 try {
   webhookServer = startWebhookServer(logger)
+  reportServer = startReportServer(logger)
   poller = startPoller(logger, () => [...runtime.clients.keys()])
   catalogCron = startCatalogSyncCron(logger, () => [...runtime.clients.keys()])
 } catch (err) {
@@ -62,6 +65,7 @@ async function shutdown(reason = 'signal') {
   clearInterval(poller)
   catalogCron?.stop()
   webhookServer?.close()
+  reportServer?.close()
   await runtime.stopAll()
   closeRegistry()
   process.exit(0)

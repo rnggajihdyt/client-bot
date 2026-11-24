@@ -25,6 +25,10 @@ export const config = {
   productCacheTtlSec: Number(process.env.PRODUCT_CACHE_TTL_SEC ?? 60),
   // Background cron interval in minutes to auto-sync ICS products (0 = off)
   syncIntervalMin: Number(process.env.SYNC_INTERVAL_MIN ?? 15),
+  // Read-only web report (dashboard per session). Empty REPORT_TOKEN => localhost only.
+  reportPort: Number(process.env.REPORT_PORT ?? 8090),
+  reportHost: process.env.REPORT_HOST ?? '127.0.0.1',
+  reportToken: process.env.REPORT_TOKEN ?? '',
 }
 
 export const sessionPath = (id) => `${config.sessionDir}/${id}.sqlite`

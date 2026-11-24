@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PPOB Report</title>
+<style>
+  :root {
+    --canvas: #F6F8F7; --surface: #FFFFFF; --subtle: #EFF5F2; --border: #E5ECE9;
+    --primary: #2BB696; --primary-hover: #229A7E; --forest: #1A4D43;
+    --lime: #E3F2C1; --mint-wash: #D6F3EB;
+    --ink: #1A2421; --ink-2: #5F6E6A; --ink-3: #94A39E;
+    --ok: #22A06B; --ok-bg: #E6F7F1; --warn: #D99B26; --warn-bg: #FEF5E7;
+    --err: #E05252; --err-bg: #FDECEC; --info: #3B82F6; --info-bg: #EEF4FF;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--canvas); color: var(--ink); font-size: 13px; -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .app { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh; }
+
+  /* sidebar */
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 12px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--primary); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+  .brand-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
+  .brand-sub { font-size: 10px; color: var(--ink-3); }
+  .nav-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; padding: 0 8px; }
+  .sessions { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; }
+  .sess { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; }
+  .sess:hover { background: var(--subtle); }
+  .sess.active { background: var(--primary); color: #fff; font-weight: 600; }
+  .sess .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto; }
+  .sess.active .dot { background: #fff; }
+  .sess .nm { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sess .st { margin-left: auto; font-size: 9.5px; color: var(--ink-3); }
+  .sess.active .st { color: rgba(255,255,255,.8); }
+  .promo { background: var(--lime); border-radius: 14px; padding: 14px; }
+  .promo b { display: block; font-size: 12px; margin-bottom: 4px; }
+  .promo p { margin: 0 0 10px; font-size: 11px; color: var(--ink-2); line-height: 1.45; }
+  .promo span { font-weight: 700; font-size: 15px; color: var(--forest); }
+
+  /* main */
+  main { padding: 22px 24px 40px; max-width: 1440px; width: 100%; }
+  header.top { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  .crumb { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; }
+  .filters { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 11.5px; cursor: pointer; }
+  .pill:hover { background: var(--subtle); }
+  .pill.on { background: var(--lime); border-color: var(--lime); font-weight: 600; }
+  .date-in { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 6px 9px; font: inherit; font-size: 11.5px; color: var(--ink); }
+  .btn { background: var(--primary); color: #fff; border: 0; border-radius: 9px; padding: 8px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: var(--primary-hover); }
+
+  .note { padding: 10px 14px; border-radius: 10px; font-size: 12px; margin-bottom: 14px; display: none; }
+  .note.err { display: block; background: var(--err-bg); color: var(--err); }
+  .note.info { display: block; background: var(--info-bg); color: var(--info); }
+
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; }
+  .kpi .lbl { font-size: 10.5px; color: var(--ink-2); font-weight: 500; letter-spacing: .01em; }
+  .kpi .val { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; margin-top: 5px; line-height: 1.15; }
+  .kpi .sub { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; }
+  .kpi.hero { background: var(--lime); border-color: var(--lime); }
+  .kpi.hero .lbl, .kpi.hero .sub { color: var(--forest); opacity: .8; }
+
+  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 2px; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .card .hint { font-size: 11px; color: var(--ink-3); margin-bottom: 14px; }
+  .chart { width: 100%; height: 190px; display: block; }
+  .chart .axis { stroke: var(--border); stroke-dasharray: 3 4; stroke-width: 1; }
+  .chart .bar { fill: var(--primary); }
+  .chart .bar.peak { fill: var(--forest); }
+  .chart .tick { fill: var(--ink-3); font-size: 9px; }
+
+  ul.bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+  ul.bars li .row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  ul.bars .track { height: 7px; border-radius: 999px; background: var(--subtle); overflow: hidden; }
+  ul.bars .fill { height: 100%; border-radius: 999px; background: var(--mint-wash); }
+  ul.bars li:first-child .fill { background: var(--primary); }
+
+  .tablecard { margin-bottom: 14px; overflow: hidden; }
+  .tablecard .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tablecard .head .hint { margin: 0; }
+  .search { margin-left: auto; display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
+  .search input { border: 0; outline: 0; font: inherit; font-size: 12px; background: transparent; width: 170px; color: var(--ink); }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: var(--subtle); color: var(--ink-2); font-size: 10.5px; font-weight: 600; text-align: left; padding: 9px 10px; white-space: nowrap; }
+  th:first-child { border-radius: 8px 0 0 8px; }
+  th:last-child { border-radius: 0 8px 8px 0; }
+  td { padding: 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.r, th.r { text-align: right; }
+  .mono { font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .badge { display: inline-block; border-radius: 999px; padding: 3px 9px; font-size: 10px; font-weight: 600; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); }
+  .b-warn { background: var(--warn-bg); color: var(--warn); }
+  .b-err { background: var(--err-bg); color: var(--err); }
+  .b-info { background: var(--info-bg); color: var(--info); }
+  .empty { padding: 26px 10px; text-align: center; color: var(--ink-3); font-size: 12px; }
+  .pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 12px; font-size: 11.5px; color: var(--ink-2); }
+  .pager button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 11.5px; }
+  .pager button:disabled { opacity: .45; cursor: default; }
+  .grid2b { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  @media (max-width: 1200px) {
+    .kpis { grid-template-columns: repeat(3, 1fr); }
+    .grid2, .grid2b { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    .sessions { flex-direction: row; overflow-x: auto; }
+    .promo { display: none; }
+    main { padding: 16px 14px 32px; }
+    .kpis { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .filters { margin-left: 0; width: 100%; }
+    .search { margin-left: 0; }
+    .search input { width: 130px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">PB</div>
+      <div>
+        <div class="brand-name">PPOB Report</div>
+        <div class="brand-sub">read-only dashboard</div>
+      </div>
+    </div>
+    <div class="nav-label">Session</div>
+    <div class="sessions" id="sessions"></div>
+    <div class="promo">
+      <b id="promoTitle">Total session</b>
+      <p>Laporan dihitung dari DB session, tanpa mengubah data bot.</p>
+      <span id="promoValue">—</span>
+    </div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <div>
+        <h1 id="title">Laporan</h1>
+        <div class="crumb" id="crumb">pilih session</div>
+      </div>
+      <div class="filters">
+        <button class="pill" data-range="today">Hari ini</button>
+        <button class="pill" data-range="week">7 hari</button>
+        <button class="pill" data-range="month">Bulan ini</button>
+        <input class="date-in" type="date" id="from" />
+        <span style="color:var(--ink-3)">s/d</span>
+        <input class="date-in" type="date" id="to" />
+        <button class="btn" id="apply">Terapkan</button>
+      </div>
+    </header>
+
+    <div class="note" id="note"></div>
+
+    <section class="kpis">
+      <div class="card kpi hero"><div class="lbl">Omzet</div><div class="val num" id="k-omzet">—</div><div class="sub" id="k-omzet-sub">transaksi sukses</div></div>
+      <div class="card kpi"><div class="lbl">Profit</div><div class="val num" id="k-profit">—</div><div class="sub" id="k-margin">margin —</div></div>
+      <div class="card kpi"><div class="lbl">Transaksi</div><div class="val num" id="k-trx">—</div><div class="sub" id="k-trx-sub">sukses</div></div>
+      <div class="card kpi"><div class="lbl">Modal</div><div class="val num" id="k-modal">—</div><div class="sub">harga supplier</div></div>
+      <div class="card kpi"><div class="lbl">Komisi jaringan</div><div class="val num" id="k-komisi">—</div><div class="sub">dibagikan ke uplink</div></div>
+      <div class="card kpi"><div class="lbl">Deposit lunas</div><div class="val num" id="k-deposit">—</div><div class="sub" id="k-deposit-sub">—</div></div>
+    </section>
+
+    <section class="grid2">
+      <div class="card">
+        <h2>Omzet harian</h2>
+        <div class="hint" id="chartHint">transaksi sukses per hari</div>
+        <svg class="chart" id="chart" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="card">
+        <h2>Produk terlaris</h2>
+        <div class="hint">berdasarkan jumlah transaksi</div>
+        <ul class="bars" id="top"></ul>
+      </div>
+    </section>
+
+    <section class="card tablecard">
+      <div class="head">
+        <h2>Agen</h2>
+        <div class="hint" id="agenHint">saldo & performa</div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Kode</th><th>Nama</th><th>Kota</th><th>Status</th>
+            <th class="r">Saldo</th><th class="r">Komisi</th><th class="r">Trx</th><th class="r">Omzet</th><th class="r">Profit</th>
+          </tr></thead>
+          <tbody id="agenBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card tablecard">
+      <div class="head">
+        <h2>Transaksi</h2>
+        <div class="hint" id="trxHint">—</div>
+        <div class="search"><input id="q" placeholder="cari ID / tujuan / produk / kode" /></div>
+        <button class="pill on" data-status="">Semua</button>
+        <button class="pill" data-status="sukses">Sukses</button>
+        <button class="pill" data-status="proses">Proses</button>
+        <button class="pill" data-status="gagal">Gagal</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Waktu</th><th>Agen</th><th>Produk</th><th>Tujuan</th>
+            <th class="r">Harga</th><th class="r">Modal</th><th class="r">Profit</th><th>Status</th><th>SN</th>
+          </tr></thead>
+          <tbody id="trxBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <span id="trxPage">—</span>
+        <button id="prev">Sebelumnya</button>
+        <button id="next">Berikutnya</button>
+      </div>
+    </section>
+
+    <section class="grid2b">
+      <div class="card tablecard">
+        <div class="head"><h2>Deposit</h2><div class="hint" id="depHint">—</div>
+          <button class="pill on" data-dep="">Semua</button>
+          <button class="pill" data-dep="pending">Pending</button>
+          <button class="pill" data-dep="sukses">Sukses</button>
+          <button class="pill" data-dep="batal">Batal</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Waktu</th><th>Agen</th><th class="r">Total</th><th>Bank</th><th>Status</th></tr></thead>
+            <tbody id="depBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card tablecard">
+        <div class="head"><h2>Mutasi</h2><div class="hint">100 terakhir</div></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Waktu</th><th>Agen</th><th>Tipe</th><th class="r">Nominal</th><th class="r">Saldo</th><th>Keterangan</th></tr></thead>
+            <tbody id="mutBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const rupiah = (n) => 'Rp ' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
+  const num = (n) => (Number(n) || 0).toLocaleString('id-ID');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const token = new URLSearchParams(location.search).get('token');
+  const qs = (params) => {
+    const p = new URLSearchParams(params);
+    if (token) p.set('token', token);
+    return p.toString();
+  };
+  const state = { session: null, from: '', to: '', status: '', dep: '', q: '', offset: 0, limit: 50 };
+
+  const api = async (path, params = {}) => {
+    const r = await fetch(`/api/${path}?${qs({ session: state.session, from: state.from, to: state.to, ...params })}`);
+    if (r.status === 401) {
+      showNote('Unauthorized. Tambahkan ?token=... sesuai REPORT_TOKEN.', 'err');
+      throw new Error('unauthorized');
+    }
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+    return r.json();
+  };
+
+  const showNote = (text, kind = 'info') => { const n = $('note'); n.className = `note ${kind}`; n.textContent = text; };
+  const hideNote = () => { $('note').className = 'note'; };
+
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const setRange = (kind) => {
+    const now = new Date();
+    if (kind === 'today') { state.from = state.to = iso(now); }
+    if (kind === 'week') { state.from = iso(new Date(now.getTime() - 6 * 86400000)); state.to = iso(now); }
+    if (kind === 'month') { state.from = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))); state.to = iso(now); }
+    $('from').value = state.from; $('to').value = state.to;
+    document.querySelectorAll('[data-range]').forEach((b) => b.classList.toggle('on', b.dataset.range === kind));
+  };
+
+  const badge = (status) => {
+    const cls = status === 'sukses' ? 'b-ok' : status === 'gagal' || status === 'batal' ? 'b-err' : status === 'proses' || status === 'pending' ? 'b-warn' : 'b-info';
+    return `<span class="badge ${cls}">${esc(status)}</span>`;
+  };
+  const wib = (isoStr) => {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return esc(isoStr);
+    const w = new Date(d.getTime() + 7 * 3600000);
+    const p = (x) => String(x).padStart(2, '0');
+    return `${p(w.getUTCDate())}/${p(w.getUTCMonth() + 1)} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
+  };
+
+  const drawChart = (rows) => {
+    const svg = $('chart');
+    const W = 640, H = 190, padX = 28, padTop = 14, padBottom = 22;
+    if (!rows.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="tick">belum ada data</text>`; return; }
+    const max = Math.max(...rows.map((r) => r.omzet), 1);
+    const bw = Math.max(4, Math.min(42, (W - padX * 2) / rows.length - 8));
+    const step = (W - padX * 2) / rows.length;
+    const peak = rows.reduce((a, r, i) => (r.omzet > rows[a].omzet ? i : a), 0);
+    let out = '';
+    for (let g = 0; g <= 3; g++) {
+      const y = padTop + ((H - padTop - padBottom) / 3) * g;
+      out += `<line class="axis" x1="${padX}" y1="${y}" x2="${W - padX}" y2="${y}" />`;
+    }
+    rows.forEach((r, i) => {
+      const h = Math.max(2, ((H - padTop - padBottom) * r.omzet) / max);
+      const x = padX + step * i + (step - bw) / 2;
+      const y = H - padBottom - h;
+      out += `<rect class="bar ${i === peak ? 'peak' : ''}" x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" />`;
+      out += `<text class="tick" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(r.day.slice(8))}</text>`;
+    });
+    svg.innerHTML = out;
+  };
+
+  const renderReport = (d) => {
+    $('k-omzet').textContent = rupiah(d.kpi.omzet);
+    $('k-omzet-sub').textContent = `${num(d.kpi.trx)} trx sukses · ${d.from} s/d ${d.to}`;
+    $('k-profit').textContent = rupiah(d.kpi.profit);
+    $('k-margin').textContent = `margin ${d.kpi.margin}%`;
+    $('k-trx').textContent = num(d.kpi.trx);
+    $('k-trx-sub').textContent = `${num(d.status.proses || 0)} proses · ${num(d.status.gagal || 0)} gagal`;
+    $('k-modal').textContent = rupiah(d.kpi.modal);
+    $('k-komisi').textContent = rupiah(d.kpi.komisi);
+    const depOk = (d.deposits || []).find((x) => x.status === 'sukses');
+    $('k-deposit').textContent = rupiah(depOk ? depOk.total : 0);
+    $('k-deposit-sub').textContent = `${num(depOk ? depOk.n : 0)} tiket · ${num(d.unconfirmed)} pending`;
+
+    drawChart(d.daily || []);
+    $('chartHint').textContent = `${d.daily.length} hari dengan transaksi`;
+
+    const maxTrx = Math.max(...(d.topProducts || []).map((p) => p.trx), 1);
+    $('top').innerHTML = (d.topProducts || []).length
+      ? d.topProducts.map((p) => `<li>
+          <div class="row"><span>${esc(p.kode || '-')}</span><span class="mono">${num(p.trx)} · ${rupiah(p.omzet)}</span></div>
+          <div class="track"><div class="fill" style="width:${Math.max(4, (p.trx / maxTrx) * 100)}%"></div></div>
+        </li>`).join('')
+      : '<li class="empty">belum ada produk terjual</li>';
+
+    $('agenHint').textContent = `${(d.agen || []).length} agen · ${rupiah((d.agen || []).reduce((s, a) => s + a.saldo, 0))} saldo total`;
+    $('agenBody').innerHTML = (d.agen || []).length
+      ? d.agen.map((a) => `<tr>
+          <td class="mono">${esc(a.kode)}</td><td>${esc(a.nama)}</td><td>${esc(a.kota || '-')}</td>
+          <td>${a.aktif ? '<span class="badge b-ok">aktif</span>' : '<span class="badge b-err">nonaktif</span>'}</td>
+          <td class="r mono">${rupiah(a.saldo)}</td><td class="r mono">${rupiah(a.komisi)}</td>
+          <td class="r mono">${num(a.trx)}</td><td class="r mono">${rupiah(a.omzet)}</td><td class="r mono">${rupiah(a.profit)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="9" class="empty">belum ada agen</td></tr>';
+
+    const dep = d.deposits || [];
+    $('depHint').textContent = dep.map((x) => `${x.status}: ${num(x.n)}`).join(' · ') || 'belum ada';
+  };
+
+  const renderTrx = (d) => {
+    $('trxHint').textContent = `${num(d.total)} transaksi`;
+    $('trxBody').innerHTML = d.rows.length
+      ? d.rows.map((t) => `<tr>
+          <td class="mono">${esc(t.id_trx)}</td><td class="mono">${wib(t.created_at)}</td>
+          <td class="mono">${esc(t.agen_kode || '-')}</td><td>${esc(t.produk_kode)}</td><td class="mono">${esc(t.tujuan)}</td>
+          <td class="r mono">${rupiah(t.harga_efektif)}</td><td class="r mono">${rupiah(t.harga_modal)}</td>
+          <td class="r mono">${rupiah(t.markup_admin)}</td><td>${badge(t.status)}</td><td class="mono">${esc(t.sn || '-')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="10" class="empty">tidak ada transaksi pada rentang ini</td></tr>';
+    const page = Math.floor(d.offset / d.limit) + 1;
+    const pages = Math.max(1, Math.ceil(d.total / d.limit));
+    $('trxPage').textContent = `hal ${page} / ${pages}`;
+    $('prev').disabled = d.offset <= 0;
+    $('next').disabled = d.offset + d.limit >= d.total;
+  };
+
+  const renderDep = (d) => {
+    $('depBody').innerHTML = d.rows.length
+      ? d.rows.map((x) => `<tr>
+          <td class="mono">${esc(x.id_deposit)}</td><td class="mono">${wib(x.created_at)}</td>
+          <td class="mono">${esc(x.agen_kode || '-')}</td><td class="r mono">${rupiah(x.total)}</td>
+          <td>${esc(x.bank || '-')}</td><td>${badge(x.status)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="empty">belum ada deposit</td></tr>';
+  };
+
+  const renderMut = (d) => {
+    $('mutBody').innerHTML = d.rows.length
+      ? d.rows.map((m) => `<tr>
+          <td class="mono">${wib(m.created_at)}</td><td class="mono">${esc(m.agen_kode || '-')}</td>
+          <td>${esc(m.tipe)}</td><td class="r mono">${rupiah(m.nominal)}</td>
+          <td class="r mono">${rupiah(m.saldo_akhir)}</td><td>${esc(m.keterangan || '-')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="empty">belum ada mutasi</td></tr>';
+  };
+
+  const loadAll = async () => {
+    if (!state.session) return;
+    hideNote();
+    try {
+      const [rep, trx, dep, mut] = await Promise.all([
+        api('report'),
+        api('transaksi', { status: state.status, q: state.q, limit: state.limit, offset: state.offset }),
+        api('deposit', { status: state.dep }),
+        api('mutasi', { limit: 100 }),
+      ]);
+      renderReport(rep);
+      renderTrx(trx);
+      renderDep(dep);
+      renderMut(mut);
+    } catch (err) {
+      if (err.message !== 'unauthorized') showNote(err.message, 'err');
+    }
+  };
+
+  const loadSessions = async () => {
+    try {
+      const r = await fetch(`/api/sessions?${qs({})}`);
+      if (r.status === 401) { showNote('Unauthorized. Tambahkan ?token=... sesuai REPORT_TOKEN.', 'err'); return; }
+      const rows = await r.json();
+      $('promoValue').textContent = `${rows.length} session`;
+      $('sessions').innerHTML = rows.length
+        ? rows.map((s) => `<button class="sess" data-id="${esc(s.id)}">
+            <span class="dot"></span><span class="nm">${esc(s.label || s.id)}</span><span class="st">${esc(s.status || '')}</span>
+          </button>`).join('')
+        : '<div class="empty">belum ada session</div>';
+      document.querySelectorAll('.sess').forEach((b) => b.addEventListener('click', () => selectSession(b.dataset.id)));
+      const first = rows[0]?.id;
+      if (first) selectSession(first);
+    } catch (err) {
+      showNote(err.message, 'err');
+    }
+  };
+
+  const selectSession = (id) => {
+    state.session = id;
+    state.offset = 0;
+    document.querySelectorAll('.sess').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
+    const active = document.querySelector('.sess.active');
+    $('title').textContent = active ? active.querySelector('.nm').textContent : id;
+    $('crumb').textContent = `Session ${id} · ${state.from} s/d ${state.to}`;
+    loadAll();
+  };
+
+  // wire filters
+  document.querySelectorAll('[data-range]').forEach((b) =>
+    b.addEventListener('click', () => { setRange(b.dataset.range); $('crumb').textContent = `Session ${state.session} · ${state.from} s/d ${state.to}`; state.offset = 0; loadAll(); })
+  );
+  $('apply').addEventListener('click', () => {
+    const f = $('from').value, t = $('to').value;
+    if (!f || !t) return showNote('Isi tanggal from & to', 'err');
+    state.from = f; state.to = t; state.offset = 0;
+    document.querySelectorAll('[data-range]').forEach((b) => b.classList.remove('on'));
+    $('crumb').textContent = `Session ${state.session} · ${state.from} s/d ${state.to}`;
+    loadAll();
+  });
+  document.querySelectorAll('[data-status]').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.status = b.dataset.status; state.offset = 0;
+      document.querySelectorAll('[data-status]').forEach((x) => x.classList.toggle('on', x === b));
+      loadAll();
+    })
+  );
+  document.querySelectorAll('[data-dep]').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.dep = b.dataset.dep;
+      document.querySelectorAll('[data-dep]').forEach((x) => x.classList.toggle('on', x === b));
+      loadAll();
+    })
+  );
+  let qTimer;
+  $('q').addEventListener('input', (e) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { state.q = e.target.value.trim(); state.offset = 0; loadAll(); }, 300);
+  });
+  $('prev').addEventListener('click', () => { state.offset = Math.max(0, state.offset - state.limit); loadAll(); });
+  $('next').addEventListener('click', () => { state.offset += state.limit; loadAll(); });
+
+  setRange('week');
+  loadSessions();
+})();
+</script>
+</body>
+</html>

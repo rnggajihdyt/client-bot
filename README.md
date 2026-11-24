@@ -61,6 +61,9 @@ npm install
 | `ICS_API_KEY` | *(kosong)* | Fallback API key ICS kalau session belum punya key sendiri |
 | `PRODUCT_CACHE_TTL_SEC` | `60` | Cache TTL (detik) status & harga produk ICS untuk `CH`/`BELI` (single-flight refresh saat basi) |
 | `SYNC_INTERVAL_MIN` | `15` | Interval cron auto-sync katalog produk ICS (menit); `0` = matikan cron |
+| `REPORT_PORT` | `8090` | Port web report (read-only dashboard per session) |
+| `REPORT_HOST` | `127.0.0.1` | Bind host web report |
+| `REPORT_TOKEN` | *(kosong)* | Token query `?token=...` untuk web report. Kosong = hanya localhost. Wajib di-set kalau dibuka dari luar |
 | `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
 | `WATCH_CHANGES` | `true` | (supervisor) auto-restart child saat `index.js`, `src/**`, atau `.env` berubah tanpa mereset uptime |
 
@@ -338,6 +341,16 @@ Selesai — tanpa mengubah core. Handler menerima `{ client, event, args, log, s
 | `node scripts/wipe-session-store.mjs <id>` | Hapus kredensial WA satu session (bot harus stop; file store terkunci) |
 | `node scripts/fix-nohp.mjs` | Perbaikan satu kali nomor HP lama di DB |
 
+## Web report
+
+Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/profit/modal/komisi/deposit, grafik omzet harian, produk terlaris, tabel agen (saldo & performa), transaksi (filter status + pencarian + paging), deposit, dan mutasi.
+
+- Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
+- Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>`.
+- DB dibuka **read-only** — report tidak pernah mengubah/memigrasi data bot, aman jalan berdampingan dengan bot.
+- API JSON: `/api/sessions`, `/api/report`, `/api/transaksi`, `/api/deposit`, `/api/mutasi` (semua terima `session`, `from`, `to`).
+- UI: `web/report.html` (tanpa build step, tanpa dependency tambahan).
+
 ## Struktur
 
 ```
@@ -354,6 +367,8 @@ src/apikey.js               gate onboarding: validasi + simpan apikey ICS, promp
 src/ics.js                  client API ICS (products / trx / status)
 src/orders.js               finalize transaksi: sukses (komisi) / gagal (refund), idempoten
 src/webhook.js              server webhook ICS + cron poller pending
+src/reportweb.js            server web report read-only (API /api/*) + agregasi laporan
+web/report.html             UI dashboard report (tanpa build step)
 src/commands/registry.js    command map
 src/commands/demo.js        ping / menu / help
 src/commands/ppob.js        menu format/format1-4 verbatim + section per peran
