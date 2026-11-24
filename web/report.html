@@ -189,8 +189,8 @@
         <svg class="chart" id="chart" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
       </div>
       <div class="card">
-        <h2>Produk terlaris</h2>
-        <div class="hint">berdasarkan jumlah transaksi</div>
+        <h2 id="topTitle">Produk terlaris</h2>
+        <div class="hint" id="topHint">berdasarkan jumlah transaksi</div>
         <ul class="bars" id="top"></ul>
       </div>
     </section>
@@ -398,6 +398,8 @@
     $('chartHint').textContent = `${d.daily.length} hari dengan transaksi`;
 
     const maxTrx = Math.max(...(d.topProducts || []).map((p) => p.trx), 1);
+    $('topTitle').textContent = admin ? 'Produk terlaris' : 'Produk yang sering Anda beli';
+    $('topHint').textContent = admin ? 'berdasarkan jumlah transaksi' : 'berdasarkan transaksi Anda';
     $('top').innerHTML = (d.topProducts || []).length
       ? d.topProducts.map((p) => `<li>
           <div class="row"><span>${esc(p.kode || '-')}</span><span class="mono">${num(p.trx)} · ${rupiah(p.omzet)}</span></div>
