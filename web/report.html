@@ -642,6 +642,10 @@
         : `Laporan Anda · ${rep.from} s/d ${rep.to}`;
       $('promoValue').textContent = rupiah(v.saldo);
       $('navAgen').hidden = !rep.admin;
+      // The owner session has no agen at all: hide the mitra tables, keep the
+      // whole-session totals.
+      const noAgen = rep.admin && !(rep.agen || []).length;
+      $('agenCard').hidden = noAgen;
     } catch (err) {
       if (err.message !== 'unauthorized') showNote(err.message, 'err');
     }

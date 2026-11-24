@@ -122,11 +122,10 @@ test('sessionReport: session tidak dikenal / path traversal ditolak', () => {
 })
 
 test('owner link: kode dari session owner resolve ke mode admin', () => {
-  const code = ownerReportCode('toko1')
+  const code = ownerReportCode('owner')
   assert.match(code, /^[a-z0-9]{8}$/)
-  // A session with a root agen is the owner session; its code pins the admin view.
-  assert.deepEqual(resolveReportCode(code), { session: 'toko1', owner: true, pin_owner: true })
-  // Never collides with a real mitra link in the same session.
+  assert.deepEqual(resolveReportCode(code), { session: 'owner', owner: true, pin_owner: true })
+  // Never collides with a real mitra link in another session.
   assert.notEqual(code, reportCode('toko1', admin.kode))
   assert.notEqual(code, reportCode('toko1', mitra.kode))
   assert.match(ownerReportUrl(), /\/[a-z0-9]{8}\/report$/)

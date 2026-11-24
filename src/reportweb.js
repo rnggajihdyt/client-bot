@@ -51,7 +51,7 @@ const descendantsRaw = (db, agenId) =>
     .all(agenId)
     .map((r) => r.id)
 
-const scopeIds = (db, viewer) => [viewer.id, ...descendantsRaw(db, viewer.id)]
+const scopeIds = (db, viewer) => (viewer ? [viewer.id, ...descendantsRaw(db, viewer.id)] : [0])
 
 // `ids` = agen rows in scope. `selfOnly` = viewer is a mitra/downline: they see
 // only their own numbers — never modal, admin profit, komisi jaringan, uplink.
@@ -147,6 +147,7 @@ function report(db, range, ids, selfOnly = false) {
 // Uplink chain above the viewer (empty for the session admin) + komisi that
 // already flowed up to each of them from this viewer's network.
 function network(db, viewer, ids, range) {
+  if (!viewer) return { uplinks: [], komisiDiterima: 0, komisiTrx: 0 }
   const chain = db
     .prepare(
       `WITH RECURSIVE anc(id, senior_id, kode, nama, markup, saldo, komisi, depth) AS (
@@ -198,11 +199,12 @@ function viewerFrom(db, url) {
 export function resolveReportCode(code) {
   const want = String(code ?? '').toLowerCase()
   if (!/^[a-z0-9]{6,16}$/.test(want)) return null
-  // Owner link: the owner's session has no agen row, so its code names no kode.
-  // owner is true for the owner session itself; pin_owner=true keeps the client
-  // from pinning a viewer (it renders the session admin view instead).
-  const owner = ownerLinkSession()
-  if (owner && ownerReportCode(owner.id) === want) return { session: owner.id, owner: true, pin_owner: true }
+  // Owner link: OWNER_REPORT_SESSION, else the session whose id is literally
+  // "owner" (its registry row carries no admin_nohp). pin_owner=true keeps the
+  // client from pinning a viewer: it renders the session admin view instead.
+  const ownerIds = [config.ownerReportSession, 'owner'].filter(Boolean)
+  const ownerId = ownerIds.find((x) => ownerReportCode(x) === want)
+  if (ownerId) return { session: ownerId, owner: true, pin_owner: true }
   for (const s of listSessions()) {
     const db = openSession(s.id)
     if (!db) continue
@@ -232,26 +234,32 @@ function query(req, res, url, forced = null) {
     }
     // A per-user link pins the viewer: ?viewer= cannot widen the scope.
     // An owner link pins nothing: it falls back to the session admin.
-    const viewer = forced && !forced.owner
+    // A session without any agen (the owner session) has no agen row at all:
+    // an owner link still renders, with an empty report.
+    const ownerLink = Boolean(forced?.owner)
+    const viewer = forced && !ownerLink
       ? db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(forced.kode)
       : viewerFrom(db, url)
-    if (!viewer) {
+    if (!viewer && !ownerLink) {
       res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'agen tidak ditemukan di session ini' }))
       return
     }
     const ids = scopeIds(db, viewer)
     // Only the session admin (root agen) may see the whole network and its
     // margins. Every mitra — even one with its own downlines — sees itself only.
-    const admin = !viewer.senior_id
-    const selfOnly = !admin
-    const own = selfOnly ? [viewer.id] : ids
+    // No agen row at all = the owner session: whole session, admin view.
+    const admin = !viewer || !viewer.senior_id
+    const selfOnly = Boolean(viewer) && !admin
+    const own = viewer ? (selfOnly ? [viewer.id] : ids) : [0]
     const def = defaultRange()
     const from = url.searchParams.get('from') || def.from
     const to = url.searchParams.get('to') || def.to
     const range = dayRange(from, to)
     const out = {
       session,
-      viewer: { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi },
+      viewer: viewer
+        ? { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi }
+        : { kode: 'OWNER', nama: session, saldo: 0, komisi: 0 },
       admin,
       owner: Boolean(forced?.owner),
       from,
@@ -355,22 +363,6 @@ function sessionsFor() {
   return listSessions()
     .filter((s) => String(s.admin_nohp || '') !== '')
     .map((s) => ({ id: s.id, label: s.label, admin_nohp: s.admin_nohp, wa_nohp: s.wa_nohp, status: s.status }))
-}
-
-// Owner link: /<KODE>/report where KODE is minted from the owner's own session.
-// It renders the session admin view (whole network), not a mitra view.
-// ponytail: owner link = first session in the registry with a root agen; add a
-// per-owner picker only if several owner sessions ever exist.
-function ownerLinkSession() {
-  return listSessions().find((s) => {
-    const db = openSession(s.id)
-    if (!db) return false
-    try {
-      return Boolean(db.prepare(`SELECT 1 FROM agen WHERE senior_id IS NULL LIMIT 1`).get())
-    } finally {
-      db.close()
-    }
-  })
 }
 
 export function startReportServer(logger) {
