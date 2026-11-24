@@ -29,9 +29,10 @@
   .brand-sub { font-size: 10px; color: var(--ink-3); }
   .nav-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; padding: 0 8px; }
   .nav-list { display: flex; flex-direction: column; gap: 4px; }
-  .side-grow { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .side-grow { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
   .side-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
-  .sessions { flex: 1; min-height: 80px; }
+  .sessions { flex: 1 1 auto; min-height: 80px; }
+  .side-push { margin-top: auto; }
   .sess, .vw { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; width: 100%; }
   .sess:hover, .vw:hover { background: var(--subtle); }
   .sess.active, .vw.active { background: var(--primary); color: #fff; font-weight: 600; }
@@ -138,6 +139,7 @@
     .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
     .nav-list, .side-grow, .side-fixed { flex-direction: row; overflow-x: auto; }
     .side-grow { flex: 0 0 auto; }
+    .side-push { margin-top: 0; }
     .sessions { flex-direction: row; min-height: 0; }
     .promo { display: none; }
     main { padding: 16px 14px 32px; }
@@ -165,7 +167,7 @@
     <div class="nav-label" id="viewerLabel">Lihat sebagai</div>
     <div class="side-grow" id="viewers"></div>
 
-    <div class="nav-label">Bagian</div>
+    <div class="nav-label side-push">Bagian</div>
     <nav class="side-fixed" id="anchors">
       <a class="nav-link" href="#sec-kpi">Ringkasan</a>
       <a class="nav-link" href="#sec-chart">Grafik</a>
