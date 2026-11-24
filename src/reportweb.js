@@ -32,10 +32,31 @@ function openSession(sessionId) {
   return new DatabaseSync(path, { readOnly: true })
 }
 
-function report(db, range) {
+function inList(ids) {
+  return ids.map(() => '?').join(',')
+}
+
+// db helpers live on openDb() instances; these DBs are opened raw (read-only).
+const descendantsRaw = (db, agenId) =>
+  db
+    .prepare(
+      `WITH RECURSIVE d(id) AS (
+         SELECT id FROM agen WHERE senior_id = ?
+         UNION ALL
+         SELECT a.id FROM agen a JOIN d ON a.senior_id = d.id
+       )
+       SELECT id FROM d`
+    )
+    .all(agenId)
+    .map((r) => r.id)
+
+const scopeIds = (db, viewer) => [viewer.id, ...descendantsRaw(db, viewer.id)]
+
+// `ids` = agen rows in scope (the viewer + every downline, any depth).
+function report(db, range, ids) {
   const { from, toExclusive } = range
-  const w = `WHERE created_at >= ? AND created_at < ?`
-  const scope = [from, toExclusive]
+  const scope = [from, toExclusive, ...ids]
+  const tScope = `AND agen_id IN (${inList(ids)})`
 
   const kpi = db
     .prepare(
@@ -44,13 +65,17 @@ function report(db, range) {
               COALESCE(SUM(harga_modal),0) AS modal,
               COALESCE(SUM(markup_admin),0) AS profit,
               COALESCE(SUM(markup_total - markup_admin),0) AS komisi
-         FROM transaksi WHERE status = 'sukses' AND created_at >= ? AND created_at < ?`
+         FROM transaksi
+        WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${tScope}`
     )
     .get(...scope)
   kpi.margin = kpi.omzet ? Math.round((kpi.profit / kpi.omzet) * 1000) / 10 : 0
 
   const status = Object.fromEntries(
-    db.prepare(`SELECT status, COUNT(*) AS n FROM transaksi ${w} GROUP BY status`).all(...scope).map((r) => [r.status, r.n])
+    db
+      .prepare(`SELECT status, COUNT(*) AS n FROM transaksi WHERE created_at >= ? AND created_at < ? ${tScope} GROUP BY status`)
+      .all(...scope)
+      .map((r) => [r.status, r.n])
   )
 
   const daily = db
@@ -58,8 +83,9 @@ function report(db, range) {
       `SELECT substr(created_at,1,10) AS day, COUNT(*) AS trx,
               COALESCE(SUM(harga_efektif),0) AS omzet,
               COALESCE(SUM(markup_admin),0) AS profit
-         FROM transaksi WHERE status = 'sukses' AND created_at >= ? AND created_at < ?
-         GROUP BY day ORDER BY day`
+         FROM transaksi
+        WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${tScope}
+        GROUP BY day ORDER BY day`
     )
     .all(...scope)
 
@@ -68,8 +94,9 @@ function report(db, range) {
       `SELECT produk_kode AS kode, COUNT(*) AS trx,
               COALESCE(SUM(harga_efektif),0) AS omzet,
               COALESCE(SUM(markup_admin),0) AS profit
-         FROM transaksi WHERE status = 'sukses' AND created_at >= ? AND created_at < ?
-         GROUP BY produk_kode ORDER BY trx DESC, omzet DESC LIMIT 8`
+         FROM transaksi
+        WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${tScope}
+        GROUP BY produk_kode ORDER BY trx DESC, omzet DESC LIMIT 8`
     )
     .all(...scope)
 
@@ -82,18 +109,75 @@ function report(db, range) {
          FROM agen a
          LEFT JOIN transaksi t ON t.agen_id = a.id
               AND t.status = 'sukses' AND t.created_at >= ? AND t.created_at < ?
-         GROUP BY a.id ORDER BY profit DESC, omzet DESC`
+        WHERE a.id IN (${inList(ids)})
+        GROUP BY a.id ORDER BY profit DESC, omzet DESC`
+    )
+    .all(from, toExclusive, ...ids)
+
+  const deposits = db
+    .prepare(
+      `SELECT status, COUNT(*) AS n, COALESCE(SUM(total),0) AS total FROM deposit
+        WHERE created_at >= ? AND created_at < ? ${tScope} GROUP BY status`
     )
     .all(...scope)
 
-  const deposits = db
-    .prepare(`SELECT status, COUNT(*) AS n, COALESCE(SUM(total),0) AS total FROM deposit WHERE created_at >= ? AND created_at < ? GROUP BY status`)
-    .all(...scope)
-
-  const pending = db.prepare(`SELECT COUNT(*) AS n FROM transaksi WHERE status = 'proses'`).get().n
-  const unconfirmed = db.prepare(`SELECT COUNT(*) AS n FROM deposit WHERE status = 'pending'`).get().n
+  const pending = db
+    .prepare(`SELECT COUNT(*) AS n FROM transaksi WHERE status = 'proses' ${tScope}`)
+    .get(...ids).n
+  const unconfirmed = db
+    .prepare(`SELECT COUNT(*) AS n FROM deposit WHERE status = 'pending' ${tScope}`)
+    .get(...ids).n
 
   return { kpi, status, daily, topProducts, agen, deposits, pending, unconfirmed }
+}
+
+// Uplink chain above the viewer (empty for the session admin) + komisi that
+// already flowed up to each of them from this viewer's network.
+function network(db, viewer, ids, range) {
+  const chain = db
+    .prepare(
+      `WITH RECURSIVE anc(id, senior_id, kode, nama, markup, saldo, komisi, depth) AS (
+         SELECT id, senior_id, kode, nama, markup, saldo, komisi, 0 FROM agen WHERE id = ?
+         UNION ALL
+         SELECT a.id, a.senior_id, a.kode, a.nama, a.markup, a.saldo, a.komisi, anc.depth + 1
+           FROM agen a JOIN anc ON a.id = anc.senior_id
+       )
+       SELECT * FROM anc WHERE depth > 0 ORDER BY depth`
+    )
+    .all(viewer.id)
+
+  const komisiRows = db
+    .prepare(
+      `SELECT agen_id, COUNT(*) AS n, COALESCE(SUM(nominal),0) AS total FROM mutasi
+        WHERE tipe = 'komisi_masuk' AND created_at >= ? AND created_at < ?
+          AND agen_id IN (${inList(ids)})
+        GROUP BY agen_id`
+    )
+    .all(range.from, range.toExclusive, ...ids)
+  const byId = new Map(komisiRows.map((r) => [r.agen_id, r]))
+
+  const chainWith = chain.map((a) => ({
+    ...a,
+    komisiMasuk: byId.get(a.id)?.total ?? 0,
+    komisiTrx: byId.get(a.id)?.n ?? 0,
+  }))
+
+  // Komisi the viewer itself has received (from its own downlines).
+  const selfKomisi = db
+    .prepare(
+      `SELECT COALESCE(SUM(nominal),0) AS total, COUNT(*) AS n FROM mutasi
+        WHERE agen_id = ? AND tipe = 'komisi_masuk' AND created_at >= ? AND created_at < ?`
+    )
+    .get(viewer.id, range.from, range.toExclusive)
+
+  return { uplinks: chainWith, komisiDiterima: selfKomisi.total, komisiTrx: selfKomisi.n }
+}
+
+function viewerFrom(db, url) {
+  const kode = url.searchParams.get('viewer') || url.searchParams.get('admin') || ''
+  const byKode = db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(String(kode).toUpperCase())
+  if (byKode) return byKode
+  return db.prepare(`SELECT * FROM agen WHERE senior_id IS NULL ORDER BY id LIMIT 1`).get()
 }
 
 function query(req, res, url) {
@@ -105,24 +189,42 @@ function query(req, res, url) {
   }
   try {
     const route = url.pathname
+    if (!/^\/api\/(report|transaksi|mutasi|deposit)$/.test(route)) {
+      res.writeHead(404).end()
+      return
+    }
+    const viewer = viewerFrom(db, url)
+    if (!viewer) {
+      res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'agen tidak ditemukan di session ini' }))
+      return
+    }
+    const ids = scopeIds(db, viewer)
     const def = defaultRange()
     const from = url.searchParams.get('from') || def.from
     const to = url.searchParams.get('to') || def.to
     const range = dayRange(from, to)
-    const out = { session, from, to }
+    const out = { session, viewer: { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi }, from, to }
 
-    if (route === '/api/report') Object.assign(out, report(db, range))
+    if (route === '/api/report') {
+      Object.assign(out, report(db, range, ids))
+      out.network = network(db, viewer, ids, range)
+    }
 
     if (route === '/api/transaksi') {
       const status = url.searchParams.get('status')
       const q = (url.searchParams.get('q') || '').trim()
+      const agenKode = url.searchParams.get('agen')
       const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 50)))
       const offset = Math.max(0, Number(url.searchParams.get('offset') || 0))
-      const where = ['t.created_at >= ?', 't.created_at < ?']
-      const params = [range.from, range.toExclusive]
+      const where = ['t.created_at >= ?', 't.created_at < ?', `t.agen_id IN (${inList(ids)})`]
+      const params = [range.from, range.toExclusive, ...ids]
       if (status) {
         where.push('t.status = ?')
         params.push(status)
+      }
+      if (agenKode) {
+        where.push('a.kode = ?')
+        params.push(agenKode.toUpperCase())
       }
       if (q) {
         where.push('(t.id_trx LIKE ? OR t.tujuan LIKE ? OR t.produk_kode LIKE ? OR a.kode LIKE ?)')
@@ -150,16 +252,16 @@ function query(req, res, url) {
         .prepare(
           `SELECT m.*, a.kode AS agen_kode, a.nama AS agen_nama
              FROM mutasi m LEFT JOIN agen a ON a.id = m.agen_id
-            WHERE m.created_at >= ? AND m.created_at < ?
+            WHERE m.created_at >= ? AND m.created_at < ? AND m.agen_id IN (${inList(ids)})
             ORDER BY m.id DESC LIMIT ?`
         )
-        .all(range.from, range.toExclusive, limit)
+        .all(range.from, range.toExclusive, ...ids, limit)
     }
 
     if (route === '/api/deposit') {
       const status = url.searchParams.get('status')
-      const where = ['d.created_at >= ?', 'd.created_at < ?']
-      const params = [range.from, range.toExclusive]
+      const where = ['d.created_at >= ?', 'd.created_at < ?', `d.agen_id IN (${inList(ids)})`]
+      const params = [range.from, range.toExclusive, ...ids]
       if (status) {
         where.push('d.status = ?')
         params.push(status)
@@ -172,10 +274,7 @@ function query(req, res, url) {
         )
         .all(...params)
     }
-    if (!/^\/api\/(report|transaksi|mutasi|deposit)$/.test(route)) {
-      res.writeHead(404).end()
-      return
-    }
+
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(out))
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: err?.message }))
@@ -192,6 +291,16 @@ function allowed(req, url) {
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
 }
 
+// Owner (super admin) sees every session, never its own. Everyone else is
+// resolved inside their session and only sees their own network.
+// Sessions with an admin (= toko). The owner's own session has none, so it is
+// never listed: the owner sees every admin session but has no report of its own.
+function sessionsFor() {
+  return listSessions()
+    .filter((s) => String(s.admin_nohp || '') !== '')
+    .map((s) => ({ id: s.id, label: s.label, admin_nohp: s.admin_nohp, wa_nohp: s.wa_nohp, status: s.status }))
+}
+
 export function startReportServer(logger) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost')
@@ -200,9 +309,29 @@ export function startReportServer(logger) {
       return
     }
     if (url.pathname === '/api/sessions') {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(
-        JSON.stringify(listSessions().map((s) => ({ id: s.id, label: s.label, admin_nohp: s.admin_nohp, wa_nohp: s.wa_nohp, status: s.status })))
-      )
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(sessionsFor()))
+      return
+    }
+    if (url.pathname === '/api/viewers') {
+      const session = url.searchParams.get('session')
+      const db = openSession(session)
+      if (!db) {
+        res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'session tidak ditemukan' }))
+        return
+      }
+      try {
+        const rows = db
+          .prepare(
+            `SELECT id, kode, nama, kota, senior_id, aktif FROM agen
+              ORDER BY CASE WHEN senior_id IS NULL THEN 0 ELSE 1 END, kode`
+          )
+          .all()
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(rows))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: err?.message }))
+      } finally {
+        db.close()
+      }
       return
     }
     if (url.pathname.startsWith('/api/')) return query(req, res, url)
@@ -224,14 +353,19 @@ export function startReportServer(logger) {
 }
 
 // Kept for tests: same aggregation without going through HTTP.
-export function sessionReport(sessionId, { from, to } = {}) {
+export function sessionReport(sessionId, { from, to, viewer } = {}) {
   const db = openSession(sessionId)
   if (!db) return null
   try {
     const def = defaultRange()
-    return report(db, dayRange(from || def.from, to || def.to))
+    const v = viewer
+      ? db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(String(viewer).toUpperCase())
+      : db.prepare(`SELECT * FROM agen WHERE senior_id IS NULL ORDER BY id LIMIT 1`).get()
+    if (!v) return null
+    const ids = scopeIds(db, v)
+    const range = dayRange(from || def.from, to || def.to)
+    return { ...report(db, range, ids), network: network(db, v, ids, range), viewer: { kode: v.kode, nama: v.nama } }
   } finally {
     db.close()
   }
 }
-

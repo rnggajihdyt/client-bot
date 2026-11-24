@@ -14,36 +14,37 @@
     --err: #E05252; --err-bg: #FDECEC; --info: #3B82F6; --info-bg: #EEF4FF;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; min-height: 100%; }
   body {
     font-family: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--canvas); color: var(--ink); font-size: 13px; -webkit-font-smoothing: antialiased;
   }
-  .num { font-variant-numeric: tabular-nums; }
-  .app { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh; }
+  .num, .mono { font-variant-numeric: tabular-nums; }
+  .app { display: grid; grid-template-columns: 244px 1fr; min-height: 100vh; }
 
-  /* sidebar */
-  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
-  .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 12px; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 14px; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 8px; }
   .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--primary); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
   .brand-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
   .brand-sub { font-size: 10px; color: var(--ink-3); }
   .nav-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; padding: 0 8px; }
-  .sessions { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; }
-  .sess { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; }
-  .sess:hover { background: var(--subtle); }
-  .sess.active { background: var(--primary); color: #fff; font-weight: 600; }
-  .sess .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto; }
+  .nav-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .sessions { flex: 1; min-height: 80px; }
+  .sess, .vw { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; color: var(--ink-2); cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; width: 100%; }
+  .sess:hover, .vw:hover { background: var(--subtle); }
+  .sess.active, .vw.active { background: var(--primary); color: #fff; font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto; }
   .sess.active .dot { background: #fff; }
-  .sess .nm { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sess .st { margin-left: auto; font-size: 9.5px; color: var(--ink-3); }
+  .nm { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st { margin-left: auto; font-size: 9.5px; color: var(--ink-3); }
   .sess.active .st { color: rgba(255,255,255,.8); }
-  .promo { background: var(--lime); border-radius: 14px; padding: 14px; }
+  .vw .kode { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: var(--subtle); color: var(--ink-2); }
+  .vw.active .kode { background: rgba(255,255,255,.2); color: #fff; }
+  .promo { background: var(--lime); border-radius: 14px; padding: 13px; }
   .promo b { display: block; font-size: 12px; margin-bottom: 4px; }
-  .promo p { margin: 0 0 10px; font-size: 11px; color: var(--ink-2); line-height: 1.45; }
+  .promo p { margin: 0 0 8px; font-size: 11px; color: var(--ink-2); line-height: 1.45; }
   .promo span { font-weight: 700; font-size: 15px; color: var(--forest); }
 
-  /* main */
   main { padding: 22px 24px 40px; max-width: 1440px; width: 100%; }
   header.top { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
   h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
@@ -62,15 +63,15 @@
 
   .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 14px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; }
-  .kpi .lbl { font-size: 10.5px; color: var(--ink-2); font-weight: 500; letter-spacing: .01em; }
-  .kpi .val { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; margin-top: 5px; line-height: 1.15; }
+  .kpi .lbl { font-size: 10.5px; color: var(--ink-2); font-weight: 500; }
+  .kpi .val { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-top: 5px; line-height: 1.15; }
   .kpi .sub { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; }
   .kpi.hero { background: var(--lime); border-color: var(--lime); }
   .kpi.hero .lbl, .kpi.hero .sub { color: var(--forest); opacity: .8; }
 
   .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
   .card h2 { margin: 0 0 2px; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
-  .card .hint { font-size: 11px; color: var(--ink-3); margin-bottom: 14px; }
+  .card .hint { font-size: 11px; color: var(--ink-3); margin-bottom: 12px; }
   .chart { width: 100%; height: 190px; display: block; }
   .chart .axis { stroke: var(--border); stroke-dasharray: 3 4; stroke-width: 1; }
   .chart .bar { fill: var(--primary); }
@@ -78,12 +79,12 @@
   .chart .tick { fill: var(--ink-3); font-size: 9px; }
 
   ul.bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
-  ul.bars li .row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  ul.bars li .row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 5px; }
   ul.bars .track { height: 7px; border-radius: 999px; background: var(--subtle); overflow: hidden; }
   ul.bars .fill { height: 100%; border-radius: 999px; background: var(--mint-wash); }
   ul.bars li:first-child .fill { background: var(--primary); }
 
-  .tablecard { margin-bottom: 14px; overflow: hidden; }
+  .tablecard { margin-bottom: 14px; }
   .tablecard .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .tablecard .head .hint { margin: 0; }
   .search { margin-left: auto; display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface); }
@@ -96,17 +97,18 @@
   td { padding: 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
   td.r, th.r { text-align: right; }
-  .mono { font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .mono { font-size: 11.5px; }
   .badge { display: inline-block; border-radius: 999px; padding: 3px 9px; font-size: 10px; font-weight: 600; }
   .b-ok { background: var(--ok-bg); color: var(--ok); }
   .b-warn { background: var(--warn-bg); color: var(--warn); }
   .b-err { background: var(--err-bg); color: var(--err); }
   .b-info { background: var(--info-bg); color: var(--info); }
-  .empty { padding: 26px 10px; text-align: center; color: var(--ink-3); font-size: 12px; }
+  .empty { padding: 24px 10px; text-align: center; color: var(--ink-3); font-size: 12px; }
   .pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 12px; font-size: 11.5px; color: var(--ink-2); }
   .pager button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 11.5px; }
   .pager button:disabled { opacity: .45; cursor: default; }
   .grid2b { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .uplink-note { font-size: 11.5px; color: var(--ink-2); margin-top: 10px; }
 
   @media (max-width: 1200px) {
     .kpis { grid-template-columns: repeat(3, 1fr); }
@@ -115,7 +117,8 @@
   @media (max-width: 860px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-    .sessions { flex-direction: row; overflow-x: auto; }
+    .nav-list { flex-direction: row; overflow-x: auto; }
+    .sessions { flex-direction: row; min-height: 0; }
     .promo { display: none; }
     main { padding: 16px 14px 32px; }
     .kpis { grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -135,11 +138,16 @@
         <div class="brand-sub">read-only dashboard</div>
       </div>
     </div>
+
     <div class="nav-label">Session</div>
-    <div class="sessions" id="sessions"></div>
+    <div class="nav-list sessions" id="sessions"></div>
+
+    <div class="nav-label" id="viewerLabel">Lihat sebagai</div>
+    <div class="nav-list" id="viewers"></div>
+
     <div class="promo">
-      <b id="promoTitle">Total session</b>
-      <p>Laporan dihitung dari DB session, tanpa mengubah data bot.</p>
+      <b id="promoTitle">Ruang lingkup</b>
+      <p>Angka dihitung dari jaringan Anda sendiri (Anda + semua downline).</p>
       <span id="promoValue">—</span>
     </div>
   </aside>
@@ -168,7 +176,7 @@
       <div class="card kpi"><div class="lbl">Profit</div><div class="val num" id="k-profit">—</div><div class="sub" id="k-margin">margin —</div></div>
       <div class="card kpi"><div class="lbl">Transaksi</div><div class="val num" id="k-trx">—</div><div class="sub" id="k-trx-sub">sukses</div></div>
       <div class="card kpi"><div class="lbl">Modal</div><div class="val num" id="k-modal">—</div><div class="sub">harga supplier</div></div>
-      <div class="card kpi"><div class="lbl">Komisi jaringan</div><div class="val num" id="k-komisi">—</div><div class="sub">dibagikan ke uplink</div></div>
+      <div class="card kpi"><div class="lbl">Komisi diterima</div><div class="val num" id="k-komisi">—</div><div class="sub" id="k-komisi-sub">dari downline</div></div>
       <div class="card kpi"><div class="lbl">Deposit lunas</div><div class="val num" id="k-deposit">—</div><div class="sub" id="k-deposit-sub">—</div></div>
     </section>
 
@@ -182,6 +190,29 @@
         <h2>Produk terlaris</h2>
         <div class="hint">berdasarkan jumlah transaksi</div>
         <ul class="bars" id="top"></ul>
+      </div>
+    </section>
+
+    <section class="grid2b">
+      <div class="card tablecard">
+        <div class="head"><h2>Uplink & komisi</h2><div class="hint" id="uplinkHint">—</div></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Level</th><th>Kode</th><th>Nama</th><th class="r">Markup</th><th class="r">Saldo</th><th class="r">Komisi dari jaringan</th></tr></thead>
+            <tbody id="uplinkBody"></tbody>
+          </table>
+        </div>
+        <div class="uplink-note" id="uplinkNote"></div>
+      </div>
+
+      <div class="card tablecard">
+        <div class="head"><h2>Komisi per agen</h2><div class="hint">total komisi_masuk diterima pada rentang</div></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Kode</th><th>Nama</th><th class="r">Total komisi</th></tr></thead>
+            <tbody id="komisiBody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -262,16 +293,17 @@
   const rupiah = (n) => 'Rp ' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
   const num = (n) => (Number(n) || 0).toLocaleString('id-ID');
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const token = new URLSearchParams(location.search).get('token');
-  const qs = (params) => {
-    const p = new URLSearchParams(params);
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const qs = (extra) => {
+    const p = new URLSearchParams(extra);
     if (token) p.set('token', token);
     return p.toString();
   };
-  const state = { session: null, from: '', to: '', status: '', dep: '', q: '', offset: 0, limit: 50 };
+  const state = { session: null, viewer: '', from: '', to: '', status: '', dep: '', q: '', offset: 0, limit: 50 };
 
-  const api = async (path, params = {}) => {
-    const r = await fetch(`/api/${path}?${qs({ session: state.session, from: state.from, to: state.to, ...params })}`);
+  const api = async (path, extra = {}) => {
+    const r = await fetch(`/api/${path}?${qs({ session: state.session, viewer: state.viewer, from: state.from, to: state.to, ...extra })}`);
     if (r.status === 401) {
       showNote('Unauthorized. Tambahkan ?token=... sesuai REPORT_TOKEN.', 'err');
       throw new Error('unauthorized');
@@ -285,8 +317,20 @@
 
   const showNote = (text, kind = 'info') => { const n = $('note'); n.className = `note ${kind}`; n.textContent = text; };
   const hideNote = () => { $('note').className = 'note'; };
-
   const iso = (d) => d.toISOString().slice(0, 10);
+  const wib = (isoStr) => {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return esc(isoStr);
+    const w = new Date(d.getTime() + 7 * 3600000);
+    const p = (x) => String(x).padStart(2, '0');
+    return `${p(w.getUTCDate())}/${p(w.getUTCMonth() + 1)} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
+  };
+  const badge = (status) => {
+    const cls = status === 'sukses' ? 'b-ok' : status === 'gagal' || status === 'batal' ? 'b-err' : status === 'proses' || status === 'pending' ? 'b-warn' : 'b-info';
+    return `<span class="badge ${cls}">${esc(status)}</span>`;
+  };
+
   const setRange = (kind) => {
     const now = new Date();
     if (kind === 'today') { state.from = state.to = iso(now); }
@@ -296,26 +340,13 @@
     document.querySelectorAll('[data-range]').forEach((b) => b.classList.toggle('on', b.dataset.range === kind));
   };
 
-  const badge = (status) => {
-    const cls = status === 'sukses' ? 'b-ok' : status === 'gagal' || status === 'batal' ? 'b-err' : status === 'proses' || status === 'pending' ? 'b-warn' : 'b-info';
-    return `<span class="badge ${cls}">${esc(status)}</span>`;
-  };
-  const wib = (isoStr) => {
-    if (!isoStr) return '—';
-    const d = new Date(isoStr);
-    if (Number.isNaN(d.getTime())) return esc(isoStr);
-    const w = new Date(d.getTime() + 7 * 3600000);
-    const p = (x) => String(x).padStart(2, '0');
-    return `${p(w.getUTCDate())}/${p(w.getUTCMonth() + 1)} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
-  };
-
   const drawChart = (rows) => {
     const svg = $('chart');
     const W = 640, H = 190, padX = 28, padTop = 14, padBottom = 22;
     if (!rows.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="tick">belum ada data</text>`; return; }
     const max = Math.max(...rows.map((r) => r.omzet), 1);
-    const bw = Math.max(4, Math.min(42, (W - padX * 2) / rows.length - 8));
     const step = (W - padX * 2) / rows.length;
+    const bw = Math.max(4, Math.min(42, step - 8));
     const peak = rows.reduce((a, r, i) => (r.omzet > rows[a].omzet ? i : a), 0);
     let out = '';
     for (let g = 0; g <= 3; g++) {
@@ -325,8 +356,7 @@
     rows.forEach((r, i) => {
       const h = Math.max(2, ((H - padTop - padBottom) * r.omzet) / max);
       const x = padX + step * i + (step - bw) / 2;
-      const y = H - padBottom - h;
-      out += `<rect class="bar ${i === peak ? 'peak' : ''}" x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" />`;
+      out += `<rect class="bar ${i === peak ? 'peak' : ''}" x="${x}" y="${H - padBottom - h}" width="${bw}" height="${h}" rx="5" />`;
       out += `<text class="tick" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(r.day.slice(8))}</text>`;
     });
     svg.innerHTML = out;
@@ -340,7 +370,8 @@
     $('k-trx').textContent = num(d.kpi.trx);
     $('k-trx-sub').textContent = `${num(d.status.proses || 0)} proses · ${num(d.status.gagal || 0)} gagal`;
     $('k-modal').textContent = rupiah(d.kpi.modal);
-    $('k-komisi').textContent = rupiah(d.kpi.komisi);
+    $('k-komisi').textContent = rupiah(d.network?.komisiDiterima ?? 0);
+    $('k-komisi-sub').textContent = `${num(d.network?.komisiTrx ?? 0)} mutasi komisi`;
     const depOk = (d.deposits || []).find((x) => x.status === 'sukses');
     $('k-deposit').textContent = rupiah(depOk ? depOk.total : 0);
     $('k-deposit-sub').textContent = `${num(depOk ? depOk.n : 0)} tiket · ${num(d.unconfirmed)} pending`;
@@ -355,6 +386,29 @@
           <div class="track"><div class="fill" style="width:${Math.max(4, (p.trx / maxTrx) * 100)}%"></div></div>
         </li>`).join('')
       : '<li class="empty">belum ada produk terjual</li>';
+
+    // uplink chain
+    const ups = d.network?.uplinks ?? [];
+    $('uplinkHint').textContent = ups.length ? `${ups.length} level di atas ${d.viewer.kode}` : 'admin session — tanpa uplink';
+    $('uplinkBody').innerHTML = ups.length
+      ? ups.map((u) => `<tr>
+          <td class="mono">L${u.depth}</td><td class="mono">${esc(u.kode)}</td><td>${esc(u.nama)}</td>
+          <td class="r mono">${rupiah(u.markup)}</td><td class="r mono">${rupiah(u.saldo)}</td>
+          <td class="r mono">${rupiah(u.komisiMasuk)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="empty">Anda admin session — tidak ada uplink</td></tr>';
+    $('uplinkNote').textContent = ups.length
+      ? `Komisi dibagikan naik mengikuti markup tiap level; angka "Komisi dari jaringan" adalah yang sudah masuk ke uplink dari jaringan Anda pada rentang ini.`
+      : 'Semua markup di jaringan Anda menjadi profit admin session.';
+
+    // komisi per agen: dari mutasi komisi_masuk per agen dalam scope
+    const komisiRows = (d.agen || []).filter((a) => a.komisi > 0);
+    $('komisiBody').innerHTML = komisiRows.length
+      ? komisiRows.map((a) => `<tr>
+          <td class="mono">${esc(a.kode)}</td><td>${esc(a.nama)}</td>
+          <td class="r mono">${rupiah(a.komisi)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="3" class="empty">belum ada komisi tercatat</td></tr>';
 
     $('agenHint').textContent = `${(d.agen || []).length} agen · ${rupiah((d.agen || []).reduce((s, a) => s + a.saldo, 0))} saldo total`;
     $('agenBody').innerHTML = (d.agen || []).length
@@ -421,9 +475,29 @@
       renderTrx(trx);
       renderDep(dep);
       renderMut(mut);
+      const v = rep.viewer || {};
+      $('title').textContent = v.kode ? `${v.nama || v.kode} · ${v.kode}` : 'Laporan';
+      $('crumb').textContent = `Session ${state.session} · ${rep.from} s/d ${rep.to}`;
+      $('promoValue').textContent = rupiah(v.saldo);
     } catch (err) {
       if (err.message !== 'unauthorized') showNote(err.message, 'err');
     }
+  };
+
+  const loadViewers = async () => {
+    const box = $('viewers');
+    box.innerHTML = '';
+    $('viewerLabel').style.display = state.session ? '' : 'none';
+    if (!state.session) return;
+    try {
+      const r = await fetch(`/api/viewers?${qs({ session: state.session })}`);
+      if (!r.ok) return;
+      const rows = await r.json();
+      box.innerHTML = rows.map((v) => `<button class="vw" data-kode="${esc(v.kode)}">
+        <span class="kode">${esc(v.kode)}</span><span class="nm">${esc(v.nama)}</span>
+      </button>`).join('');
+      box.querySelectorAll('.vw').forEach((b) => b.addEventListener('click', () => selectViewer(b.dataset.kode)));
+    } catch { /* ignore */ }
   };
 
   const loadSessions = async () => {
@@ -445,26 +519,32 @@
     }
   };
 
-  const selectSession = (id) => {
+  const selectSession = async (id) => {
     state.session = id;
+    state.viewer = params.get('viewer') && params.get('session') === id ? params.get('viewer') : '';
     state.offset = 0;
     document.querySelectorAll('.sess').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
-    const active = document.querySelector('.sess.active');
-    $('title').textContent = active ? active.querySelector('.nm').textContent : id;
+    $('title').textContent = id;
     $('crumb').textContent = `Session ${id} · ${state.from} s/d ${state.to}`;
+    await loadViewers();
     loadAll();
   };
 
-  // wire filters
+  const selectViewer = (kode) => {
+    state.viewer = kode;
+    state.offset = 0;
+    document.querySelectorAll('.vw').forEach((b) => b.classList.toggle('active', b.dataset.kode === kode));
+    loadAll();
+  };
+
   document.querySelectorAll('[data-range]').forEach((b) =>
-    b.addEventListener('click', () => { setRange(b.dataset.range); $('crumb').textContent = `Session ${state.session} · ${state.from} s/d ${state.to}`; state.offset = 0; loadAll(); })
+    b.addEventListener('click', () => { setRange(b.dataset.range); state.offset = 0; loadAll(); })
   );
   $('apply').addEventListener('click', () => {
     const f = $('from').value, t = $('to').value;
     if (!f || !t) return showNote('Isi tanggal from & to', 'err');
     state.from = f; state.to = t; state.offset = 0;
     document.querySelectorAll('[data-range]').forEach((b) => b.classList.remove('on'));
-    $('crumb').textContent = `Session ${state.session} · ${state.from} s/d ${state.to}`;
     loadAll();
   });
   document.querySelectorAll('[data-status]').forEach((b) =>
@@ -490,7 +570,8 @@
   $('next').addEventListener('click', () => { state.offset += state.limit; loadAll(); });
 
   setRange('week');
-  loadSessions();
+  if (params.get('session')) selectSession(params.get('session'));
+  else loadSessions();
 })();
 </script>
 </body>

@@ -56,6 +56,20 @@ test('sessionReport: KPI, harian, produk, agen, deposit', () => {
   assert.equal(r.deposits.find((d) => d.status === 'sukses').total, 50123)
 })
 
+test('sessionReport: viewer mitra hanya melihat jaringannya sendiri', () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const r = sessionReport('toko1', { from: today, to: today, viewer: mitra.kode })
+  assert.equal(r.kpi.trx, 2)
+  assert.equal(r.viewer.kode, mitra.kode)
+  // Mitra tanpa downline: agen table hanya dia, tanpa admin.
+  assert.equal(r.agen.length, 1)
+  assert.equal(r.agen[0].kode, mitra.kode)
+  // Admin = root => tanpa uplink.
+  const adminView = sessionReport('toko1', { from: today, to: today, viewer: admin.kode })
+  assert.equal(adminView.network.uplinks.length, 0)
+  assert.equal(adminView.agen.length, 2)
+})
+
 test('sessionReport: session tidak dikenal / path traversal ditolak', () => {
   assert.equal(sessionReport('tidakada'), null)
   assert.equal(sessionReport('../toko1'), null)

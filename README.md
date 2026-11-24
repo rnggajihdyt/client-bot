@@ -343,12 +343,20 @@ Selesai — tanpa mengubah core. Handler menerima `{ client, event, args, log, s
 
 ## Web report
 
-Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/profit/modal/komisi/deposit, grafik omzet harian, produk terlaris, tabel agen (saldo & performa), transaksi (filter status + pencarian + paging), deposit, dan mutasi.
+Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/profit/modal/komisi/deposit, grafik omzet harian, produk terlaris, uplink & komisi jaringan, tabel agen (saldo & performa), transaksi (filter status + pencarian + paging), deposit, dan mutasi.
+
+**Siapa lihat apa** (scope = viewer + semua downline, kedalaman berapa pun):
+
+- **Owner / super admin**: daftar semua sesi toko (sesi owner sendiri tidak muncul karena tidak punya agen). Pilih sesi → default viewer = admin root sesi itu; bisa ganti "Lihat sebagai" ke agen mana pun di sesi tersebut.
+- **Admin toko**: default viewer = dirinya (root sesi). Melihat seluruh jaringan di bawahnya: uplink (kosong, dia puncak), komisi yang dibagikan, profit, transaksi, deposit, mutasi.
+- **Mitra / downline**: pakai `?session=<sesi>&viewer=<KODE>`; hanya melihat dirinya + downline-nya. Uplink-nya tampil (rantai ke atas) beserta komisi yang masuk ke tiap uplink dari jaringannya.
+
+Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 
 - Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
-- Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>`.
+- Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>` (+ `&session=...&viewer=...` untuk scope tertentu).
 - DB dibuka **read-only** — report tidak pernah mengubah/memigrasi data bot, aman jalan berdampingan dengan bot.
-- API JSON: `/api/sessions`, `/api/report`, `/api/transaksi`, `/api/deposit`, `/api/mutasi` (semua terima `session`, `from`, `to`).
+- API JSON: `/api/sessions`, `/api/viewers?session=`, `/api/report`, `/api/transaksi`, `/api/deposit`, `/api/mutasi` (semua terima `session`, `viewer`, `from`, `to`).
 - UI: `web/report.html` (tanpa build step, tanpa dependency tambahan).
 
 ## Struktur
