@@ -73,8 +73,14 @@
   .crumb { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; }
   .filters { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .filters .btn { flex: 0 0 auto; }
+  .range { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .range + .filters { margin-left: 0; }
   @media (max-width: 1500px) {
     .filters { margin-left: 0; width: 100%; }
+  }
+  @media (max-width: 1100px) {
+    .range { margin-left: 0; order: 3; }
+    .range + .filters { order: 4; }
   }
   .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 11.5px; cursor: pointer; }
   .pill:hover { background: var(--subtle); }
@@ -256,10 +262,12 @@
         <h1 id="title">Laporan</h1>
         <div class="crumb" id="crumb">pilih session</div>
       </div>
-      <div class="filters">
+      <div class="range">
         <button class="pill" data-range="today">Hari ini</button>
         <button class="pill" data-range="week">7 hari</button>
         <button class="pill" data-range="month">Bulan ini</button>
+      </div>
+      <div class="filters">
         <input class="date-in" type="date" id="from" />
         <span style="color:var(--ink-3)">s/d</span>
         <input class="date-in" type="date" id="to" />
