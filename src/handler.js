@@ -13,6 +13,7 @@ import { webhookUrl, icsConfig } from './webhook.js'
 import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem, sessionReadyText } from './apikey.js'
 import { createHumanController } from './human.js'
 import { tryDirectOrder } from './commands/supplier.js'
+import { ownerReportUrl } from './reportcode.js'
 
 const commandPrefix = config.commandPrefix
 const owners = (process.env.OWNERS ?? '')
@@ -272,10 +273,11 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       sesioff: () => setSessionStatus(reply, parsed.args, 'off'),
       sesihapus: () => deleteSession(reply, parsed.args),
       laptrx: () => lapTrx(reply, parsed.args),
+      webreport: () => reply(`*Web Report Owner*\n${ownerReportUrl()}\n\nBuka link ini: sidebar berisi semua session toko, pilih satu untuk melihat laporannya seperti admin toko itu.`),
     }
     const fn = commands[parsed.cmd]
     if (!fn) {
-      await reply('*Super admin*\n• SESI — daftar session\n• SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]\n• SESION.ID / SESIOFF.ID\n• SESIHAPUS.ID\n• LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]')
+      await reply('*Super admin*\n• SESI — daftar session\n• SESIBUAT.ID.NOMORADMIN[.NOMORWA][LABEL]\n• SESION.ID / SESIOFF.ID\n• SESIHAPUS.ID\n• LAPTRX.ID[HARI|BULAN|YYYY-MM-DD]\n• WEBREPORT — link web report')
       return
     }
     try {
