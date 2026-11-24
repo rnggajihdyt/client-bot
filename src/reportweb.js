@@ -220,7 +220,9 @@ export function resolveReportCode(code) {
 }
 
 function query(req, res, url, forced = null) {
-  const session = forced ? forced.session : url.searchParams.get('session')
+  // An owner link pins no session: ?session= picks one from the sidebar.
+  const ownerLink = Boolean(forced?.owner)
+  const session = ownerLink ? url.searchParams.get('session') : forced ? forced.session : url.searchParams.get('session')
   const db = openSession(session)
   if (!db) {
     res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'session tidak ditemukan' }))
@@ -233,13 +235,12 @@ function query(req, res, url, forced = null) {
       return
     }
     // A per-user link pins the viewer: ?viewer= cannot widen the scope.
-    // An owner link pins nothing: it falls back to the session admin.
+    // An owner link pins nothing: the session admin view is what it shows.
     // A session without any agen (the owner session) has no agen row at all:
     // an owner link still renders, with an empty report.
-    const ownerLink = Boolean(forced?.owner)
     const viewer = forced && !ownerLink
       ? db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(forced.kode)
-      : viewerFrom(db, url)
+      : viewerFrom(db, ownerLink ? new URL('http://localhost') : url)
     if (!viewer && !ownerLink) {
       res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'agen tidak ditemukan di session ini' }))
       return
@@ -382,6 +383,10 @@ export function startReportServer(logger) {
         const apiUrl = new URL(url)
         apiUrl.pathname = `/api/${url.searchParams.get('api')}`
         return query(req, res, apiUrl, resolved)
+      }
+      if (url.searchParams.get('sessions')) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(sessionsFor()))
+        return
       }
       try {
         const html = readFileSync(HTML_PATH, 'utf8').replace(

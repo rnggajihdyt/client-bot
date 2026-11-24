@@ -4,7 +4,7 @@ import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
 import { normalizeNohp } from '../utils.js'
 import { ensureFreshCatalog } from '../catalog.js'
-import { ownerReportUrl, reportUrl } from '../reportcode.js'
+import { reportUrl } from '../reportcode.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'
@@ -526,9 +526,7 @@ register({
   description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
   async handler({ client, event, mitra, args, isAdmin, db, sessionId }) {
     const { from, to, label } = parseRange(args[0])
-    // Owner has no agen row in its own session: its link is minted from the
-    // session alone and opens the full admin view.
-    const link = `\n\nLaporan web: ${isAdmin ? ownerReportUrl() : reportUrl(sessionId, mitra.kode)}`
+    const link = `\n\nLaporan web: ${reportUrl(sessionId, mitra.kode)}`
 
     if (isAdmin) {
       const sum = db.profitSummary({ from, to })

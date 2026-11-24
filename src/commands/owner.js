@@ -2,6 +2,7 @@ import { totalmem, freemem, uptime as osUptime, hostname, platform, release } fr
 import { register, listCommands } from './registry.js'
 import { formatRupiah } from '../money.js'
 import { config } from '../config.js'
+import { ownerReportUrl } from '../reportcode.js'
 import { resolveHumanMode } from '../human.js'
 import * as registry from '../registry.js'
 
@@ -113,6 +114,23 @@ register({
         client.message.send(event.key.remoteJid, msg).catch((err) => log?.warn({ err, id }, 'restart notify failed')),
     })
     await client.message.send(event.key.remoteJid, `Session ${id} di-restart. Pairing kode dikirim kalau perlu.`)
+  },
+})
+
+// ---- link web report owner ----
+register({
+  name: 'webreport',
+  description: 'Owner: link web report semua session',
+  async handler({ client, event, isSuper }) {
+    if (!isSuper) {
+      await client.message.send(event.key.remoteJid, OWNER_ONLY)
+      return
+    }
+    await client.message.send(
+      event.key.remoteJid,
+      `*Web Report Owner*\n${ownerReportUrl()}\n\n` +
+        'Buka link ini dari HP: sidebar berisi semua session toko. Pilih salah satu, laporannya sama seperti yang dilihat admin toko itu.'
+    )
   },
 })
 
