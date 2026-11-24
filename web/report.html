@@ -68,16 +68,23 @@
   [id^="sec-"] { scroll-margin-top: 16px; }
 
   main { padding: 22px 24px 40px; max-width: 1440px; width: 100%; min-width: 0; overflow-x: hidden; }
-  header.top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  header.top { margin-bottom: 18px; }
+  .top-bar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px;
+  }
+  .top-bar .head-title { flex: 1 1 200px; }
   h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
   .crumb { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; }
   .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .filters .btn { flex: 0 0 auto; }
   .range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .head-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
-  @media (max-width: 1300px) {
-    .head-tools { margin-left: 0; width: 100%; }
+  .head-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .head-tools .range, .head-tools .filters {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 4px; border-radius: 12px; background: var(--subtle);
   }
+  .head-tools .range .pill, .head-tools .filters .date-in, .head-tools .filters .btn { height: 30px; }
   .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 11.5px; cursor: pointer; }
   .pill:hover { background: var(--subtle); }
   .pill.on { background: var(--lime); border-color: var(--lime); font-weight: 600; }
@@ -164,12 +171,16 @@
     .side-spacer { display: none; }
     .sessions:not(:empty) { min-height: 0; }
     main { padding: 16px 14px 32px; max-width: none; }
-    .filters { width: 100%; }
+    .top-bar { gap: 10px; padding: 10px; }
+    .top-bar .head-title { flex: 1 1 auto; }
+    .head-tools { width: 100%; }
+    .head-tools .range, .head-tools .filters { flex: 1 1 100%; }
     .search { margin-left: 0; }
   }
 
   @media (max-width: 700px) {
     header.top { gap: 10px; }
+    .top-bar { gap: 8px; }
     h1 { font-size: 18px; }
     .kpis { gap: 10px; }
     .kpi .val { font-size: 19px; }
@@ -187,6 +198,7 @@
     .kpi .val { font-size: 16.5px; }
     .kpi .lbl, .kpi .sub { font-size: 10px; }
     .filters { gap: 6px; }
+    .head-tools .range, .head-tools .filters { gap: 5px; padding: 3px; }
     .pill, .date-in { height: 32px; font-size: 11px; padding: 0 10px; }
     .date-in { flex: 1 1 42%; min-width: 0; }
     .filters > span { display: none; }
@@ -253,22 +265,24 @@
 
   <main>
     <header class="top">
-      <button class="side-toggle" id="sideToggle" aria-controls="sidebar" aria-expanded="true" title="Sembunyikan/tampilkan sidebar" aria-label="Sembunyikan/tampilkan sidebar">☰</button>
-      <div class="head-title">
-        <h1 id="title">Laporan</h1>
-        <div class="crumb" id="crumb">pilih session</div>
-      </div>
-      <div class="head-tools">
-        <div class="range">
-          <button class="pill" data-range="today">Hari ini</button>
-          <button class="pill" data-range="week">7 hari</button>
-          <button class="pill" data-range="month">Bulan ini</button>
+      <div class="top-bar">
+        <button class="side-toggle" id="sideToggle" aria-controls="sidebar" aria-expanded="true" title="Sembunyikan/tampilkan sidebar" aria-label="Sembunyikan/tampilkan sidebar">☰</button>
+        <div class="head-title">
+          <h1 id="title">Laporan</h1>
+          <div class="crumb" id="crumb">pilih session</div>
         </div>
-        <div class="filters">
-          <input class="date-in" type="date" id="from" />
-          <span style="color:var(--ink-3)">s/d</span>
-          <input class="date-in" type="date" id="to" />
-          <button class="btn" id="apply">Terapkan</button>
+        <div class="head-tools">
+          <div class="range">
+            <button class="pill" data-range="today">Hari ini</button>
+            <button class="pill" data-range="week">7 hari</button>
+            <button class="pill" data-range="month">Bulan ini</button>
+          </div>
+          <div class="filters">
+            <input class="date-in" type="date" id="from" />
+            <span style="color:var(--ink-3)">s/d</span>
+            <input class="date-in" type="date" id="to" />
+            <button class="btn" id="apply">Terapkan</button>
+          </div>
         </div>
       </div>
     </header>
