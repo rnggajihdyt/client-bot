@@ -2,12 +2,13 @@ import { register } from './registry.js'
 
 // Menu text kept verbatim from the reference bot. Content-only for now —
 // transactions, balance and downline logic land later.
-const FORMATS = {
-  info: `*PANDUAN TRANSAKSI*
+const OVERVIEW = `*PANDUAN TRANSAKSI*
 • FORMAT1 : Transaksi & Cek Saldo
 • FORMAT2 : Deposit & Tambah Agen
 • FORMAT3 : Kelola Downline & Markup
-• FORMAT4 : Pengaturan Akun & PIN`,
+• FORMAT4 : Pengaturan Akun & PIN`
+
+const FORMATS = {
   format1: `*FORMAT 1 (TRANSAKSI & CEK SALDO)*
 • Beli : KODE.TUJUAN.PIN
 • Cek Saldo : SAL
@@ -39,10 +40,9 @@ const FORMATS = {
 • Tukar Komisi : TUKAR`,
 }
 
-// FORMAT1..4 stay verbatim (reference bot text). Only the overview ("info")
-// and the "all" dump carry the role-specific admin sections.
+// FORMAT1..4 stay verbatim (reference bot text). The overview is served as
+// FORMAT and gets the role-specific admin sections appended.
 for (const [name, text] of Object.entries(FORMATS)) {
-  if (name === 'info') continue
   register({
     name,
     description: `Menu ${name.toUpperCase()}`,
@@ -98,7 +98,7 @@ register({
   name: 'format',
   description: 'Panduan transaksi (+ command admin/owner bila berhak)',
   handler({ client, event, ...ctx }) {
-    return client.message.send(event.key.remoteJid, withExtras(FORMATS.info, ctx))
+    return client.message.send(event.key.remoteJid, withExtras(OVERVIEW, ctx))
   },
 })
 
