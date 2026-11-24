@@ -84,7 +84,8 @@ test('sessionReport: mitra hanya melihat dirinya, tanpa profit/modal/uplink', ()
   assert.equal(adminView.admin, true)
   assert.equal(adminView.kpi.profit, 3000)
   assert.equal(adminView.network.uplinks.length, 0)
-  assert.equal(adminView.agen.length, 2)
+  // The admin row is never listed: it has no transactions of its own.
+  assert.deepEqual(adminView.agen.map((a) => a.kode), [mitra.kode])
 })
 
 test('sessionReport: mitra yang punya downline tetap hanya lihat dirinya', () => {
@@ -99,7 +100,7 @@ test('sessionReport: mitra yang punya downline tetap hanya lihat dirinya', () =>
   // The admin still sees the whole network.
   const adminView = sessionReport('toko1', { from: today, to: today, viewer: admin.kode })
   assert.equal(adminView.kpi.trx, 3)
-  assert.equal(adminView.agen.length, 3)
+  assert.deepEqual(adminView.agen.map((a) => a.kode).sort(), [mitra.kode, reseller.kode].sort())
 })
 
 test('reportCode: 8 char, stabil, unik per session/agen; resolve balik', () => {

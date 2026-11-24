@@ -224,14 +224,16 @@
 
     <section class="card tablecard" id="agenCard">
       <div class="head">
-        <h2>Agen</h2>
+        <h2>Agen / mitra</h2>
         <div class="hint" id="agenHint">saldo & performa</div>
       </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th>Kode</th><th>Nama</th><th>Kota</th><th>Status</th>
-            <th class="r">Saldo</th><th class="r">Komisi</th><th class="r">Trx</th><th class="r">Omzet</th><th class="r">Profit</th>
+            <th class="r">Saldo</th><th class="r">Komisi</th><th class="r">Transaksi</th>
+            <th class="r" title="total yang dibayar mitra">Uang keluar mitra</th>
+            <th class="r" title="markup admin dari transaksi mitra ini">Profit admin</th>
           </tr></thead>
           <tbody id="agenBody"></tbody>
         </table>
@@ -440,7 +442,7 @@
 
     // Mitra: no agen table (it would only ever repeat its own row).
     $('agenCard').style.display = admin ? '' : 'none';
-    $('agenHint').textContent = `${(d.agen || []).length} agen · ${rupiah((d.agen || []).reduce((s, a) => s + a.saldo, 0))} saldo total`;
+    $('agenHint').textContent = `${(d.agen || []).length} mitra · ${rupiah((d.agen || []).reduce((s, a) => s + a.saldo, 0))} saldo total`;
     $('agenBody').innerHTML = (d.agen || []).length
       ? d.agen.map((a) => `<tr>
           <td class="mono">${esc(a.kode)}</td><td>${esc(a.nama)}</td><td>${esc(a.kota || '-')}</td>
@@ -448,7 +450,7 @@
           <td class="r mono">${rupiah(a.saldo)}</td><td class="r mono">${rupiah(a.komisi)}</td>
           <td class="r mono">${num(a.trx)}</td><td class="r mono">${rupiah(a.omzet)}</td><td class="r mono">${rupiah(a.profit)}</td>
         </tr>`).join('')
-      : '<tr><td colspan="9" class="empty">belum ada agen</td></tr>';
+      : '<tr><td colspan="9" class="empty">belum ada mitra</td></tr>';
 
     const dep = d.deposits || [];
     $('depHint').textContent = dep.map((x) => `${x.status}: ${num(x.n)}`).join(' · ') || 'belum ada';

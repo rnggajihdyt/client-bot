@@ -110,6 +110,8 @@ function report(db, range, ids, selfOnly = false) {
     .all(...scope)
   if (selfOnly) for (const p of topProducts) p.profit = 0
 
+  // Only downlines are listed: the admin row itself carries no transactions
+  // (every order belongs to a mitra) and its "profit" is the KPI above.
   const agen = db
     .prepare(
       `SELECT a.id, a.kode, a.nama, a.kota, a.saldo, a.komisi, a.aktif, a.senior_id,
@@ -119,7 +121,7 @@ function report(db, range, ids, selfOnly = false) {
          FROM agen a
          LEFT JOIN transaksi t ON t.agen_id = a.id
               AND t.status = 'sukses' AND t.created_at >= ? AND t.created_at < ?
-        WHERE a.id IN (${inList(ids)})
+        WHERE a.id IN (${inList(ids)}) AND a.senior_id IS NOT NULL
         GROUP BY a.id ORDER BY profit DESC, omzet DESC`
     )
     .all(from, toExclusive, ...ids)
