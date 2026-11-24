@@ -433,6 +433,8 @@
   // Per-user link: window.__REPORT_PIN = {session, kode}. Pinned mode: no
   // session switcher, API calls go to the pin endpoint with the code itself.
   const pin = window.__REPORT_PIN || null;
+  // Owner link pins a session but no viewer: the API resolves the session admin.
+  if (pin?.pin_owner) pin.kode = '';
 
   const api = async (path, extra = {}) => {
     const url = pin
@@ -753,7 +755,14 @@
   try { if (localStorage.getItem('ppob.side') === '0') document.querySelector('.app').classList.add('collapsed'); } catch { /* ignore */ }
 
   setRange('week');
-  if (pin) {
+  if (pin?.pin_owner) {
+    // Owner link: whole session, admin view, no switchers.
+    state.session = pin.session;
+    state.viewer = '';
+    for (const id of ['viewerLabel', 'viewers', 'sessions', 'sessionLabel', 'sideSpacer']) $(id).hidden = true;
+    document.querySelector('.promo p').textContent = 'Laporan seluruh jaringan session ini: profit, modal, komisi, dan mitra.';
+    loadAll();
+  } else if (pin) {
     // Pinned per-user link: one session, one viewer, no switchers.
     state.session = pin.session;
     state.viewer = pin.kode;
@@ -761,6 +770,7 @@
     $('sessionLabel').hidden = true;
     // Empty switchers would still claim a row each: take them out of flow.
     for (const id of ['viewers', 'sessions', 'sideSpacer']) $(id).hidden = true;
+    $('promoTitle').textContent = 'Laporan Anda';
     document.querySelector('.promo p').textContent = 'Laporan Anda sendiri: transaksi, deposit, dan mutasi saldo.';
     loadAll();
   } else if (params.get('session')) selectSession(params.get('session'));

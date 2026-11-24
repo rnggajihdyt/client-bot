@@ -4,7 +4,7 @@ import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
 import { normalizeNohp } from '../utils.js'
 import { ensureFreshCatalog } from '../catalog.js'
-import { reportUrl } from '../reportcode.js'
+import { ownerReportUrl, reportUrl } from '../reportcode.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'

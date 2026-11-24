@@ -10,7 +10,7 @@ process.env.SESSION_DIR = dir
 
 const { openDb } = await import('../src/db.js')
 const { sessionReport, resolveReportCode } = await import('../src/reportweb.js')
-const { reportCode, reportUrl } = await import('../src/reportcode.js')
+const { reportCode, ownerReportCode, ownerReportUrl, reportUrl } = await import('../src/reportcode.js')
 const { openRegistry, createSession, closeRegistry } = await import('../src/registry.js')
 
 const db = openDb(join(dir, 'toko1.sqlite'))
@@ -119,6 +119,17 @@ test('sessionReport: session tidak dikenal / path traversal ditolak', () => {
   assert.equal(sessionReport('tidakada'), null)
   assert.equal(sessionReport('../toko1'), null)
   assert.equal(sessionReport('..\\toko1'), null)
+})
+
+test('owner link: kode dari session owner resolve ke mode admin', () => {
+  const code = ownerReportCode('toko1')
+  assert.match(code, /^[a-z0-9]{8}$/)
+  // A session with a root agen is the owner session; its code pins the admin view.
+  assert.deepEqual(resolveReportCode(code), { session: 'toko1', owner: true, pin_owner: true })
+  // Never collides with a real mitra link in the same session.
+  assert.notEqual(code, reportCode('toko1', admin.kode))
+  assert.notEqual(code, reportCode('toko1', mitra.kode))
+  assert.match(ownerReportUrl(), /\/[a-z0-9]{8}\/report$/)
 })
 
 after(() => {

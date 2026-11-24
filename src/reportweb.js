@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { config, sessionPath } from './config.js'
 import { listSessions } from './registry.js'
-import { reportCode } from './reportcode.js'
+import { ownerReportCode, reportCode } from './reportcode.js'
 
 // Read-only report API. Opens each session DB read-only: the bot's own process
 // owns writes, and a report request must never migrate or lock a live DB.
@@ -198,6 +198,11 @@ function viewerFrom(db, url) {
 export function resolveReportCode(code) {
   const want = String(code ?? '').toLowerCase()
   if (!/^[a-z0-9]{6,16}$/.test(want)) return null
+  // Owner link: the owner's session has no agen row, so its code names no kode.
+  // owner is true for the owner session itself; pin_owner=true keeps the client
+  // from pinning a viewer (it renders the session admin view instead).
+  const owner = ownerLinkSession()
+  if (owner && ownerReportCode(owner.id) === want) return { session: owner.id, owner: true, pin_owner: true }
   for (const s of listSessions()) {
     const db = openSession(s.id)
     if (!db) continue
@@ -226,7 +231,8 @@ function query(req, res, url, forced = null) {
       return
     }
     // A per-user link pins the viewer: ?viewer= cannot widen the scope.
-    const viewer = forced
+    // An owner link pins nothing: it falls back to the session admin.
+    const viewer = forced && !forced.owner
       ? db.prepare(`SELECT * FROM agen WHERE kode = ?`).get(forced.kode)
       : viewerFrom(db, url)
     if (!viewer) {
@@ -247,6 +253,7 @@ function query(req, res, url, forced = null) {
       session,
       viewer: { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi },
       admin,
+      owner: Boolean(forced?.owner),
       from,
       to,
     }
@@ -350,6 +357,22 @@ function sessionsFor() {
     .map((s) => ({ id: s.id, label: s.label, admin_nohp: s.admin_nohp, wa_nohp: s.wa_nohp, status: s.status }))
 }
 
+// Owner link: /<KODE>/report where KODE is minted from the owner's own session.
+// It renders the session admin view (whole network), not a mitra view.
+// ponytail: owner link = first session in the registry with a root agen; add a
+// per-owner picker only if several owner sessions ever exist.
+function ownerLinkSession() {
+  return listSessions().find((s) => {
+    const db = openSession(s.id)
+    if (!db) return false
+    try {
+      return Boolean(db.prepare(`SELECT 1 FROM agen WHERE senior_id IS NULL LIMIT 1`).get())
+    } finally {
+      db.close()
+    }
+  })
+}
+
 export function startReportServer(logger) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost')
@@ -371,7 +394,7 @@ export function startReportServer(logger) {
       try {
         const html = readFileSync(HTML_PATH, 'utf8').replace(
           '<title>',
-          `<script>window.__REPORT_PIN=${JSON.stringify(resolved)};</script><title>`
+          `<script>window.__REPORT_PIN=${JSON.stringify(resolved).replaceAll('<', '\\u003c')};</script><title>`
         )
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html)
       } catch {

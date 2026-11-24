@@ -65,6 +65,7 @@ npm install
 | `REPORT_HOST` | `127.0.0.1` | Bind host web report |
 | `REPORT_TOKEN` | *(kosong)* | Token query `?token=...` untuk web report. Kosong = hanya localhost. Wajib di-set kalau dibuka dari luar |
 | `REPORT_BASE_URL` | *(kosong)* | Base URL publik untuk link report per user, mis. `https://report.example.com`. Kosong = `http://localhost:REPORT_PORT` (link hanya jalan di mesin bot) |
+| `OWNER_REPORT_SESSION` | *(kosong)* | Id session owner untuk link owner `/<KODE>/report` (tampilan admin penuh), mis. `sholicul01` |
 | `CYCLE_HOURS` | `10` | (supervisor) restart proses tiap N jam; `0` = tanpa cycle restart |
 | `WATCH_CHANGES` | `true` | (supervisor) auto-restart child saat `index.js`, `src/**`, atau `.env` berubah tanpa mereset uptime |
 
@@ -355,6 +356,8 @@ Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/pr
 Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 
 **Link per user** (`SAL`/`LAP` menyertakan URL): `<REPORT_BASE_URL>/<KODE>/report` — kode 8 karakter, hash stabil dari kombinasi session + kode agen, jadi tidak ada `?session=`/`?viewer=` yang bisa melebarkan scope. Kode itu sendiri adalah kredensial: siapa pun yang pegang link melihat jaringan agen itu saja. Set `REPORT_BASE_URL` agar link bisa dibuka dari HP (mis. lewat tunnel/nginx yang meneruskan ke `REPORT_PORT`).
+
+**Link owner** (`LAP` milik owner menyertakan URL): `<REPORT_BASE_URL>/<KODE>/report` dengan kode dari `reportCode(OWNER_REPORT_SESSION, '')`. Tampil sebagai admin sesi penuh (jaringan, profit, modal, komisi, uplink, tabel agen) — bukan mitra. Butuh dua env: `REPORT_BASE_URL` (base URL) dan `OWNER_REPORT_SESSION` (id session owner, mis. `sholicul01`). Tanpa `OWNER_REPORT_SESSION`, link owner tetap tercetak tapi 404.
 
 - Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
 - Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>` (+ `&session=...&viewer=...` untuk scope tertentu).

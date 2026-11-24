@@ -31,6 +31,8 @@ export const config = {
   reportToken: process.env.REPORT_TOKEN ?? '',
   // Public base URL for per-user report links, e.g. https://report.example.com
   reportBaseUrl: process.env.REPORT_BASE_URL ?? '',
+  // Owner session whose id mints the owner report link /<KODE>/report (admin view).
+  ownerReportSession: process.env.OWNER_REPORT_SESSION ?? '',
 }
 
 export const sessionPath = (id) => `${config.sessionDir}/${id}.sqlite`
