@@ -526,7 +526,9 @@ register({
   description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
   async handler({ client, event, mitra, args, isAdmin, db, sessionId }) {
     const { from, to, label } = parseRange(args[0])
-    const link = `\n\nLaporan web: ${reportUrl(sessionId, mitra.kode)}`
+    // Owner has no agen row in its own session: its link is minted from the
+    // session alone and opens the full admin view.
+    const link = `\n\nLaporan web: ${isAdmin ? ownerReportUrl() : reportUrl(sessionId, mitra.kode)}`
 
     if (isAdmin) {
       const sum = db.profitSummary({ from, to })
