@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { config } from './config.js'
 
 const OWNER_KODE = ''
+const OWNER_SESSION = 'owner'
 
 // Short, stable code per (session, agen kode). 8 base36 chars = 40 bits: enough
 // to be unguessable in practice, short enough to paste in WhatsApp.
@@ -16,9 +17,15 @@ export function ownerReportCode(sessionId) {
   return reportCode(sessionId, OWNER_KODE)
 }
 
+// The single owner session id, shared by the link minting and its resolution so
+// the two can never drift apart.
+export function ownerSession() {
+  return config.ownerReportSession || OWNER_SESSION
+}
+
 export function ownerReportUrl() {
   const base = String(config.reportBaseUrl || `http://localhost:${config.reportPort}`).replace(/\/+$/, '')
-  return `${base}/${ownerReportCode(config.ownerReportSession || '')}/report`
+  return `${base}/${ownerReportCode(ownerSession())}/report`
 }
 
 export function reportUrl(sessionId, kode) {

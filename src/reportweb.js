@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { config, sessionPath } from './config.js'
 import { listSessions } from './registry.js'
-import { ownerReportCode, reportCode } from './reportcode.js'
+import { ownerReportCode, ownerReportUrl, ownerSession, reportCode } from './reportcode.js'
 
 // Read-only report API. Opens each session DB read-only: the bot's own process
 // owns writes, and a report request must never migrate or lock a live DB.
@@ -199,12 +199,10 @@ function viewerFrom(db, url) {
 export function resolveReportCode(code) {
   const want = String(code ?? '').toLowerCase()
   if (!/^[a-z0-9]{6,16}$/.test(want)) return null
-  // Owner link: OWNER_REPORT_SESSION, else the session whose id is literally
-  // "owner" (its registry row carries no admin_nohp). pin_owner=true keeps the
-  // client from pinning a viewer: it renders the session admin view instead.
-  const ownerIds = [config.ownerReportSession, 'owner'].filter(Boolean)
-  const ownerId = ownerIds.find((x) => ownerReportCode(x) === want)
-  if (ownerId) return { session: ownerId, owner: true, pin_owner: true }
+  // Owner link: minted from ownerSession() (OWNER_REPORT_SESSION or "owner").
+  // pin_owner=true keeps the client from pinning a viewer: it renders the
+  // session admin view of whichever session the sidebar picks.
+  if (ownerReportCode(ownerSession()) === want) return { session: ownerSession(), owner: true, pin_owner: true }
   for (const s of listSessions()) {
     const db = openSession(s.id)
     if (!db) continue
@@ -376,7 +374,15 @@ export function startReportServer(logger) {
     if (userLink) {
       const resolved = resolveReportCode(userLink[1])
       if (!resolved) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('kode report tidak dikenal')
+        // The link that was minted and the link being opened can drift (env
+        // change, stale link). Say which one is valid instead of a dead end.
+        const hint = `kode report tidak dikenal\n\nLink owner yang berlaku sekarang: ${ownerReportUrl()}`
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' }).end(
+          `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+            `<body style="font:15px system-ui;padding:24px;line-height:1.6">` +
+            `<b>Kode report tidak dikenal</b><p>Link owner yang berlaku sekarang:<br>` +
+            `<a href="/${ownerReportCode(ownerSession())}/report">${ownerReportUrl()}</a></p>`
+        )
         return
       }
       if (url.searchParams.get('api')) {
