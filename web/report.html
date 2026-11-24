@@ -71,16 +71,12 @@
   header.top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
   h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
   .crumb { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; }
-  .filters { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .filters .btn { flex: 0 0 auto; }
-  .range { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  .range + .filters { margin-left: 0; }
-  @media (max-width: 1500px) {
-    .filters { margin-left: 0; width: 100%; }
-  }
-  @media (max-width: 1100px) {
-    .range { margin-left: 0; order: 3; }
-    .range + .filters { order: 4; }
+  .range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .head-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+  @media (max-width: 1300px) {
+    .head-tools { margin-left: 0; width: 100%; }
   }
   .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 11.5px; cursor: pointer; }
   .pill:hover { background: var(--subtle); }
@@ -168,7 +164,7 @@
     .side-spacer { display: none; }
     .sessions:not(:empty) { min-height: 0; }
     main { padding: 16px 14px 32px; max-width: none; }
-    .filters { margin-left: 0; width: 100%; }
+    .filters { width: 100%; }
     .search { margin-left: 0; }
   }
 
@@ -262,16 +258,18 @@
         <h1 id="title">Laporan</h1>
         <div class="crumb" id="crumb">pilih session</div>
       </div>
-      <div class="range">
-        <button class="pill" data-range="today">Hari ini</button>
-        <button class="pill" data-range="week">7 hari</button>
-        <button class="pill" data-range="month">Bulan ini</button>
-      </div>
-      <div class="filters">
-        <input class="date-in" type="date" id="from" />
-        <span style="color:var(--ink-3)">s/d</span>
-        <input class="date-in" type="date" id="to" />
-        <button class="btn" id="apply">Terapkan</button>
+      <div class="head-tools">
+        <div class="range">
+          <button class="pill" data-range="today">Hari ini</button>
+          <button class="pill" data-range="week">7 hari</button>
+          <button class="pill" data-range="month">Bulan ini</button>
+        </div>
+        <div class="filters">
+          <input class="date-in" type="date" id="from" />
+          <span style="color:var(--ink-3)">s/d</span>
+          <input class="date-in" type="date" id="to" />
+          <button class="btn" id="apply">Terapkan</button>
+        </div>
       </div>
     </header>
 
