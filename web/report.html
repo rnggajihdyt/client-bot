@@ -172,7 +172,7 @@
     <div class="note" id="note"></div>
 
     <section class="kpis">
-      <div class="card kpi hero"><div class="lbl">Omzet</div><div class="val num" id="k-omzet">—</div><div class="sub" id="k-omzet-sub">transaksi sukses</div></div>
+      <div class="card kpi hero"><div class="lbl" id="k-omzet-lbl">Omzet</div><div class="val num" id="k-omzet">—</div><div class="sub" id="k-omzet-sub">transaksi sukses</div></div>
       <div class="card kpi" id="adminOnlyProfit"><div class="lbl">Profit</div><div class="val num" id="k-profit">—</div><div class="sub" id="k-margin">margin —</div></div>
       <div class="card kpi"><div class="lbl">Transaksi</div><div class="val num" id="k-trx">—</div><div class="sub" id="k-trx-sub">sukses</div></div>
       <div class="card kpi" id="adminOnlyModal"><div class="lbl">Modal</div><div class="val num" id="k-modal">—</div><div class="sub">harga supplier</div></div>
@@ -184,7 +184,7 @@
 
     <section class="grid2">
       <div class="card">
-        <h2>Omzet harian</h2>
+        <h2 id="chartTitle">Omzet harian</h2>
         <div class="hint" id="chartHint">transaksi sukses per hari</div>
         <svg class="chart" id="chart" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
       </div>
@@ -377,6 +377,8 @@
     $('mitraSaldo').style.display = admin ? 'none' : '';
     $('mitraKomisi').style.display = admin ? 'none' : '';
     $('k-omzet').textContent = rupiah(d.kpi.omzet);
+    $('k-omzet-lbl').textContent = admin ? 'Omzet' : 'Uang keluar';
+    $('chartTitle').textContent = admin ? 'Omzet harian' : 'Uang keluar harian';
     $('k-omzet-sub').textContent = `${num(d.kpi.trx)} trx sukses · ${d.from} s/d ${d.to}`;
     if (admin) {
       $('k-profit').textContent = rupiah(d.kpi.profit);
