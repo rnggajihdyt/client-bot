@@ -519,7 +519,7 @@ register({
 // Admin = whole session. Any mitra with downlines = its own network. Leaf mitra = itself.
 register({
   name: 'lap',
-  description: 'Laporan: LAP[HARI|BULAN|YYYY-MM-DD]',
+  description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
   async handler({ client, event, mitra, args, isAdmin, db }) {
     const { from, to, label } = parseRange(args[0])
 

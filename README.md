@@ -206,7 +206,7 @@ Semua perintah case-insensitive, argumen dipisah `.` atau spasi. Tanpa `COMMAND_
 | `GP` | `GP.PINBARU.PINLAMA` | Ganti PIN |
 | `UN` | `UN.NAMA.PIN` | Ubah nama |
 | `CS` | `CS.PESAN` / `CS.<IDDEPOSIT>` | Teruskan pesan ke admin session (bisa dengan gambar). Pesan apa pun yang memuat ID tiket (`D0001`) dianggap konfirmasi transfer: admin dapat status tiket + bukti gambar |
-| `LAP` | `LAP[HARI\|BULAN\|YYYY-MM-DD]` | Admin: seluruh session. Uplink: jaringannya. Mitra: dirinya |
+| `LAP` | `LAP[HARI\|MINGGU\|BULAN\|YYYY-MM-DD\|DD\|DD-MM-YYYY\|YYYY-MM\|MM-YYYY]` | Admin: seluruh session. Uplink: jaringannya. Mitra: dirinya. `LAP.22` = tgl 22 bulan ini, `LAP.2026-03` = Maret penuh |
 
 ### Admin session
 

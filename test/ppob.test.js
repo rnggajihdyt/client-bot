@@ -144,11 +144,32 @@ test('migrasi: DB lama tanpa kolom deposit.bank tetap bisa TIKET', () => {
 
 test('parseRange', () => {
   const today = new Date().toISOString().slice(0, 10)
+  const ym = today.slice(0, 7)
   assert.equal(parseRange().from, today)
-  assert.equal(parseRange('bulan').from, `${today.slice(0, 7)}-01`)
+  assert.equal(parseRange('bulan').from, `${ym}-01`)
   assert.equal(parseRange('2026-01-05').from, '2026-01-05')
   assert.equal(parseRange('2026-01-05').to, '2026-01-06')
   assert.equal(parseRange('ngawur').from, today)
+
+  // DD = hari ini bulan ini
+  const dd = parseRange('22')
+  assert.equal(dd.from, `${ym}-22`)
+  assert.equal(dd.to, `${ym}-23`)
+
+  // DD-MM-YYYY & DD/MM/YYYY
+  assert.equal(parseRange('05-01-2026').from, '2026-01-05')
+  assert.equal(parseRange('05/01/2026').from, '2026-01-05')
+
+  // YYYY-MM & MM-YYYY = sebulan penuh
+  assert.deepEqual([parseRange('2026-03').from, parseRange('2026-03').to], ['2026-03-01', '2026-04-01'])
+  assert.deepEqual([parseRange('03-2026').from, parseRange('03-2026').to], ['2026-03-01', '2026-04-01'])
+
+  // minggu = 7 hari terakhir
+  const w = parseRange('minggu')
+  assert.equal(w.to, new Date(Date.now() + 86400000).toISOString().slice(0, 10))
+
+  // tanggal tidak valid (31 Feb) jatuh ke default hari ini
+  assert.equal(parseRange('31-02-2026').from, today)
 })
 
 test('pin hashing', () => {
