@@ -53,8 +53,9 @@ const descendantsRaw = (db, agenId) =>
 
 const scopeIds = (db, viewer) => [viewer.id, ...descendantsRaw(db, viewer.id)]
 
-// `ids` = agen rows in scope (the viewer + every downline, any depth).
-function report(db, range, ids) {
+// `ids` = agen rows in scope. `selfOnly` = viewer is a mitra/downline: they see
+// only their own numbers — never modal, admin profit, komisi jaringan, uplink.
+function report(db, range, ids, selfOnly = false) {
   const { from, toExclusive } = range
   const scope = [from, toExclusive, ...ids]
   const tScope = `AND agen_id IN (${inList(ids)})`
@@ -70,7 +71,13 @@ function report(db, range, ids) {
         WHERE status = 'sukses' AND created_at >= ? AND created_at < ? ${tScope}`
     )
     .get(...scope)
-  kpi.margin = kpi.omzet ? Math.round((kpi.profit / kpi.omzet) * 1000) / 10 : 0
+  if (selfOnly) {
+    // The admin's markup on this mitra's purchases is the admin's business.
+    kpi.modal = 0
+    kpi.profit = 0
+    kpi.komisi = 0
+  }
+  kpi.margin = kpi.omzet && !selfOnly ? Math.round((kpi.profit / kpi.omzet) * 1000) / 10 : 0
 
   const status = Object.fromEntries(
     db
@@ -89,6 +96,7 @@ function report(db, range, ids) {
         GROUP BY day ORDER BY day`
     )
     .all(...scope)
+  if (selfOnly) for (const d of daily) d.profit = 0
 
   const topProducts = db
     .prepare(
@@ -100,6 +108,7 @@ function report(db, range, ids) {
         GROUP BY produk_kode ORDER BY trx DESC, omzet DESC LIMIT 8`
     )
     .all(...scope)
+  if (selfOnly) for (const p of topProducts) p.profit = 0
 
   const agen = db
     .prepare(
@@ -114,6 +123,7 @@ function report(db, range, ids) {
         GROUP BY a.id ORDER BY profit DESC, omzet DESC`
     )
     .all(from, toExclusive, ...ids)
+  if (selfOnly) for (const a of agen) a.profit = 0
 
   const deposits = db
     .prepare(
@@ -222,15 +232,27 @@ function query(req, res, url, forced = null) {
       return
     }
     const ids = scopeIds(db, viewer)
+    // Only the session admin (root agen) may see the whole network and its
+    // margins. Every mitra — even one with its own downlines — sees itself only.
+    const admin = !viewer.senior_id
+    const selfOnly = !admin
+    const own = selfOnly ? [viewer.id] : ids
     const def = defaultRange()
     const from = url.searchParams.get('from') || def.from
     const to = url.searchParams.get('to') || def.to
     const range = dayRange(from, to)
-    const out = { session, viewer: { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi }, from, to }
+    const out = {
+      session,
+      viewer: { kode: viewer.kode, nama: viewer.nama, saldo: viewer.saldo, komisi: viewer.komisi },
+      admin,
+      from,
+      to,
+    }
 
     if (route === '/api/report') {
-      Object.assign(out, report(db, range, ids))
-      out.network = network(db, viewer, ids, range)
+      Object.assign(out, report(db, range, own, selfOnly))
+      // Uplink/komisi jaringan is admin-only information.
+      if (admin) out.network = network(db, viewer, ids, range)
     }
 
     if (route === '/api/transaksi') {
@@ -239,8 +261,8 @@ function query(req, res, url, forced = null) {
       const agenKode = url.searchParams.get('agen')
       const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 50)))
       const offset = Math.max(0, Number(url.searchParams.get('offset') || 0))
-      const where = ['t.created_at >= ?', 't.created_at < ?', `t.agen_id IN (${inList(ids)})`]
-      const params = [range.from, range.toExclusive, ...ids]
+      const where = ['t.created_at >= ?', 't.created_at < ?', `t.agen_id IN (${inList(own)})`]
+      const params = [range.from, range.toExclusive, ...own]
       if (status) {
         where.push('t.status = ?')
         params.push(status)
@@ -265,6 +287,8 @@ function query(req, res, url, forced = null) {
              ${w} ORDER BY t.id DESC LIMIT ? OFFSET ?`
         )
         .all(...params, limit, offset)
+      // A mitra never sees the admin's markup or modal cost on its own purchases.
+      if (selfOnly) for (const t of out.rows) { t.harga_modal = 0; t.markup_admin = 0; t.markup_total = 0 }
       out.limit = limit
       out.offset = offset
     }
@@ -275,16 +299,16 @@ function query(req, res, url, forced = null) {
         .prepare(
           `SELECT m.*, a.kode AS agen_kode, a.nama AS agen_nama
              FROM mutasi m LEFT JOIN agen a ON a.id = m.agen_id
-            WHERE m.created_at >= ? AND m.created_at < ? AND m.agen_id IN (${inList(ids)})
+            WHERE m.created_at >= ? AND m.created_at < ? AND m.agen_id IN (${inList(own)})
             ORDER BY m.id DESC LIMIT ?`
         )
-        .all(range.from, range.toExclusive, ...ids, limit)
+        .all(range.from, range.toExclusive, ...own, limit)
     }
 
     if (route === '/api/deposit') {
       const status = url.searchParams.get('status')
-      const where = ['d.created_at >= ?', 'd.created_at < ?', `d.agen_id IN (${inList(ids)})`]
-      const params = [range.from, range.toExclusive, ...ids]
+      const where = ['d.created_at >= ?', 'd.created_at < ?', `d.agen_id IN (${inList(own)})`]
+      const params = [range.from, range.toExclusive, ...own]
       if (status) {
         where.push('d.status = ?')
         params.push(status)
@@ -412,8 +436,15 @@ export function sessionReport(sessionId, { from, to, viewer } = {}) {
       : db.prepare(`SELECT * FROM agen WHERE senior_id IS NULL ORDER BY id LIMIT 1`).get()
     if (!v) return null
     const ids = scopeIds(db, v)
+    const admin = !v.senior_id
     const range = dayRange(from || def.from, to || def.to)
-    return { ...report(db, range, ids), network: network(db, v, ids, range), viewer: { kode: v.kode, nama: v.nama } }
+    const body = report(db, range, admin ? ids : [v.id], !admin)
+    return {
+      ...body,
+      ...(admin ? { network: network(db, v, ids, range) } : {}),
+      admin,
+      viewer: { kode: v.kode, nama: v.nama },
+    }
   } finally {
     db.close()
   }

@@ -349,8 +349,8 @@ Dashboard read-only per session (sama seperti `LAP`, tapi lengkap): KPI omzet/pr
 **Siapa lihat apa** (scope = viewer + semua downline, kedalaman berapa pun):
 
 - **Owner / super admin**: daftar semua sesi toko (sesi owner sendiri tidak muncul karena tidak punya agen). Pilih sesi → default viewer = admin root sesi itu; bisa ganti "Lihat sebagai" ke agen mana pun di sesi tersebut.
-- **Admin toko**: default viewer = dirinya (root sesi). Melihat seluruh jaringan di bawahnya: uplink (kosong, dia puncak), komisi yang dibagikan, profit, transaksi, deposit, mutasi.
-- **Mitra / downline**: pakai `?session=<sesi>&viewer=<KODE>`; hanya melihat dirinya + downline-nya. Uplink-nya tampil (rantai ke atas) beserta komisi yang masuk ke tiap uplink dari jaringannya.
+- **Admin toko** (agen root sesi): seluruh jaringan di bawahnya — omzet, profit, modal, komisi jaringan, uplink, tabel agen, transaksi/deposit/mutasi semua agen.
+- **Mitra / downline (level mana pun, termasuk yang punya downline sendiri)**: **hanya dirinya sendiri**. Omzet & jumlah transaksi miliknya, deposit & mutasi saldonya, tanpa profit admin, modal, komisi jaringan, maupun uplink. Ini ditegakkan di server (bukan cuma disembunyikan di UI): angka profit/modal/komisi di-nol-kan dan daftar transaksi di-scope ke dirinya.
 
 Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 

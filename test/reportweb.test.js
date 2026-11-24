@@ -24,7 +24,7 @@ const insert = (idTrx, { agenId = mitra.id, omzet = 10000, modal = 9000, admin2 
     idTrx,
     agenId,
     produkId: null,
-    produkKode: 'PULSA10',
+    produkKode: idTrx === 'T4' ? 'PULSA5' : 'PULSA10',
     tujuan: '0812',
     hargaModal: modal,
     markupAdmin: admin2,
@@ -60,18 +60,46 @@ test('sessionReport: KPI, harian, produk, agen, deposit', () => {
   assert.equal(r.deposits.find((d) => d.status === 'sukses').total, 50123)
 })
 
-test('sessionReport: viewer mitra hanya melihat jaringannya sendiri', () => {
+test('sessionReport: mitra hanya melihat dirinya, tanpa profit/modal/uplink', () => {
   const today = new Date().toISOString().slice(0, 10)
   const r = sessionReport('toko1', { from: today, to: today, viewer: mitra.kode })
   assert.equal(r.kpi.trx, 2)
+  assert.equal(r.kpi.omzet, 30000)
   assert.equal(r.viewer.kode, mitra.kode)
-  // Mitra tanpa downline: agen table hanya dia, tanpa admin.
+  assert.equal(r.admin, false)
+  // Margins the admin controls are never exposed to a mitra.
+  assert.equal(r.kpi.profit, 0)
+  assert.equal(r.kpi.modal, 0)
+  assert.equal(r.kpi.komisi, 0)
+  assert.equal(r.kpi.margin, 0)
+  assert.equal(r.network, undefined)
+  assert.equal(r.daily[0].profit, 0)
+  assert.equal(r.topProducts[0].profit, 0)
+  // Agen table only ever holds the mitra itself — no admin row.
   assert.equal(r.agen.length, 1)
   assert.equal(r.agen[0].kode, mitra.kode)
-  // Admin = root => tanpa uplink.
+  assert.equal(r.agen[0].profit, 0)
+
   const adminView = sessionReport('toko1', { from: today, to: today, viewer: admin.kode })
+  assert.equal(adminView.admin, true)
+  assert.equal(adminView.kpi.profit, 3000)
   assert.equal(adminView.network.uplinks.length, 0)
   assert.equal(adminView.agen.length, 2)
+})
+
+test('sessionReport: mitra yang punya downline tetap hanya lihat dirinya', () => {
+  const reseller = db.createAgen({ nama: 'Budi', kota: 'Solo', nohp: '628333', seniorId: mitra.id, markup: 200, pin: '1234' })
+  insert('T4', { agenId: reseller.id, omzet: 5000, modal: 4500, admin2: 500, total: 700 })
+  const today = new Date().toISOString().slice(0, 10)
+  const r = sessionReport('toko1', { from: today, to: today, viewer: mitra.kode })
+  // Downline's omzet is not the mitra's business.
+  assert.equal(r.kpi.trx, 2)
+  assert.equal(r.kpi.omzet, 30000)
+  assert.deepEqual(r.agen.map((a) => a.kode), [mitra.kode])
+  // The admin still sees the whole network.
+  const adminView = sessionReport('toko1', { from: today, to: today, viewer: admin.kode })
+  assert.equal(adminView.kpi.trx, 3)
+  assert.equal(adminView.agen.length, 3)
 })
 
 test('reportCode: 8 char, stabil, unik per session/agen; resolve balik', () => {

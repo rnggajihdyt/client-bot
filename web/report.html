@@ -173,10 +173,12 @@
 
     <section class="kpis">
       <div class="card kpi hero"><div class="lbl">Omzet</div><div class="val num" id="k-omzet">—</div><div class="sub" id="k-omzet-sub">transaksi sukses</div></div>
-      <div class="card kpi"><div class="lbl">Profit</div><div class="val num" id="k-profit">—</div><div class="sub" id="k-margin">margin —</div></div>
+      <div class="card kpi" id="adminOnlyProfit"><div class="lbl">Profit</div><div class="val num" id="k-profit">—</div><div class="sub" id="k-margin">margin —</div></div>
       <div class="card kpi"><div class="lbl">Transaksi</div><div class="val num" id="k-trx">—</div><div class="sub" id="k-trx-sub">sukses</div></div>
-      <div class="card kpi"><div class="lbl">Modal</div><div class="val num" id="k-modal">—</div><div class="sub">harga supplier</div></div>
-      <div class="card kpi"><div class="lbl">Komisi diterima</div><div class="val num" id="k-komisi">—</div><div class="sub" id="k-komisi-sub">dari downline</div></div>
+      <div class="card kpi" id="adminOnlyModal"><div class="lbl">Modal</div><div class="val num" id="k-modal">—</div><div class="sub">harga supplier</div></div>
+      <div class="card kpi" id="adminOnlyKomisi"><div class="lbl">Komisi diterima</div><div class="val num" id="k-komisi">—</div><div class="sub" id="k-komisi-sub">dari downline</div></div>
+      <div class="card kpi" id="mitraSaldo" style="display:none"><div class="lbl">Saldo Anda</div><div class="val num" id="k-saldo">—</div><div class="sub">siap dipakai transaksi</div></div>
+      <div class="card kpi" id="mitraKomisi" style="display:none"><div class="lbl">Komisi Anda</div><div class="val num" id="k-komisi-saya">—</div><div class="sub">bisa diambil via TUKAR</div></div>
       <div class="card kpi"><div class="lbl">Deposit lunas</div><div class="val num" id="k-deposit">—</div><div class="sub" id="k-deposit-sub">—</div></div>
     </section>
 
@@ -193,7 +195,7 @@
       </div>
     </section>
 
-    <section class="grid2b">
+    <section class="grid2b" id="adminOnlyNetwork">
       <div class="card tablecard">
         <div class="head"><h2>Uplink & komisi</h2><div class="hint" id="uplinkHint">—</div></div>
         <div class="tbl-wrap">
@@ -216,7 +218,7 @@
       </div>
     </section>
 
-    <section class="card tablecard">
+    <section class="card tablecard" id="agenCard">
       <div class="head">
         <h2>Agen</h2>
         <div class="hint" id="agenHint">saldo & performa</div>
@@ -369,15 +371,25 @@
   };
 
   const renderReport = (d) => {
+    // Mitra view: only its own volume. Profit/modal/komisi jaringan/uplink stay hidden.
+    const admin = d.admin !== false;
+    for (const id of ['adminOnlyProfit', 'adminOnlyModal', 'adminOnlyKomisi', 'adminOnlyNetwork']) $(id).style.display = admin ? '' : 'none';
+    $('mitraSaldo').style.display = admin ? 'none' : '';
+    $('mitraKomisi').style.display = admin ? 'none' : '';
     $('k-omzet').textContent = rupiah(d.kpi.omzet);
     $('k-omzet-sub').textContent = `${num(d.kpi.trx)} trx sukses · ${d.from} s/d ${d.to}`;
-    $('k-profit').textContent = rupiah(d.kpi.profit);
-    $('k-margin').textContent = `margin ${d.kpi.margin}%`;
+    if (admin) {
+      $('k-profit').textContent = rupiah(d.kpi.profit);
+      $('k-margin').textContent = `margin ${d.kpi.margin}%`;
+      $('k-modal').textContent = rupiah(d.kpi.modal);
+      $('k-komisi').textContent = rupiah(d.network?.komisiDiterima ?? 0);
+      $('k-komisi-sub').textContent = `${num(d.network?.komisiTrx ?? 0)} mutasi komisi`;
+    } else {
+      $('k-saldo').textContent = rupiah(d.viewer?.saldo);
+      $('k-komisi-saya').textContent = rupiah(d.viewer?.komisi);
+    }
     $('k-trx').textContent = num(d.kpi.trx);
     $('k-trx-sub').textContent = `${num(d.status.proses || 0)} proses · ${num(d.status.gagal || 0)} gagal`;
-    $('k-modal').textContent = rupiah(d.kpi.modal);
-    $('k-komisi').textContent = rupiah(d.network?.komisiDiterima ?? 0);
-    $('k-komisi-sub').textContent = `${num(d.network?.komisiTrx ?? 0)} mutasi komisi`;
     const depOk = (d.deposits || []).find((x) => x.status === 'sukses');
     $('k-deposit').textContent = rupiah(depOk ? depOk.total : 0);
     $('k-deposit-sub').textContent = `${num(depOk ? depOk.n : 0)} tiket · ${num(d.unconfirmed)} pending`;
@@ -393,29 +405,33 @@
         </li>`).join('')
       : '<li class="empty">belum ada produk terjual</li>';
 
-    // uplink chain
-    const ups = d.network?.uplinks ?? [];
-    $('uplinkHint').textContent = ups.length ? `${ups.length} level di atas ${d.viewer.kode}` : 'admin session — tanpa uplink';
-    $('uplinkBody').innerHTML = ups.length
-      ? ups.map((u) => `<tr>
-          <td class="mono">L${u.depth}</td><td class="mono">${esc(u.kode)}</td><td>${esc(u.nama)}</td>
-          <td class="r mono">${rupiah(u.markup)}</td><td class="r mono">${rupiah(u.saldo)}</td>
-          <td class="r mono">${rupiah(u.komisiMasuk)}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="6" class="empty">Anda admin session — tidak ada uplink</td></tr>';
-    $('uplinkNote').textContent = ups.length
-      ? `Komisi dibagikan naik mengikuti markup tiap level; angka "Komisi dari jaringan" adalah yang sudah masuk ke uplink dari jaringan Anda pada rentang ini.`
-      : 'Semua markup di jaringan Anda menjadi profit admin session.';
+    if (admin) {
+      // uplink chain
+      const ups = d.network?.uplinks ?? [];
+      $('uplinkHint').textContent = ups.length ? `${ups.length} level di atas ${d.viewer.kode}` : 'admin session — tanpa uplink';
+      $('uplinkBody').innerHTML = ups.length
+        ? ups.map((u) => `<tr>
+            <td class="mono">L${u.depth}</td><td class="mono">${esc(u.kode)}</td><td>${esc(u.nama)}</td>
+            <td class="r mono">${rupiah(u.markup)}</td><td class="r mono">${rupiah(u.saldo)}</td>
+            <td class="r mono">${rupiah(u.komisiMasuk)}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="6" class="empty">Anda admin session — tidak ada uplink</td></tr>';
+      $('uplinkNote').textContent = ups.length
+        ? `Komisi dibagikan naik mengikuti markup tiap level; angka "Komisi dari jaringan" adalah yang sudah masuk ke uplink dari jaringan Anda pada rentang ini.`
+        : 'Semua markup di jaringan Anda menjadi profit admin session.';
 
-    // komisi per agen: dari mutasi komisi_masuk per agen dalam scope
-    const komisiRows = (d.agen || []).filter((a) => a.komisi > 0);
-    $('komisiBody').innerHTML = komisiRows.length
-      ? komisiRows.map((a) => `<tr>
-          <td class="mono">${esc(a.kode)}</td><td>${esc(a.nama)}</td>
-          <td class="r mono">${rupiah(a.komisi)}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="3" class="empty">belum ada komisi tercatat</td></tr>';
+      // komisi per agen: dari mutasi komisi_masuk per agen dalam scope
+      const komisiRows = (d.agen || []).filter((a) => a.komisi > 0);
+      $('komisiBody').innerHTML = komisiRows.length
+        ? komisiRows.map((a) => `<tr>
+            <td class="mono">${esc(a.kode)}</td><td>${esc(a.nama)}</td>
+            <td class="r mono">${rupiah(a.komisi)}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="3" class="empty">belum ada komisi tercatat</td></tr>';
+    }
 
+    // Mitra: no agen table (it would only ever repeat its own row).
+    $('agenCard').style.display = admin ? '' : 'none';
     $('agenHint').textContent = `${(d.agen || []).length} agen · ${rupiah((d.agen || []).reduce((s, a) => s + a.saldo, 0))} saldo total`;
     $('agenBody').innerHTML = (d.agen || []).length
       ? d.agen.map((a) => `<tr>
@@ -483,7 +499,9 @@
       renderMut(mut);
       const v = rep.viewer || {};
       $('title').textContent = v.kode ? `${v.nama || v.kode} · ${v.kode}` : 'Laporan';
-      $('crumb').textContent = `Session ${state.session} · ${rep.from} s/d ${rep.to}`;
+      $('crumb').textContent = rep.admin
+        ? `Session ${state.session} · ${rep.from} s/d ${rep.to}`
+        : `Laporan Anda · ${rep.from} s/d ${rep.to}`;
       $('promoValue').textContent = rupiah(v.saldo);
     } catch (err) {
       if (err.message !== 'unauthorized') showNote(err.message, 'err');
@@ -584,7 +602,7 @@
     $('sessionLabel').style.display = 'none';
     $('viewers').innerHTML = '';
     $('sessions').innerHTML = '';
-    document.querySelector('.promo p').textContent = 'Laporan jaringan Anda: angka mencakup Anda + semua downline.';
+    document.querySelector('.promo p').textContent = 'Laporan Anda sendiri: transaksi, deposit, dan mutasi saldo.';
     loadAll();
   } else if (params.get('session')) selectSession(params.get('session'));
   else loadSessions();
