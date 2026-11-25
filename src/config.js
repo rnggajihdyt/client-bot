@@ -33,6 +33,12 @@ export const config = {
   reportBaseUrl: process.env.REPORT_BASE_URL ?? '',
   // Owner session whose id mints the owner report link /<KODE>/report (admin view).
   ownerReportSession: process.env.OWNER_REPORT_SESSION ?? '',
+  // Super admin numbers (OWNERS in handler.js). Used to mint one report link per
+  // owner, so each owner gets its own revocable link.
+  owners: (process.env.OWNERS ?? '')
+    .split(',')
+    .map((s) => s.replace(/\D/g, ''))
+    .filter(Boolean),
 }
 
 export const sessionPath = (id) => `${config.sessionDir}/${id}.sqlite`

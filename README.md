@@ -362,6 +362,7 @@ Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 - Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
 - Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>` (+ `&session=...&viewer=...` untuk scope tertentu).
 - Owner: ketik `WEBREPORT` dari nomor owner → balasan berisi link `/<KODE>/report`. Link itu membuka dashboard dengan sidebar berisi **semua session toko** (session `owner` tidak pernah muncul); memilih satu session menampilkan laporannya persis seperti admin toko itu melihatnya. Butuh `REPORT_BASE_URL`.
+- Multi owner: isi `OWNERS=628111,628222` — setiap nomor dapat **link sendiri** dari `WEBREPORT` (slot = nomornya). Mencabut satu owner cukup dengan menghapus nomornya dari `OWNERS`: link owner itu langsung mati, link owner lain tetap jalan.
 - DB dibuka **read-only** — report tidak pernah mengubah/memigrasi data bot, aman jalan berdampingan dengan bot.
 - API JSON: `/api/sessions`, `/api/viewers?session=`, `/api/report`, `/api/transaksi`, `/api/deposit`, `/api/mutasi` (semua terima `session`, `viewer`, `from`, `to`).
 - UI: `web/report.html` (tanpa build step, tanpa dependency tambahan).

@@ -12,9 +12,10 @@ export function reportCode(sessionId, kode) {
 }
 
 // Owner link: the owner has no agen row, so its code is minted from the session
-// alone (empty kode). Renders the session admin view.
-export function ownerReportCode(sessionId) {
-  return reportCode(sessionId, OWNER_KODE)
+// alone. `slot` keeps one link per owner number (OWNERS=a,b -> slot "a" / "b"),
+// so a revoked owner's link can be replaced without touching the others.
+export function ownerReportCode(sessionId, slot = '') {
+  return reportCode(sessionId, `${OWNER_KODE}${slot}`)
 }
 
 // The single owner session id, shared by the link minting and its resolution so
@@ -23,9 +24,17 @@ export function ownerSession() {
   return config.ownerReportSession || OWNER_SESSION
 }
 
-export function ownerReportUrl() {
+export function ownerReportUrl(slot = '') {
   const base = String(config.reportBaseUrl || `http://localhost:${config.reportPort}`).replace(/\/+$/, '')
-  return `${base}/${ownerReportCode(ownerSession())}/report`
+  return `${base}/${ownerReportCode(ownerSession(), slot)}/report`
+}
+
+// Link for the owner whose number sent the message: its own slot in OWNERS,
+// falling back to the shared link when the number is not listed.
+export function ownerReportUrlFor(nohp) {
+  const digits = String(nohp ?? '').replace(/\D/g, '')
+  const slot = config.owners.find((o) => digits.endsWith(o) || o.endsWith(digits))
+  return ownerReportUrl(slot ?? '')
 }
 
 export function reportUrl(sessionId, kode) {

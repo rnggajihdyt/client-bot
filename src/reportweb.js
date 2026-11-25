@@ -199,10 +199,14 @@ function viewerFrom(db, url) {
 export function resolveReportCode(code) {
   const want = String(code ?? '').toLowerCase()
   if (!/^[a-z0-9]{6,16}$/.test(want)) return null
-  // Owner link: minted from ownerSession() (OWNER_REPORT_SESSION or "owner").
+  // Owner link: one per owner number (OWNERS=a,b -> slots "a"/"b"), plus the
+  // shared slot "" that keeps older links working.
   // pin_owner=true keeps the client from pinning a viewer: it renders the
   // session admin view of whichever session the sidebar picks.
-  if (ownerReportCode(ownerSession()) === want) return { session: ownerSession(), owner: true, pin_owner: true }
+  const ownerSlots = ['', ...config.owners]
+  if (ownerSlots.some((slot) => ownerReportCode(ownerSession(), slot) === want)) {
+    return { session: ownerSession(), owner: true, pin_owner: true }
+  }
   for (const s of listSessions()) {
     const db = openSession(s.id)
     if (!db) continue
