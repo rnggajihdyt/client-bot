@@ -1,0 +1,19 @@
+{
+  "name": "bot-client",
+  "script": "index.js",
+  "interpreter": "node",
+  "interpreter_args": "--env-file-if-exists=.env",
+  "cwd": ".",
+  "instances": 1,
+  "exec_mode": "fork",
+  "autorestart": true,
+  "max_restarts": 20,
+  "min_uptime": "20s",
+  "restart_delay": 4000,
+  "max_memory_restart": "700M",
+  "kill_timeout": 15000,
+  "time": true,
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

@@ -359,6 +359,8 @@ Parameter: `session`, `viewer` (kode agen), `from`, `to`, `token`.
 
 **Link owner** (`WEBREPORT` dari nomor owner mengirim URL ini): `<REPORT_BASE_URL>/<KODE>/report` dengan kode dari `reportCode(OWNER_REPORT_SESSION ?? 'owner', '')`. Dashboard-nya menampilkan sidebar berisi semua session toko (session `owner` tidak pernah muncul) dan membuka session terpilih dalam tampilan admin penuh — sama seperti admin toko itu melihat laporannya. Cukup set `REPORT_BASE_URL`; session `owner` dipakai otomatis (override lewat `OWNER_REPORT_SESSION`).
 
+**Jalan dengan PM2**: `pm2 start ecosystem.config.json` (isi `.env` dibaca lewat `--env-file-if-exists=.env`). Lihat `pm2 logs bot-client`, `pm2 restart bot-client`, dan `pm2 save && pm2 startup` agar hidup lagi setelah reboot.
+
 - Buka `http://127.0.0.1:8090` (default). `REPORT_PORT`/`REPORT_HOST` untuk ubah.
 - Akses dari luar: set `REPORT_TOKEN`, lalu buka `http://host:8090/?token=<token>` (+ `&session=...&viewer=...` untuk scope tertentu).
 - Owner: ketik `WEBREPORT` dari nomor owner → balasan berisi link `/<KODE>/report`. Link itu membuka dashboard dengan sidebar berisi **semua session toko** (session `owner` tidak pernah muncul); memilih satu session menampilkan laporannya persis seperti admin toko itu melihatnya. Butuh `REPORT_BASE_URL`.
