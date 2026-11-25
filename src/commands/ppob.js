@@ -13,7 +13,7 @@ const FORMATS = {
 • Beli : KODE.TUJUAN.PIN
 • Cek Saldo : SAL
 • Cek Harga : CH.KODE
-• Cek Trx : CEK.TUJUAN
+• Cek Trx : CEK[.TUJUAN]
 • Laporan : LAP
 • Mutasi : REK
 • Batal Deposit : BTL.IDDEPOSIT.PIN
@@ -79,13 +79,8 @@ const SUPER_EXTRA = `*KHUSUS SUPER ADMIN*
 • Config Aktif : ENV
 • Semua Command : CMD`
 
-const MITRA_EXTRA = `*TRANSAKSI*
-• Cek Trx : CEK[.TUJUAN]
-• Mutasi : REK
-• Batal Deposit : BTL.IDDEPOSIT.PIN`
-
 function extrasFor({ isAdmin, isSuper }) {
-  return [isAdmin ? ADMIN_EXTRA : MITRA_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')
+  return [isAdmin && ADMIN_EXTRA, isSuper && SUPER_EXTRA].filter(Boolean).join('\n\n')
 }
 
 function withExtras(text, ctx) {

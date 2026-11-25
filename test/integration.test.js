@@ -179,18 +179,20 @@ test('info uplink/mitra tanpa section admin', async () => {
   const ldl = await say('628111', 'LDL')
   assert.match(ldl, /RS00001 — Ani \(Bandung\) \| 628222 \|/)
 
-  // uplink biasa: tidak ada section admin/super admin, tapi ada CEK/REK/BTL
+  // uplink biasa: tidak ada section admin/super admin
   const up = await say('628222', 'all')
   assert.match(up, /FORMAT 4/)
   assert.doesNotMatch(up, /KHUSUS ADMIN/)
   assert.doesNotMatch(up, /KHUSUS SUPER ADMIN/)
-  assert.match(up, /Cek Trx : CEK\[\.TUJUAN\]/)
+  assert.doesNotMatch(up, /\*TRANSAKSI\*/)
 
   // FORMAT = panduan + section role (mitra: tanpa section admin)
   const fmt = await say('628222', 'format')
   assert.match(fmt, /PANDUAN TRANSAKSI/)
-  assert.match(fmt, /TRANSAKSI/)
+  assert.doesNotMatch(fmt, /\*TRANSAKSI\*/)
   assert.doesNotMatch(fmt, /KHUSUS ADMIN/)
+  // CEK/REK/BTL pindah ke FORMAT1
+  assert.match(await say('628222', 'format1'), /Cek Trx : CEK\[\.TUJUAN\]/)
   // INFO sudah tidak ada: tidak dibalas apa pun (mitra tanpa prefix diabaikan)
   assert.equal(await say('628222', 'info'), undefined)
 })
