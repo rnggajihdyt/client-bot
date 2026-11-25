@@ -437,7 +437,6 @@ test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async 
   const rek = await say('628222', 'REK')
   assert.match(rek, / 25\.000 Tambah saldo oleh OWN01/)
   assert.match(rek, /Saldo akhir Rp\. /)
-
   // admin isi saldo sendiri: saldo bertambah tanpa notifikasi ganda
   const adminAwal = db.findAgenByNohp('628111').saldo
   await say('628111', 'TSAL.628111.10000.1234')
@@ -704,6 +703,26 @@ test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit
   assert.equal(db.raw.prepare(`SELECT saldo FROM agen WHERE nohp = '628222'`).get().saldo, 50000)
   // webhook telat untuk baris terminal diabaikan
   assert.equal(finalize(db, idTrx, { status: 'sukses' }), null)
+})
+
+test('REK: 100 baris per pesan, sisa ke bubble berikutnya, saldo akhir di pesan terakhir', async () => {
+  const mitra = db.findAgenByNohp('628222')
+  db.raw.prepare(`DELETE FROM mutasi WHERE agen_id = ?`).run(mitra.id)
+  for (let i = 1; i <= 130; i++) {
+    db.addMutasi(mitra.id, 'debit', 1000, 0, `Beli uji ${i}`)
+  }
+  sent.length = 0
+  await say('628222', 'REK')
+  const bubbles = sent.filter((s) => s.jid === '628222@s.whatsapp.net').map((s) => s.text)
+  assert.equal(bubbles.length, 2, '130 baris -> 2 bubble')
+  assert.equal(bubbles[0].split('\n').length, 100)
+  assert.match(bubbles[0], /Beli uji 1\n/) // urut lama -> baru
+  assert.match(bubbles[0], /Beli uji 100$/)
+  assert.doesNotMatch(bubbles[0], /Saldo akhir/)
+  assert.equal(bubbles[1].split('\n').length, 31) // 30 baris + saldo akhir
+  assert.match(bubbles[1], /Beli uji 130/)
+  assert.match(bubbles[1], /Saldo akhir Rp\. /)
+  db.raw.prepare(`DELETE FROM mutasi WHERE agen_id = ?`).run(mitra.id)
 })
 
 test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.TUJUAN (ambil terakhir)', async () => {

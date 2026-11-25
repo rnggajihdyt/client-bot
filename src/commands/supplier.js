@@ -17,6 +17,10 @@ import { normalizeNohp } from '../utils.js'
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
 
+// Batas 1 bubble WA ~100 baris; mutasi lebih dari itu dipecah ke pesan berikutnya.
+const REK_PER_MSG = 100
+const REK_MAX_ROWS = 1000
+
 // ---- APIKEY ----
 // The reseller (session admin) pastes the key ICS gave them. Transaksi dicek
 // lewat CEK/poll, jadi webhook tidak didaftarkan di sini.
@@ -377,7 +381,7 @@ register({
   name: 'rek',
   description: 'Mutasi saldo & komisi: REK',
   async handler({ client, event, mitra, db }) {
-    const rows = db.mutasiOf(mitra.id, 20)
+    const rows = db.mutasiOf(mitra.id, REK_MAX_ROWS)
     if (!rows.length) {
       await client.message.send(event.key.remoteJid, 'Belum ada mutasi')
       return
@@ -390,8 +394,13 @@ register({
       const sign = m.tipe === 'debit' ? '-' : ''
       return `${when} ${sign}${formatRupiah(m.nominal)} ${m.keterangan}`
     })
-    lines.push(`Saldo akhir Rp. ${formatRupiah(mitra.saldo)}`)
-    await client.message.send(event.key.remoteJid, lines.join('\n'))
+    // Maks 100 baris per pesan; sisanya jadi bubble berikutnya, saldo akhir di pesan terakhir.
+    for (let i = 0; i < lines.length; i += REK_PER_MSG) {
+      const chunk = lines.slice(i, i + REK_PER_MSG)
+      const last = i + REK_PER_MSG >= lines.length
+      if (last) chunk.push(`Saldo akhir Rp. ${formatRupiah(mitra.saldo)}`)
+      await client.message.send(event.key.remoteJid, chunk.join('\n'))
+    }
   },
 })
 
