@@ -510,9 +510,9 @@ function transaksiLine(t) {
   return `${t.produk_kode}.${t.tujuan} Rp.${formatRupiah(t.harga_efektif)} @${when} =${status}`
 }
 
-// LAP[.status][.id] — default status sukses, default hari ini.
-// LAP.semua  -> sukses + gagal
+// LAP[.id] — default sukses + gagal, default hari ini.
 // LAP.T25/11  -> semua transaksi id hari itu (id diawali T<epoch ms>)
+// LAP.sukses  -> hanya yang sukses
 register({
   name: 'lap',
   description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
@@ -520,9 +520,10 @@ register({
     const jid = event.key.remoteJid
     const a0 = String(args[0] ?? '').toLowerCase()
     const a1 = String(args[1] ?? '').toLowerCase()
-    const status = a0 === 'semua' || a1 === 'semua' ? 'semua' : 'sukses'
+    // Gagal ikut tampil secara default; LAP.sukses membatasi ke sukses saja.
+    const status = a0 === 'sukses' || a1 === 'sukses' ? 'sukses' : 'semua'
     const idTrx = /^t\d{1,2}\/\d{1,2}$/.test(a0) ? a0 : /^t\d{1,2}\/\d{1,2}$/.test(a1) ? a1 : ''
-    const rangeArg = /^(semua|t\d{1,2}\/\d{1,2})$/.test(a0) ? args[1] : args[0]
+    const rangeArg = /^(sukses|t\d{1,2}\/\d{1,2})$/.test(a0) ? args[1] : args[0]
     const { from, to, label } = parseRange(rangeArg)
 
     // Admin = whole session. Any mitra with downlines = its own network. Leaf mitra = itself.

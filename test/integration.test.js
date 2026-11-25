@@ -725,6 +725,11 @@ test('REK: 100 baris per pesan, sisa ke bubble berikutnya, saldo akhir di pesan 
   db.raw.prepare(`DELETE FROM mutasi WHERE agen_id = ?`).run(mitra.id)
 })
 
+test('LAP: transaksi gagal langsung ikut tampil tanpa LAP.semua', async () => {
+  const r = await say('628111', 'LAP.BULAN')
+  assert.match(r, /=Gagal/)
+})
+
 test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.TUJUAN (ambil terakhir)', async () => {
   db.upsertProdukIcs({ code: 'XDA13', name: 'XL Data 13GB', price: 20000, type: 'xda', status: 'available', stock: 10 })
   db.upsertProdukIcs({ code: 'XDA40', name: 'XL Data 40GB', price: 30000, type: 'xda', status: 'available', stock: 10 })
