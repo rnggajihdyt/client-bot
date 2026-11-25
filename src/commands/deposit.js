@@ -66,6 +66,22 @@ function pendingTicketText(db, dep) {
   )
 }
 
+// Tiket pending otomatis kedaluwarsa setelah TICKET_TTL_MS (dipanggil dari poller
+// tiap POLL_INTERVAL_MS). Mitra diberi tahu sekali saat tiket ditutup.
+export const TICKET_TTL_MS = 30 * 60 * 1000
+
+export async function expireTickets(db, { notify } = {}) {
+  const expired = db.expireDeposits(TICKET_TTL_MS)
+  for (const dep of expired) {
+    try {
+      await notify?.(dep)
+    } catch {
+      // notifikasi best-effort; status tiket sudah tersimpan
+    }
+  }
+  return expired
+}
+
 // Status ringkas satu tiket, dipakai TIKET.D0001 (mitra) dan TLIST (admin).
 function depositStatusText(dep) {
   const { tanggal, jam } = wib(new Date(dep.created_at))
@@ -157,6 +173,10 @@ register({
       await client.message.send(jid, 'Tiket tidak ditemukan')
       return
     }
+    if (dep.status === 'expired') {
+      await client.message.send(jid, `Tiket ${id} sudah kedaluwarsa (lewat 30 menit). Silahkan buat tiket baru.`)
+      return
+    }
     if (dep.status !== 'pending') {
       await client.message.send(jid, `Tiket sudah ${dep.status}, tidak bisa dibatalkan`)
       return
@@ -190,6 +210,13 @@ register({
     const dep = db.getDeposit(id)
     if (!dep) {
       await client.message.send(jid, 'Tiket tidak ditemukan')
+      return
+    }
+    if (dep.status === 'expired') {
+      await client.message.send(
+        jid,
+        `Tiket ${id} sudah kedaluwarsa (lewat 30 menit). Minta mitra ${dep.agen_kode} membuat tiket baru.`
+      )
       return
     }
     if (dep.status !== 'pending') {
@@ -302,7 +329,9 @@ register({
     }
     const lines = rows.map((d) => {
       const { tanggal, jam } = wib(new Date(d.created_at))
-      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} (${d.agen_nohp})\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam}`
+      const sisa = Math.max(0, TICKET_TTL_MS - (Date.now() - new Date(d.created_at).getTime()))
+      const menit = Math.ceil(sisa / 60000)
+      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} (${d.agen_nohp})\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam} | sisa ${menit} mnt`
     })
     await client.message.send(jid, `*Tiket Pending (${rows.length}):*\n${lines.join('\n')}`)
   },

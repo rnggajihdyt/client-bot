@@ -18,7 +18,7 @@ await import('../src/commands/demo.js')
 await import('../src/commands/ppob.js')
 await import('../src/commands/ppob-core.js')
 await import('../src/commands/supplier.js')
-await import('../src/commands/deposit.js')
+const { expireTickets } = await import('../src/commands/deposit.js')
 await import('../src/commands/owner.js')
 const { finalize } = await import('../src/orders.js')
 openRegistry(join(dir, 'registry.sqlite'))
@@ -681,6 +681,24 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   const tlist = await say('628111', 'TLIST')
   assert.match(tlist, new RegExp(`${dep3.id_deposit} — RS00001`))
   assert.match(tlist, /50\.000 \+ \d{3}/)
+  assert.match(tlist, /sisa \d+ mnt/)
+
+  // Tiket lewat 30 menit otomatis kedaluwarsa + mitra dinotifikasi
+  db.raw
+    .prepare(`UPDATE deposit SET created_at = ? WHERE id_deposit = ?`)
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), dep3.id_deposit)
+  sent.length = 0
+  const expired = await expireTickets(db, {
+    notify: (d) => sent.push({ jid: `${d.agen_nohp}@s.whatsapp.net`, text: `expired ${d.id_deposit}` }),
+  })
+  assert.equal(expired.length, 1)
+  assert.equal(db.getDeposit(dep3.id_deposit).status, 'expired')
+  assert.equal(db.pendingDepositOf(db.findAgenByNohp('628222').id), undefined)
+  assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: expired/)
+  assert.match(await say('628222', `BTL.${dep3.id_deposit}.1234`), /kedaluwarsa/)
+  assert.match(await say('628111', `TDEP.${dep3.id_deposit}.1234`), /kedaluwarsa/)
+  // tiket baru tidak lagi diblokir tiket yang sudah kedaluwarsa (rekening kosong: ditolak di langkah rekening)
+  assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur rekening/)
 
   // GPN — admin reset PIN downline
   assert.match(await say('628222', 'GPN.RS00001'), /GPN\.KODE/)

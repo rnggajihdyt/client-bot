@@ -384,6 +384,21 @@ export function openDb(path) {
       .prepare(`UPDATE deposit SET status = ?, selesai_at = ? WHERE id_deposit = ?`)
       .run(status, new Date().toISOString(), idDeposit).changes
 
+  // Ticket kedaluwarsa: pending lebih tua dari `ttlMs` ditandai 'expired'.
+  // Mengembalikan tiket yang baru ditutup agar mitra bisa dinotifikasi.
+  db.expireDeposits = (ttlMs) => {
+    const cutoff = new Date(Date.now() - ttlMs).toISOString()
+    const rows = raw
+      .prepare(
+        `SELECT d.*, a.nohp AS agen_nohp, a.kode AS agen_kode
+           FROM deposit d JOIN agen a ON a.id = d.agen_id
+          WHERE d.status = 'pending' AND d.created_at < ?`
+      )
+      .all(cutoff)
+    for (const r of rows) db.setDepositStatus(r.id_deposit, 'expired')
+    return rows
+  }
+
   db.depositSettings = () => ({
     // Admin-configurable payment channels: "BCA|2390922089|Muhammad Tasin, BRI|011...|..."
     channels: (db.getSetting('deposit_channels') ?? '')

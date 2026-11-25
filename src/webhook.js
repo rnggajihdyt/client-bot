@@ -5,6 +5,8 @@ import { openDb } from './db.js'
 import { finalize, settledText } from './orders.js'
 import { ics } from './ics.js'
 import { config, sessionPath } from './config.js'
+import { expireTickets } from './commands/deposit.js'
+import { formatRupiah } from './money.js'
 
 // One random token per session, minted on first use and stable afterwards.
 export function webhookToken(db) {
@@ -145,11 +147,35 @@ export async function pollPending(logger, sessionId, minAgeMs = 10_000) {
   }
 }
 
+// Tiket deposit yang lewat 30 menit ditutup di sini juga (satu timer untuk semua).
+async function expireTicketsIn(logger, sessionId) {
+  const db = openDb(sessionPath(sessionId))
+  let expired = []
+  try {
+    expired = await expireTickets(db, {
+      notify: (dep) =>
+        globalThis.__waRuntime?.clients
+          ?.get(sessionId)
+          ?.message.send(
+            `${dep.agen_nohp}@s.whatsapp.net`,
+            `Tiket deposit ${dep.id_deposit} (Rp. ${formatRupiah(dep.total)}) sudah kedaluwarsa karena belum dibayar dalam 30 menit.\n` +
+              `Silahkan buat tiket baru dengan ketik TIKET.NOMINAL.PIN`
+          ) ?? Promise.resolve(),
+    })
+  } finally {
+    db.close()
+  }
+  if (expired.length) logger.info({ sessionId, n: expired.length }, 'tiket deposit kedaluwarsa')
+}
+
 export const POLL_INTERVAL_MS = 15_000
 
 export function startPoller(logger, sessions, everyMs = POLL_INTERVAL_MS) {
   const timer = setInterval(() => {
-    for (const id of sessions()) void pollPending(logger, id)
+    for (const id of sessions()) {
+      void pollPending(logger, id)
+      void expireTicketsIn(logger, id).catch((err) => logger.warn({ err: err?.message }, 'expire tiket gagal'))
+    }
   }, everyMs)
   timer.unref?.()
   return timer
