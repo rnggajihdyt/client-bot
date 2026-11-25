@@ -52,8 +52,9 @@ function ticketText(db, dep) {
     `Silahkan Transfer Rp. ${formatRupiah(dep.total)}\n` +
     `${rek}\n` +
     (an ? `A.N ${an}\n` : '') +
-    `\nKetik CS\n` +
-    `\nJika sudah transfer, konfirmasi dengan mengetik CS dan menyertakan ID tiket ${dep.id_deposit} (bisa disertai bukti transfer)`
+    `\nJika 10 menit Saldo tidak bertambah silahkan lapor CS\n` +
+    `Ketik CS\n` +
+    `Tiket Open jam 08.00 - 23.00`
   )
 }
 
@@ -110,7 +111,8 @@ register({
     if (pending) {
       await client.message.send(
         jid,
-        `Masih ada tiket ${pending.id_deposit} yang belum dibayar.\n\n${ticketText(db, pending)}\n\nBatalkan dengan BTL.${pending.id_deposit}.PIN bila ingin membuat tiket baru.`
+        `Masih ada tiket Rp${formatRupiah(pending.nominal)} dengan id ${pending.id_deposit} yang belum di bayar.\n\n` +
+          `${ticketText(db, pending)}\n\nBatalkan dengan BTL.${pending.id_deposit}.PIN bila ingin membuat tiket baru.`
       )
       return
     }

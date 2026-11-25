@@ -244,11 +244,11 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       }
       // Owner gets the session menu instead of silence; a mitra with no prefix
       // is ignored (typing random text must not spam the chat).
+      // Mitra juga dibalas dengan saran format (dulu diam); super tetap ke menu.
       if (isSuper) {
         await handleSuper(event, { cmd: '', args: [] })
         return
       }
-      if (!prefix) return
       await safeSend(client, event.key.remoteJid, unknownCommandText(prefix), { quote: event }, log)
       return
     }

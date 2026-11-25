@@ -15,6 +15,10 @@ export function listCommands() {
 }
 
 // Fallback guidance when a command isn't recognized.
-export function unknownCommandText(prefix) {
-  return `Unknown command. Send *${prefix}help* for the list.`
+export function unknownCommandText(prefix = '') {
+  return (
+    `Format tdk dikenal.\n` +
+    `Saran :\n` +
+    `<${prefix}CH>.<KODEPRODUK> / ketik ${prefix ? `${prefix}FORMAT` : 'FORMAT'}`
+  )
 }

@@ -133,9 +133,9 @@ test('nomor asing chat pribadi dibalas ditolak, pesan grup (@g.us) diabaikan dia
 
 test('SAL format (admin tanpa komisi/TUKAR)', async () => {
   const r = await say('628111', 'SAL')
-  assert.match(r, /^Yth\. Admin Admin ID: OWN01/)
+  assert.match(r, /^Yth\. Kak Admin\nID Anda OWN01\n/)
   assert.match(r, /Saldo: 0 Limit: 0/)
-  assert.doesNotMatch(r, /Komisi:|TUKAR/)
+  assert.doesNotMatch(r, /Laporan web|report/i)
   assert.match(r, /Ketik LAP utk lihat laporan profit/)
   assert.match(await say('628111', 'TUKAR'), /tidak memakai sistem komisi/)
 })
@@ -172,7 +172,7 @@ test('info uplink/mitra tanpa section admin', async () => {
   assert.ok(welcome, 'welcome message sent to downline')
   assert.equal(
     welcome.text,
-    'Yth. Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.'
+    'Yth. Kak Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.'
   )
 
   // LDL memuat nomor WA downline
@@ -193,8 +193,8 @@ test('info uplink/mitra tanpa section admin', async () => {
   assert.doesNotMatch(fmt, /KHUSUS ADMIN/)
   // CEK/REK/BTL pindah ke FORMAT1
   assert.match(await say('628222', 'format1'), /Cek Trx : CEK\[\.TUJUAN\]/)
-  // INFO sudah tidak ada: tidak dibalas apa pun (mitra tanpa prefix diabaikan)
-  assert.equal(await say('628222', 'info'), undefined)
+  // INFO sudah tidak ada: dibalas saran format
+  assert.match(await say('628222', 'info'), /^Format tdk dikenal\./)
 })
 
 test('CH untuk downline: modal + markup', async () => {
@@ -262,7 +262,7 @@ test('nomor paralel jadi mitra yang sama', async () => {
   const add = await say('628111', 'TNO.628333.1234')
   assert.match(add, /628333/)
   const r = await say('628333', 'SAL')
-  assert.match(r, /ID: OWN01/)
+  assert.match(r, /ID Anda OWN01/)
 })
 
 test('PIN salah ditolak', async () => {
@@ -273,7 +273,7 @@ test('PIN salah ditolak', async () => {
 test('nonaktif: SAL & info boleh dengan keterangan, sisanya diblokir', async () => {
   await say('628111', 'NA.RS00001.1234') // naikkan: A nonaktif
   const sal = await say('628222', 'SAL')
-  assert.match(sal, /^Yth\. Mitra Ani ID: RS00001/)
+  assert.match(sal, /^Yth\. Kak Ani\nID Anda RS00001\n/)
   assert.match(sal, /Akun Anda sedang DINONAKTIFKAN/)
   assert.match(await say('628222', 'format'), /PANDUAN TRANSAKSI/)
   assert.match(await say('628222', 'all'), /FORMAT 4/)
@@ -382,7 +382,8 @@ test('PRDK & SYNC dihapus: katalog disinkron otomatis lewat cron + cache TTL', a
   const before = db.listProduk().length
   assert.match(await say('628111', 'PRDK.X.X.100'), /\*Super admin\*/) // tak dikenal: menu owner
   assert.match(await say('628111', 'SYNC'), /\*Super admin\*/) // SYNC dihapus
-  assert.equal(await say('628222', 'SYNC'), undefined) // mitra: teks tak dikenal diabaikan
+  // mitra: teks tak dikenal kini dibalas saran format
+  assert.match(await say('628222', 'SYNC'), /^Format tdk dikenal\.\nSaran :\n<CH>\.<KODEPRODUK> \/ ketik FORMAT$/)
   assert.equal(db.listProduk().length, before)
 })
 
@@ -583,16 +584,20 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(t1, /Silahkan Transfer Rp\. 1\.700\.\d{3}/) // nominal + kode unik 3 digit
   assert.match(t1, /BCA 2390922089/)
   assert.match(t1, /A\.N Muhammad Tasin/)
-  assert.match(t1, /Ketik CS/)
+  assert.match(t1, /Ketik CS\nTiket Open jam 08\.00 - 23\.00$/)
+  assert.match(t1, /Jika 10 menit Saldo tidak bertambah silahkan lapor CS/)
+  assert.doesNotMatch(t1, /bukti transfer/)
   const depRow = db.pendingDepositOf(db.findAgenByNohp('628222').id)
   assert.ok(depRow, 'tiket pending tersimpan')
   assert.match(depRow.id_deposit, /^D\d{4}$/, 'id deposit pendek')
-  assert.match(t1, new RegExp(`mengetik CS dan menyertakan ID tiket ${depRow.id_deposit}`))
   assert.equal(depRow.nominal, 1700000)
   assert.equal(depRow.total, 1700000 + depRow.kode_unik)
 
   // tiket kedua diblokir selama pending
-  assert.match(await say('628222', 'TIKET.50000.1234'), /Masih ada tiket/)
+  assert.match(
+    await say('628222', 'TIKET.50000.1234'),
+    new RegExp(`^Masih ada tiket Rp1\\.700\\.\\d{3} dengan id ${depRow.id_deposit} yang belum di bayar\\.`)
+  )
 
   // BTL milik orang lain ditolak; milik sendiri dibatalkan
   assert.match(await say('628111', `BTL.${depRow.id_deposit}.1234`), /Tiket tidak ditemukan/)
@@ -620,11 +625,17 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // TDEP kedua kali ditolak
   assert.match(await say('628111', `TDEP.${dep2.id_deposit}.1234`), /sudah sukses/)
 
-  // Pesan CS apa pun yang memuat ID deposit = konfirmasi (bukti gambar ikut)
+  // Tiket baru: footer otomatis, tanpa instruksi bukti transfer
   const t3 = await say('628222', 'TIKET.50000.1234')
   const dep3 = db.pendingDepositOf(db.findAgenByNohp('628222').id)
-  assert.match(t3, new RegExp(`mengetik CS dan menyertakan ID tiket ${dep3.id_deposit}`))
+  assert.match(t3, /Ketik CS\nTiket Open jam 08\.00 - 23\.00$/)
 
+  // CS tanpa pesan: kirim nomor admin sesi
+  sent.length = 0
+  assert.equal(await say('628222', 'CS'), 'Silahkan hubungi CS kami di WhatsApp 628111')
+  assert.equal(sent.find((s) => s.jid === '628111@s.whatsapp.net'), undefined)
+
+  // Pesan CS yang memuat ID deposit diteruskan sebagai konfirmasi (gambar tidak diunggah ulang)
   sent.length = 0
   await handlers.message({
     key: { remoteJid: '628222@s.whatsapp.net', fromMe: false },
@@ -635,10 +646,9 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   })
   const toAdmin = sent.find((s) => s.jid === '628111@s.whatsapp.net')
   assert.ok(toAdmin, 'konfirmasi diteruskan ke admin')
-  assert.equal(toAdmin.text.type, 'image', 'bukti diunggah ulang sebagai gambar')
-  assert.equal(toAdmin.text.mimetype, 'image/jpeg')
-  assert.match(toAdmin.text.caption, /Konfirmasi Transfer/)
-  assert.match(toAdmin.text.caption, /pending/)
+  assert.equal(toAdmin.text.type, undefined, 'bukti transfer tidak lagi diunggah')
+  assert.match(toAdmin.text, /Konfirmasi Transfer/)
+  assert.match(toAdmin.text, /pending/)
   assert.match(sent[sent.length - 1].text, /sudah diteruskan ke Admin\/CS/)
 
   // tanpa kata "konfirmasi" tetap terdeteksi; ID tidak ada tetap diteruskan
@@ -775,8 +785,11 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   assert.match(commaLines[0], /^#T\d+ XDA13\.08111111 akan diproses @\d\d:\d\d\./)
   assert.match(commaLines[1], /^#T\d+ XDA13\.08222222 akan diproses @\d\d:\d\d\./)
 
-  // 6) Teks acak bukan produk tetap diabaikan untuk mitra (tidak spam)
-  assert.equal(await say('628222', 'kamar.1234567'), undefined)
+  // 6) Teks acak bukan produk dibalas saran format
+  assert.equal(
+    await say('628222', 'kamar.1234567'),
+    'Format tdk dikenal.\nSaran :\n<CH>.<KODEPRODUK> / ketik FORMAT'
+  )
 })
 
 test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink (+ alert ke admin)', async () => {

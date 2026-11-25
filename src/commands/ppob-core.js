@@ -27,18 +27,15 @@ register({
   description: 'Cek saldo',
   async handler({ client, event, mitra, isAdmin, deactivated, db }) {
     const st = db.transaksiStats(mitra.id)
-    const text = isAdmin
-      ? `Yth. Admin ${mitra.nama} ID: ${mitra.kode}\n` +
-        `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
-        `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)}\n\n` +
-        `Ketik LAP utk lihat laporan profit`
-      : `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
-        `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
-        `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
-        `Ketik TUKAR utk ambil komisi` +
-        (deactivated
-          ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.`
-          : '')
+    const text =
+      `Yth. Kak ${mitra.nama}\n` +
+      `ID Anda ${mitra.kode}\n` +
+      `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
+      `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
+      (isAdmin ? `Ketik LAP utk lihat laporan profit` : `Ketik TUKAR utk ambil komisi`) +
+      (deactivated
+        ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.`
+        : '')
     await client.message.send(event.key.remoteJid, text)
   },
 })
@@ -161,7 +158,7 @@ register({
     try {
       await client.message.send(
         `${nohpD}@s.whatsapp.net`,
-        `Yth. ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.`
+        `Yth. Kak ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.`
       )
     } catch (err) {
       log?.warn({ err, nohp: nohpD }, 'welcome downline failed')
@@ -334,14 +331,10 @@ const DEPOSIT_ID_RE = /\bD\d{4}\b/i
 
 register({
   name: 'cs',
-  description: 'Hubungi admin: CS.PESAN (bisa dengan gambar)',
+  description: 'Hubungi admin: CS.PESAN (kosong = nomor CS admin sesi)',
   async handler({ client, event, mitra, args, log, db }) {
     const pesan = args.join(' ')
     const idDeposit = pesan.match(DEPOSIT_ID_RE)?.[0]?.toUpperCase()
-    if (!pesan && !idDeposit) {
-      await client.message.send(event.key.remoteJid, 'Gunakan format: CS.PESAN')
-      return
-    }
     // Per-session admin is the recipient, not the global OWNERS list.
     const root = db.root()
     if (!root) {
@@ -349,36 +342,28 @@ register({
       return
     }
 
+    // Tanpa pesan: cukup kirim nomor CS admin sesi ini.
+    if (!pesan) {
+      await client.message.send(event.key.remoteJid, `Silahkan hubungi CS kami di WhatsApp ${root.nohp}`)
+      return
+    }
+
     const adminJid = `${root.nohp}@s.whatsapp.net`
     if (idDeposit) {
+      // Konfirmasi transfer kini otomatis (TDEP), bukti tf tidak lagi diminta:
+      // id tiket hanya diteruskan sebagai konteks, lampiran gambar diabaikan.
       const dep = db.getDeposit(idDeposit)
       const status = !dep
         ? 'tiket tidak ditemukan'
         : dep.agen_id !== mitra.id
           ? 'tiket milik mitra lain'
           : `${dep.status} — Rp. ${formatRupiah(dep.total)} (nominal ${formatRupiah(dep.nominal)} + kode ${dep.kode_unik})`
-      const header =
-        `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})` +
-        (pesan ? `\nPesan: "${pesan}"` : '')
-      // The proof has to be re-uploaded from its bytes: the incoming
-      // imageMessage proto carries encrypted CDN fields that only work for the
-      // sender's own message, so forwarding the proto lands as a blank bubble.
-      const image = event.message?.imageMessage
-      let forwarded = false
-      if (image) {
-        try {
-          const bytes = await client.message.downloadBytes(event)
-          await client.message.send(adminJid, { type: 'image', media: bytes, mimetype: image.mimetype, caption: header })
-          forwarded = true
-        } catch (e) {
-          log.error({ err: e?.message, idDeposit }, 'gagal unduh bukti transfer')
-        }
-      }
-      if (!forwarded) {
-        await client.message
-          .send(adminJid, image ? `${header}\n\n(bukti transfer gagal diteruskan, minta mitra kirim ulang)` : header)
-          .catch((e) => log.error({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed'))
-      }
+      await client.message
+        .send(
+          adminJid,
+          `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})\nPesan: "${pesan}"`
+        )
+        .catch((e) => log?.error?.({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed'))
       await client.message.send(
         event.key.remoteJid,
         `Konfirmasi tiket ${idDeposit} sudah diteruskan ke Admin/CS.\n\nID: ${mitra.kode}\nMohon tunggu, saldo akan ditambahkan setelah dicek.`
