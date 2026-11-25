@@ -153,14 +153,19 @@ async function expireTicketsIn(logger, sessionId) {
   let expired = []
   try {
     expired = await expireTickets(db, {
-      notify: (dep) =>
-        globalThis.__waRuntime?.clients
-          ?.get(sessionId)
-          ?.message.send(
-            `${dep.agen_nohp}@s.whatsapp.net`,
-            `Tiket deposit ${dep.id_deposit} (Rp. ${formatRupiah(dep.total)}) sudah kedaluwarsa karena belum dibayar dalam 30 menit.\n` +
-              `Silahkan buat tiket baru dengan ketik TIKET.NOMINAL.PIN`
-          ) ?? Promise.resolve(),
+      notify: (dep) => {
+        const d = new Date(dep.created_at)
+        const p = (n) => String(n).padStart(2, '0')
+        const tgl = `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+        return (
+          globalThis.__waRuntime?.clients
+            ?.get(sessionId)
+            ?.message.send(
+              `${dep.agen_nohp}@s.whatsapp.net`,
+              `Tiket Rp${formatRupiah(dep.nominal)} pada ${tgl} sudah dibatalkan (kadaluarsa).\nSilakan mengambil tiket lagi`
+            ) ?? Promise.resolve()
+        )
+      },
     })
   } finally {
     db.close()
