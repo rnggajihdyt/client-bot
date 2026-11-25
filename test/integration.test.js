@@ -309,8 +309,8 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 
   // B tetap bisa transaksi dengan harga penuh (modal 9500 + 1000 + 500 = 11000)
   const beli = await say('628444', 'BELI.PULSA10.081234567')
-  assert.match(beli, /^Pulsa 10 PULSA10\.081234567 DIPROSES\. ID: T\d+ Hrg 11\.000 Sal 39\.000 @\d\d:\d\d$/)
-  const idTrx = beli.match(/ID: (T\d+)/)[1]
+  assert.match(beli, /^#T\d+ PULSA10\.081234567 akan diproses @\d\d:\d\d\. Sisa Saldo 50\.000 - 11\.000 = 39\.000$/)
+  const idTrx = beli.match(/^#(T\d+) /)[1]
   assert.equal(icsOrders.at(-1).body.ref_id_custom, idTrx)
 
   // saldo ditahan dulu, komisi belum dibayar selama masih proses
@@ -345,8 +345,8 @@ test('BELI ditolak saat saldo kurang', async () => {
 test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
   const r = await say('628444', 'BELI.PULSA10.08123')
-  assert.match(r, /PULSA10\.08123 DIPROSES\./)
-  const idTrx = r.match(/ID: (T\d+)/)[1]
+  assert.match(r, /PULSA10\.08123 akan diproses @\d\d:\d\d\./)
+  const idTrx = r.match(/^#(T\d+) /)[1]
   finalize(db, idTrx, { status: 'sukses' })
 
   const trx = db.raw.prepare(`SELECT * FROM transaksi WHERE tujuan = '08123' ORDER BY id DESC`).get()
@@ -494,15 +494,15 @@ test('BELI produk: harga pakai general markup, profit masuk ke markup_admin', as
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   assert.match(await say('628111', 'MKP.2000'), /Markup general/)
   const r = await say('628222', 'BELI.PULSA10.0811999')
-  assert.match(r, /Hrg 12\.500 Sal 37\.500 @\d\d:\d\d$/) // 9500 + admin 2000 + Ani 1000
-  const idTrx = r.match(/ID: (T\d+)/)[1]
+  assert.match(r, /Sisa Saldo 50\.000 - 12\.500 = 37\.500$/) // 9500 + admin 2000 + Ani 1000
+  const idTrx = r.match(/^#(T\d+) /)[1]
   finalize(db, idTrx, { status: 'sukses' })
 })
 
 test('tujuan masih proses: order kedua ke nomor sama ditolak, tidak kirim ke supplier', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   const first = await say('628222', 'BELI.PULSA10.0813001')
-  assert.match(first, /DIPROSES/)
+  assert.match(first, /akan diproses/)
   const saldoSetelahPertama = db.findAgenByNohp('628222').saldo
 
   const second = await say('628222', 'BELI.PULSA10.0813001')
@@ -510,10 +510,10 @@ test('tujuan masih proses: order kedua ke nomor sama ditolak, tidak kirim ke sup
   assert.equal(db.findAgenByNohp('628222').saldo, saldoSetelahPertama, 'saldo tidak terpotong lagi')
 
   const other = await say('628222', 'BELI.PULSA10.0813002')
-  assert.match(other, /DIPROSES/, 'nomor tujuan lain tetap bisa')
+  assert.match(other, /akan diproses/, 'nomor tujuan lain tetap bisa')
 
-  finalize(db, first.match(/ID: (T\d+)/)[1], { status: 'gagal' })
-  finalize(db, other.match(/ID: (T\d+)/)[1], { status: 'gagal' })
+  finalize(db, first.match(/^#(T\d+) /)[1], { status: 'gagal' })
+  finalize(db, other.match(/^#(T\d+) /)[1], { status: 'gagal' })
   db.raw.prepare(`DELETE FROM transaksi WHERE tujuan IN ('0813001','0813002')`).run()
 })
 
@@ -549,8 +549,8 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
 
   // C beli PULSA10 (modal 9500): bayar 9500 + 200 + 1000 + 500 + 300 = 11.500
   const beliC = await say('6285551', 'PULSA10.08991234')
-  assert.match(beliC, /Hrg 11\.500/)
-  const idTrx = beliC.match(/ID: (T\d+)/)[1]
+  assert.match(beliC, / Sisa Saldo [\d.]+ - 11\.500 = [\d.]+$/)
+  const idTrx = beliC.match(/^#(T\d+) /)[1]
   finalize(db, idTrx, { status: 'sukses', sn: 'SN-C' })
 
   const trx = db.getTransaksi(idTrx)
@@ -572,8 +572,8 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   // Uji juga saat A.markup = 0 (admin tanpa markup per-reseller): A TETAP dapat komisi 500 dari B!
   assert.match(await say('628111', 'MP.RS00001.0.1234'), /Markup RS00001 diubah menjadi 0/)
   const beliC2 = await say('6285551', 'PULSA10.08991235')
-  assert.match(beliC2, /Hrg 10\.500/) // 9500 + 200 + 0 + 500 + 300
-  const idTrx2 = beliC2.match(/ID: (T\d+)/)[1]
+  assert.match(beliC2, /- 10\.500 =/) // 9500 + 200 + 0 + 500 + 300
+  const idTrx2 = beliC2.match(/^#(T\d+) /)[1]
   finalize(db, idTrx2, { status: 'sukses', sn: 'SN-C2' })
   assert.equal(db.findAgenByNohp('628222').komisi, komABefore + 1000, 'A tetap dapat 500 meski A.markup = 0')
   assert.equal(db.findAgenByNohp('628444').komisi, komBBefore + 600, 'B tetap dapat 300')
@@ -699,7 +699,7 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
 test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628222'`).run()
   const r = await say('628222', 'BELI.PULSA10.0811777')
-  const idTrx = r.match(/ID: (T\d+)/)[1]
+  const idTrx = r.match(/^#(T\d+) /)[1]
 
   assert.match(await say('628222', 'CEK'), new RegExp(`${idTrx} — PULSA10`))
   assert.match(await say('628222', `CEK.${idTrx}`), /Status: proses/)
@@ -724,15 +724,15 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   // 1) Beli singkat tunggal tanpa BELI dan tanpa PIN: KODE.TUJUAN
   icsOrders.length = 0
   const r1 = await say('628222', 'xda13.08777777')
-  assert.match(r1, /^XL Data 13GB XDA13\.08777777 DIPROSES\. ID: T\d+ Hrg 21\.000 Sal 179\.000 @\d\d:\d\d$/)
+  assert.match(r1, /^#T\d+ XDA13\.08777777 akan diproses @\d\d:\d\d\. Sisa Saldo [\d.]+ - 21\.000 = 179\.000$/)
   assert.match(icsOrders[0]?.url ?? '', /\/api\/reseller\/trx$/)
-  const id1 = r1.match(/ID: (T\d+)/)[1]
+  const id1 = r1.match(/^#(T\d+) /)[1]
   finalize(db, id1, { status: 'sukses', sn: 'SN-PERTAMA' })
 
   // 2) Format bolak-balik tunggal: TUJUAN.KODE
   const r2 = await say('628222', '08777777.xda40')
-  assert.match(r2, /^XL Data 40GB XDA40\.08777777 DIPROSES\. ID: T\d+ Hrg 31\.000 Sal 148\.000 @\d\d:\d\d$/)
-  const id2 = r2.match(/ID: (T\d+)/)[1]
+  assert.match(r2, /^#T\d+ XDA40\.08777777 akan diproses @\d\d:\d\d\. Sisa Saldo 179\.000 - 31\.000 = 148\.000$/)
+  const id2 = r2.match(/^#(T\d+) /)[1]
   finalize(db, id2, { status: 'sukses', sn: 'SN-TERAKHIR' })
 
   // 3) CEK.TUJUAN memilih transaksi paling terakhir (id2, bukan id1) + dukung 628 <-> 08
@@ -750,16 +750,16 @@ test('beli singkat tanpa BELI/PIN, bolak-balik, multi baris, multi nomor & CEK.T
   )
   const batchLines = batch.split('\n')
   assert.equal(batchLines.length, 3)
-  assert.match(batchLines[0], /^XL Data 13GB XDA13\.08777777 DIPROSES\./)
+  assert.match(batchLines[0], /^#T\d+ XDA13\.08777777 akan diproses @\d\d:\d\d\./)
   assert.match(batchLines[1], /^XDA999\.087878767 GAGAL\. Produk tidak ditemukan\. Sal /)
-  assert.match(batchLines[2], /^XL Data 40GB XDA40\.0887878 DIPROSES\./)
+  assert.match(batchLines[2], /^#T\d+ XDA40\.0887878 akan diproses @\d\d:\d\d\./)
 
   // 5) Multi nomor dipisah koma dalam 1 baris
   const multiComma = await say('628222', 'xda13.08111111,08222222')
   const commaLines = multiComma.split('\n')
   assert.equal(commaLines.length, 2)
-  assert.match(commaLines[0], /^XL Data 13GB XDA13\.08111111 DIPROSES\./)
-  assert.match(commaLines[1], /^XL Data 13GB XDA13\.08222222 DIPROSES\./)
+  assert.match(commaLines[0], /^#T\d+ XDA13\.08111111 akan diproses @\d\d:\d\d\./)
+  assert.match(commaLines[1], /^#T\d+ XDA13\.08222222 akan diproses @\d\d:\d\d\./)
 
   // 6) Teks acak bukan produk tetap diabaikan untuk mitra (tidak spam)
   assert.equal(await say('628222', 'kamar.1234567'), undefined)

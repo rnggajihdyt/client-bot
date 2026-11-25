@@ -48,16 +48,24 @@ export function formatOrderTime(date = new Date()) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// "24/11 18:01:44" untuk baris finalisasi sukses.
+export function formatOrderDateTime(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${formatOrderTime(d)}:${p(d.getSeconds())}`
+}
+
 function ensurePeriod(text) {
   const s = String(text ?? '').trim()
   if (!s) return ''
   return /[.!?]$/.test(s) ? s : `${s}.`
 }
 
-// Unified single-line PPOB order status format:
+// Unified PPOB order status format (finalisasi):
+//   "TDF0.082135919281 SUKSES.SN/Ref: 0214998 Sisa Saldo Anda 746.766-6.331 = 740.435 Tanggal 24/11 18:01:44"
+// Gagal tetap satu baris:
 //   "<Nama> <KODE>.<TUJUAN> GAGAL. Nomor tujuan salah. Sal 1.911.411 @14:19"
-//   "<Nama> <KODE>.<TUJUAN> DIPROSES. ID: T... Hrg 11.000 Sal 1.900.411 @14:19"
-//   "<Nama> <KODE>.<TUJUAN> BERHASIL. SN: 12345. Hrg 11.000 Sal 1.900.411 @14:19"
+// `saldo` = saldo akhir setelah transaksi, `harga` = potongan biaya.
 export function formatOrderStatus({ nama, kode, tujuan, status, detail = '', harga, idTrx, sn = '', saldo = 0, at } = {}) {
   const cleanNama = cleanProductName(nama, kode)
   const head = cleanNama ? `${cleanNama} ${kode}.${tujuan}` : `${kode}.${tujuan}`
@@ -65,17 +73,23 @@ export function formatOrderStatus({ nama, kode, tujuan, status, detail = '', har
   const time = `@${formatOrderTime(at)}`
 
   if (status === 'proses') {
-    const idPart = idTrx ? ` ID: ${idTrx}` : ''
-    const hrgPart = harga != null ? ` Hrg ${formatRupiah(harga)}` : ''
-    return `${head} DIPROSES.${idPart}${hrgPart} ${sal} ${time}`
+    const idPart = idTrx ? `#${idTrx} ` : ''
+    return `${idPart}${kode}.${tujuan} akan diproses @${formatOrderTime(at)}. ${saldoBreakdown(harga, saldo, 'Sisa Saldo')}`
   }
   if (status === 'sukses') {
-    const snPart = sn ? ` SN: ${sn}.` : ''
-    const hrgPart = harga != null ? ` Hrg ${formatRupiah(harga)}` : ''
-    return `${head} BERHASIL.${snPart}${hrgPart} ${sal} ${time}`
+    const snPart = sn ? `SN/Ref: ${sn} ` : ''
+    return `${kode}.${tujuan} SUKSES.${sn ? ` ${snPart}` : ' '}${saldoBreakdown(harga, saldo, 'Sisa Saldo Anda')} Tanggal ${formatOrderDateTime(at)}`
   }
   const reasonPart = detail ? ` ${ensurePeriod(detail)}` : ''
   return `${head} GAGAL.${reasonPart} ${sal} ${time}`
+}
+
+// "Sisa Saldo 746.766 - 6.331 = 740.435" — saldo akhir dikurangi potongan
+// mengembalikan saldo sebelum order, jadi keduanya tidak perlu disimpan.
+function saldoBreakdown(harga, saldoAkhir, label) {
+  if (harga == null) return `${label} ${formatRupiah(saldoAkhir)}`
+  const sebelum = saldoAkhir + harga
+  return `${label} ${formatRupiah(sebelum)} - ${formatRupiah(harga)} = ${formatRupiah(saldoAkhir)}`
 }
 
 // Commission snapshot taken when the order was placed (so later MP changes do
@@ -150,7 +164,9 @@ export function settledText({ trx, status, sn = '', reason = '', saldoAkhir = 0,
     tujuan: trx.tujuan,
     status,
     detail,
-    harga: trx.harga_efektif,
+    // Baris sukses memakai saldo akhir (tidak memotong lagi), baris gagal sudah
+    // di-refund sehingga saldo akhir = saldo sebelum order.
+    harga: status === 'gagal' ? null : trx.harga_efektif,
     sn,
     saldo: saldoAkhir,
     at,

@@ -74,7 +74,9 @@ export function handleWebhook(logger, { sessionId, token, raw }) {
 function notifyBuyer(logger, sessionId, result) {
   const client = globalThis.__waRuntime?.clients?.get?.(sessionId)
   if (!client || !result.trx.agen_nohp) return
-  client.message.send(`${result.trx.agen_nohp}@s.whatsapp.net`, settledText(result)).catch((err) =>
+  // Waktu finalisasi ikut dikirim supaya baris sukses mencetak "Tanggal ..." saat settle.
+  const text = settledText({ ...result, at: new Date() })
+  client.message.send(`${result.trx.agen_nohp}@s.whatsapp.net`, text).catch((err) =>
     logger.child({ sessionId }).warn({ err: err?.message, idTrx: result.trx.id_trx }, 'buyer notify failed')
   )
 }
