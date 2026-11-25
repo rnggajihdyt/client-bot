@@ -608,20 +608,22 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(await say('628222', `BTL.${depRow.id_deposit}.1234`), /dibatalkan/)
   assert.equal(db.getDeposit(depRow.id_deposit).status, 'batal')
 
-  // buat tiket baru lagi, lalu TDEP oleh admin
+  // buat tiket baru lagi, lalu TDEP oleh admin (id lowercase + kredit penuh termasuk kode unik)
   const t2 = await say('628222', 'TIKET.1700000.1234')
   assert.match(t2, /Silahkan Transfer/)
   const dep2 = db.pendingDepositOf(db.findAgenByNohp('628222').id)
   assert.match(await say('628222', `TDEP.${dep2.id_deposit}.1234`), /Khusus admin/)
-  await say('628111', `TDEP.${dep2.id_deposit}.1234`)
+  await say('628111', `TDEP.${dep2.id_deposit.toLowerCase()}.1234`)
   assert.ok(
     sent.some((s) => s.jid === '628111@s.whatsapp.net' && /lunas/.test(s.text)),
     'admin dapat konfirmasi lunas'
   )
-  assert.equal(db.findAgenByNohp('628222').saldo, 1700000)
+  // saldo = total (nominal + kode unik), bukan nominal saja
+  assert.equal(db.findAgenByNohp('628222').saldo, dep2.total)
+  assert.equal(db.findAgenByNohp('628222').saldo, 1700000 + dep2.kode_unik)
   // mitra dapat notifikasi
   assert.ok(
-    sent.some((s) => s.jid === '628222@s.whatsapp.net' && /Saldo Anda ditambahkan Rp\. 1\.700\.000/.test(s.text)),
+    sent.some((s) => s.jid === '628222@s.whatsapp.net' && /Saldo Anda ditambahkan Rp\. 1\.700\./.test(s.text)),
     'notifikasi deposit ke mitra'
   )
   // TDEP kedua kali ditolak

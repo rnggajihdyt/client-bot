@@ -136,11 +136,12 @@ register({
   description: 'Batalkan tiket deposit: BTL.IDDEPOSIT.PIN',
   async handler({ client, event, mitra, args, db }) {
     const jid = event.key.remoteJid
-    const [id, pin] = args
-    if (!id || !pin) {
+    const [rawId, pin] = args
+    if (!rawId || !pin) {
       await client.message.send(jid, 'Gunakan format: BTL.IDDEPOSIT.PIN')
       return
     }
+    const id = rawId.toUpperCase()
     if (!verifyPin(pin, mitra.pin_hash)) {
       await client.message.send(jid, PIN_SALAH)
       return
@@ -169,8 +170,8 @@ register({
       await client.message.send(jid, ADMIN_ONLY)
       return
     }
-    const [id, pin] = args
-    if (!id || !pin) {
+    const [rawId, pin] = args
+    if (!rawId || !pin) {
       await client.message.send(jid, 'Gunakan format: TDEP.IDDEPOSIT.PIN')
       return
     }
@@ -178,6 +179,8 @@ register({
       await client.message.send(jid, PIN_SALAH)
       return
     }
+    // Ticket ids are stored uppercase (D0001); accept any case from the admin.
+    const id = rawId.toUpperCase()
     const dep = db.getDeposit(id)
     if (!dep) {
       await client.message.send(jid, 'Tiket tidak ditemukan')
@@ -188,25 +191,27 @@ register({
       return
     }
 
+    // The mitra transfers nominal + kode unik, so the full total is credited.
+    const kredit = dep.total
     let saldoAkhir = 0
     db.tx(() => {
-      db.addSaldo(dep.agen_id, dep.nominal)
+      db.addSaldo(dep.agen_id, kredit)
       saldoAkhir = db.findAgenById(dep.agen_id).saldo
-      db.addMutasi(dep.agen_id, 'kredit', dep.nominal, saldoAkhir, `Tiket deposit ${dep.bank || 'BANK'} (${id})`)
+      db.addMutasi(dep.agen_id, 'kredit', kredit, saldoAkhir, `Tiket deposit ${dep.bank || 'BANK'} (${id})`)
       db.setDepositStatus(id, 'sukses')
     })
 
-    const saldoSebelum = saldoAkhir - dep.nominal
+    const saldoSebelum = saldoAkhir - kredit
     await client.message.send(
       jid,
-      `Tiket ${id} lunas. Saldo ${dep.agen_kode} ditambah ${formatRupiah(dep.nominal)} → ${formatRupiah(saldoAkhir)}`
+      `Tiket ${id} lunas. Saldo ${dep.agen_kode} ditambah ${formatRupiah(kredit)} → ${formatRupiah(saldoAkhir)}`
     )
     try {
       const { tanggal, jam } = wib(new Date())
       await client.message.send(
         `${dep.agen_nohp}@s.whatsapp.net`,
-        `Saldo Anda ditambahkan Rp. ${formatRupiah(dep.nominal)} (Tiket deposit ${dep.bank || 'BANK'}).\n` +
-          `Total Saldo ${formatRupiah(saldoSebelum)} + ${formatRupiah(dep.nominal)} = ${formatRupiah(saldoAkhir)}.\n` +
+        `Saldo Anda ditambahkan Rp. ${formatRupiah(kredit)} (Tiket deposit ${dep.bank || 'BANK'}).\n` +
+          `Total Saldo ${formatRupiah(saldoSebelum)} + ${formatRupiah(kredit)} = ${formatRupiah(saldoAkhir)}.\n` +
           `${tanggal} ${jam}`
       )
     } catch (err) {
