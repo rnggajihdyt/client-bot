@@ -44,12 +44,28 @@ register({
 })
 
 // ---- CH ----
-const CH_PAGE_SIZE = 15
+// Batas 1 pesan WA ~100 baris; daftar dipecah per 100 baris ke pesan berikutnya.
+const CH_PER_MSG = 100
+const LAP_PER_MSG = 100
+const LAP_MAX_ROWS = 500
 
-function produkStatusLabel(p) {
-  if (p.aktif && p.status_supplier === 'available') return 'Tersedia'
-  if (p.status_supplier === 'empty') return 'Kosong'
-  return `Gangguan (${p.status_supplier || 'nonaktif'})`
+// Status produk di CH: tanpa penanda kalau tersedia; [K] kosong, [G] gangguan.
+function produkFlag(p) {
+  if (p.aktif && p.status_supplier === 'available') return ''
+  if (p.status_supplier === 'empty') return '  [K]'
+  return '  [G]'
+}
+
+// Baris CH: "XDA13 = 45.000 XL AXIS Data 13Gb Reguler + Lokal  [K]"
+function produkLine(p) {
+  return `${p.kode} = ${formatRupiah(p.hargaEfektif)} ${p.nama}${produkFlag(p)}`
+}
+
+// Pecah baris jadi pesan-pesan maksimal `perPesan` baris (batas 1 pesan WA).
+function chunkLines(lines, perPesan) {
+  const chunks = []
+  for (let i = 0; i < lines.length; i += perPesan) chunks.push(lines.slice(i, i + perPesan))
+  return chunks
 }
 
 register({
@@ -70,60 +86,29 @@ register({
     }
 
     const query = rawQuery.toUpperCase()
-    const hasPageArg = args.length >= 2
 
-    // Exact code match when no page number is requested (e.g. CH.XDA40).
-    if (!hasPageArg) {
+    // Exact code match (e.g. CH.XDA40) — satu produk, format sama seperti list.
+    if (args.length < 2) {
       const exact = db.effectivePrice(mitra.id, query)
       if (exact) {
-        await client.message.send(
-          event.key.remoteJid,
-          `*${exact.nama}* (${exact.kode})\nHarga: ${formatRupiah(exact.hargaEfektif)}\nStatus: ${produkStatusLabel(exact)}`
-        )
+        await client.message.send(event.key.remoteJid, produkLine(exact))
         return
       }
     }
 
-    // Prefix / category search with pagination (e.g. CH.XDA, CH.XDA.1, CH.PROMO.2).
-    let page = 1
-    if (hasPageArg) {
-      if (!/^\d+$/.test(args[1]) || Number(args[1]) < 1) {
-        await client.message.send(event.key.remoteJid, `Nomor halaman tidak valid. Contoh: CH.${query}.1`)
-        return
-      }
-      page = Number(args[1])
-    }
-
+    // Kategori/prefix: maksimal CH_PER_MSG baris per pesan, sisa ke pesan berikutnya.
     const rows = db.searchEffectivePrices(mitra.id, query)
     if (!rows.length) {
       await client.message.send(event.key.remoteJid, 'Produk tidak ditemukan')
       return
     }
 
-    const totalPages = Math.ceil(rows.length / CH_PAGE_SIZE)
-    if (page > totalPages) {
-      await client.message.send(
-        event.key.remoteJid,
-        `Halaman ${page} tidak tersedia (maks ${totalPages}). Coba: CH.${query}.${totalPages}`
-      )
-      return
+    const chunks = chunkLines(rows.map(produkLine), CH_PER_MSG)
+    for (let i = 0; i < chunks.length; i++) {
+      const head = i === 0 ? `Harga:` : ''
+      const foot = i === chunks.length - 1 ? `\n*K=kosong, G=Gangguan` : ''
+      await client.message.send(event.key.remoteJid, `${head}\n${chunks[i].join('\n')}${foot}`)
     }
-
-    const slice = rows.slice((page - 1) * CH_PAGE_SIZE, page * CH_PAGE_SIZE)
-    const lines = slice.map(
-      (p) => `• *${p.kode}* — ${formatRupiah(p.hargaEfektif)} (${produkStatusLabel(p)})\n  ${p.nama}`
-    )
-    const nav =
-      page < totalPages
-        ? `\n\nHalaman berikutnya: CH.${query}.${page + 1}`
-        : totalPages > 1
-          ? `\n\nHalaman sebelumnya: CH.${query}.${page - 1}`
-          : ''
-
-    await client.message.send(
-      event.key.remoteJid,
-      `*Harga ${query}* (Hal ${page}/${totalPages} — ${rows.length} produk)\n${lines.join('\n')}${nav}`
-    )
   },
 })
 
@@ -516,51 +501,55 @@ register({
 // ---- BELI moved to commands/supplier.js (two-phase ICS flow) ----
 
 // ---- LAP ----
-// Admin = whole session. Any mitra with downlines = its own network. Leaf mitra = itself.
+// Baris transaksi: "XDA55.085953800035 Rp.70.000 @25/11 08:09:23 =Sukses"
+function transaksiLine(t) {
+  const d = new Date(t.created_at)
+  const p = (n) => String(n).padStart(2, '0')
+  const when = `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  const status = t.status === 'sukses' ? 'Sukses' : 'Gagal'
+  return `${t.produk_kode}.${t.tujuan} Rp.${formatRupiah(t.harga_efektif)} @${when} =${status}`
+}
+
+// LAP[.status][.id] — default status sukses, default hari ini.
+// LAP.semua  -> sukses + gagal
+// LAP.T25/11  -> semua transaksi id hari itu (id diawali T<epoch ms>)
 register({
   name: 'lap',
   description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
   async handler({ client, event, mitra, args, isAdmin, db }) {
-    const { from, to, label } = parseRange(args[0])
+    const jid = event.key.remoteJid
+    const a0 = String(args[0] ?? '').toLowerCase()
+    const a1 = String(args[1] ?? '').toLowerCase()
+    const status = a0 === 'semua' || a1 === 'semua' ? 'semua' : 'sukses'
+    const idTrx = /^t\d{1,2}\/\d{1,2}$/.test(a0) ? a0 : /^t\d{1,2}\/\d{1,2}$/.test(a1) ? a1 : ''
+    const rangeArg = /^(semua|t\d{1,2}\/\d{1,2})$/.test(a0) ? args[1] : args[0]
+    const { from, to, label } = parseRange(rangeArg)
 
-    if (isAdmin) {
-      const sum = db.profitSummary({ from, to })
-      const list = db.recentTransaksi({ from, to, limit: 10 })
-      const head =
-        `*Laporan Sesi* (${label})\n` +
-        `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-        `Modal: ${formatRupiah(sum.modal)} Komisi Jaringan: ${formatRupiah(sum.komisi)}\n` +
-        `Profit: ${formatRupiah(sum.profit)}`
-      const lines = list.map(
-        (t) => `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`
-      )
-      await client.message.send(event.key.remoteJid, lines.length ? `${head}\n\n${lines.join('\n')}` : head)
+    // Admin = whole session. Any mitra with downlines = its own network. Leaf mitra = itself.
+    const desc = isAdmin ? [] : db.descendants(mitra.id)
+    const agenIds = isAdmin ? null : desc.length ? [mitra.id, ...desc] : [mitra.id]
+
+    const rows = db.listTransaksi({ agenIds, from, to, status, idTrx, limit: LAP_MAX_ROWS })
+    if (!rows.length) {
+      await client.message.send(jid, `Tidak ada transaksi (${label})`)
       return
     }
 
-    // Any uplink/reseller at any depth who has downlines gets the whole network report.
-    const desc = db.descendants(mitra.id)
-    if (desc.length > 0) {
-      const ids = [mitra.id, ...desc]
-      const sum = db.profitSummary({ agenIds: ids, from, to })
-      const komisi = db.commissionEarned(mitra.id, from, to)
-      await client.message.send(
-        event.key.remoteJid,
-        `*Laporan Jaringan* (${label})\n` +
-          `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-          `Komisi Anda: ${formatRupiah(komisi)}`
-      )
-      return
-    }
+    // Ringkasan singkat hanya untuk admin (mitra fokus ke daftar).
+    const sum = db.profitSummary({ agenIds, from, to })
+    const head = isAdmin
+      ? `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)} Modal: ${formatRupiah(sum.modal)} ` +
+        `Komisi Jaringan: ${formatRupiah(sum.komisi)} Profit: ${formatRupiah(sum.profit)}`
+      : ''
 
-    const sum = db.profitSummary({ agenIds: [mitra.id], from, to })
-    const komisi = db.commissionEarned(mitra.id, from, to)
-    await client.message.send(
-      event.key.remoteJid,
-      `*Laporan Anda* (${label})\n` +
-        `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-        `Komisi Anda: ${formatRupiah(komisi)}`
-    )
+    const chunks = chunkLines(rows.map(transaksiLine), LAP_PER_MSG)
+    for (let i = 0; i < chunks.length; i++) {
+      const parts = []
+      if (i === 0 && head) parts.push(head)
+      parts.push(chunks[i].join('\n'))
+      if (i === chunks.length - 1 && rows.length >= LAP_MAX_ROWS) parts.push(`(maks ${LAP_MAX_ROWS} baris)`)
+      await client.message.send(jid, parts.join('\n\n'))
+    }
   },
 })
 

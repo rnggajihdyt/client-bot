@@ -40,6 +40,15 @@ export function resetCatalogCache(dbPath) {
   inflight.clear()
 }
 
+// Produk CND (paket ribuan/token) tidak masuk database: bot fokus akrab dulu.
+// Deteksi lewat kategori atau kode yang berawalan CND.
+export function isCnd(p) {
+  const cat = String(p?.category ?? '').toUpperCase()
+  const type = String(p?.type ?? '').toUpperCase()
+  const code = String(p?.code ?? '').toUpperCase()
+  return cat.includes('CND') || type.includes('CND') || code.startsWith('CND')
+}
+
 // Single-flight catalog sync against ICS. Concurrent callers for the same DB
 // share one HTTP request instead of hammering the supplier API.
 export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Date.now() } = {}) {
@@ -53,7 +62,9 @@ export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Dat
     if (!token) throw new Error('API key supplier belum diatur')
 
     const res = await ics.products(cfg.baseUrl, token)
-    const rows = Array.isArray(res?.data) ? res.data : []
+    const all = Array.isArray(res?.data) ? res.data : []
+    // CND (produk ribuan) tidak disimpan: bot hanya melayani akrab dulu.
+    const rows = all.filter((p) => !isCnd(p))
 
     let removed = 0
     db.tx(() => {

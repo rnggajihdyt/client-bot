@@ -377,16 +377,21 @@ register({
   name: 'rek',
   description: 'Mutasi saldo & komisi: REK',
   async handler({ client, event, mitra, db }) {
-    const rows = db.mutasiOf(mitra.id, 15)
+    const rows = db.mutasiOf(mitra.id, 20)
     if (!rows.length) {
       await client.message.send(event.key.remoteJid, 'Belum ada mutasi')
       return
     }
-    const lines = rows.map(
-      (m) =>
-        `• ${m.created_at.slice(0, 16).replace('T', ' ')} ${m.tipe} ${formatRupiah(m.nominal)} → ${formatRupiah(m.saldo_akhir)}\n  ${m.keterangan}`
-    )
-    await client.message.send(event.key.remoteJid, `*Mutasi terakhir:*\n${lines.join('\n')}`)
+    // Urut kronologis (lama → baru), debit bertanda minus, kredit tanpa tanda.
+    const lines = rows.reverse().map((m) => {
+      const d = new Date(m.created_at)
+      const p = (n) => String(n).padStart(2, '0')
+      const when = `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+      const sign = m.tipe === 'debit' ? '-' : ''
+      return `${when} ${sign}${formatRupiah(m.nominal)} ${m.keterangan}`
+    })
+    lines.push(`Saldo akhir Rp. ${formatRupiah(mitra.saldo)}`)
+    await client.message.send(event.key.remoteJid, lines.join('\n'))
   },
 })
 

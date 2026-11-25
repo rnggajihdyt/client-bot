@@ -468,7 +468,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
     const sdb = openDb(sessionPath(id))
     try {
       const sum = sdb.profitSummary({ from, to })
-      const list = sdb.recentTransaksi({ from, to, limit: 10 })
+      const list = sdb.listTransaksi({ from, to, limit: 10 })
       const lines = list.map(
         (t) =>
           `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`

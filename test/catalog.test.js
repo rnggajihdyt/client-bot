@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -74,7 +74,7 @@ test('single-flight: 5 panggilan paralel saat cache basi hanya memicu 1 request 
   fetchCalls = 0
   failNext = false
   fetchDelayMs = 40
-  mockProducts = [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, type: 'cnd', status: 'available', stock: 10 }]
+  mockProducts = [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, type: 'xda', status: 'available', stock: 10 }]
 
   const results = await Promise.all(
     Array.from({ length: 5 }, () => ensureFreshCatalog(db, { ttlMs: 60_000 }))
@@ -92,14 +92,14 @@ test('produk hilang dari ICS ditandai removed tanpa menghapus markup produk yang
   resetCatalogCache(db.path)
   failNext = false
   mockProducts = [
-    { code: 'P1', name: 'P1', price: 1000, type: 'cnd', status: 'available', stock: 5 },
-    { code: 'P2', name: 'P2', price: 2000, type: 'cnd', status: 'available', stock: 5 },
+    { code: 'P1', name: 'P1', price: 1000, type: 'xda', status: 'available', stock: 5 },
+    { code: 'P2', name: 'P2', price: 2000, type: 'xda', status: 'available', stock: 5 },
   ]
   await syncCatalog(db)
   db.setProdukMarkup('P1', 350)
 
   // P2 hilang dari respons ICS berikutnya
-  mockProducts = [{ code: 'P1', name: 'P1', price: 1100, type: 'cnd', status: 'available', stock: 4 }]
+  mockProducts = [{ code: 'P1', name: 'P1', price: 1100, type: 'xda', status: 'available', stock: 4 }]
   const stats = await syncCatalog(db)
   assert.equal(stats.removed, 1)
   assert.equal(db.effectivePrice(1, 'P1').markup, 350, 'markup P1 tetap terjaga')
@@ -113,7 +113,7 @@ test('produk hilang dari ICS ditandai removed tanpa menghapus markup produk yang
 test('fallback ke cache DB saat ICS error sementara pada ensureFreshCatalog', async () => {
   const db = openDb(join(dir, 'sessions', 'shop4.sqlite'))
   db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
-  db.upsertProdukIcs({ code: 'OLD1', name: 'Old', price: 5000, type: 'cnd', status: 'available', stock: 3 })
+  db.upsertProdukIcs({ code: 'OLD1', name: 'Old', price: 5000, type: 'xda', status: 'available', stock: 3 })
   resetCatalogCache(db.path)
   failNext = true
 

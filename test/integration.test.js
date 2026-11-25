@@ -199,18 +199,17 @@ test('info uplink/mitra tanpa section admin', async () => {
 
 test('CH untuk downline: modal + markup', async () => {
   const r = await say('628222', 'CH.PULSA10')
-  assert.match(r, /10\.000/) // 9500 + 500
-  assert.match(r, /Status: Tersedia/)
+  assert.match(r, /^PULSA10 = 10\.000 /) // 9500 + 500
+  assert.doesNotMatch(r, /\[K\]|\[G\]/)
 
-  // produk kosong/empty tetap tampil di CH dengan status Kosong, dan ditolak di BELI sebagai tidak tersedia
+  // produk kosong/empty tetap tampil di CH dengan penanda [K], dan ditolak di BELI sebagai tidak tersedia
   db.upsertProdukIcs({ code: 'XDA40', name: 'XL AXIS Data 40Gb', price: 76000, type: 'xda', category: 'BEST', status: 'empty', stock: 0 })
   const chEmpty = await say('628222', 'CH.XDA40')
-  assert.match(chEmpty, /76\.500/)
-  assert.match(chEmpty, /Status: Kosong/)
+  assert.match(chEmpty, /^XDA40 = 76\.500 XL AXIS Data 40Gb  \[K\]$/)
   const beliEmpty = await say('628222', 'BELI.XDA40.08123456')
   assert.match(beliEmpty, /gangguan\/tidak tersedia/)
 
-  // pengkategorian mengikuti field `type` ICS + paginasi (CH.XDA.1 / CH.XDA.2 / CH.AX.1 vs CH.AXP.1 / CH.SM.1)
+  // daftar kategori: satu baris per produk, penanda hanya untuk kosong/gangguan
   for (let i = 1; i <= 17; i++) {
     db.upsertProdukIcs({
       code: `XDA${String(i).padStart(2, '0')}`,
@@ -226,29 +225,20 @@ test('CH untuk downline: modal + markup', async () => {
   db.upsertProdukIcs({ code: 'AXP14', name: 'Axis Pro 14', price: 14000, type: 'axp', category: 'General', status: 'available', stock: 5 })
   db.upsertProdukIcs({ code: 'M19', name: 'Smartfren 19', price: 19000, type: 'sm', category: 'General', status: 'available', stock: 5 })
 
-  const page1 = await say('628222', 'CH.XDA.1')
-  assert.match(page1, /\*Harga XDA\* \(Hal 1\/2 — 18 produk\)/)
-  assert.match(page1, /• \*XDA01\* — 11\.500 \(Tersedia\)/)
-  assert.match(page1, /Halaman berikutnya: CH\.XDA\.2/)
-
-  const page2 = await say('628222', 'CH.XDA.2')
-  assert.match(page2, /\*Harga XDA\* \(Hal 2\/2 — 18 produk\)/)
-  assert.match(page2, /• \*XDA40\* — 76\.500 \(Kosong\)/)
-  assert.match(page2, /Halaman sebelumnya: CH\.XDA\.1/)
-
-  // halaman di luar batas & invalid
-  assert.match(await say('628222', 'CH.XDA.9'), /tidak tersedia \(maks 2\)/)
-  assert.match(await say('628222', 'CH.XDA.0'), /Nomor halaman tidak valid/)
+  const list = await say('628222', 'CH.XDA')
+  assert.match(list, /^Harga:\n/)
+  assert.match(list, /\nXDA01 = 11\.500 XL Data 1GB\n/)
+  assert.match(list, /\nXDA40 = 76\.500 XL AXIS Data 40Gb  \[K\]/)
+  assert.match(list, /\*K=kosong, G=Gangguan$/)
+  assert.doesNotMatch(list, /Halaman berikutnya/)
 
   // exact kategori `AX` tidak tercampur `AXP`, dan `SM` menemukan kode yang tidak berawalan SM (`M19`)
-  const axOnly = await say('628222', 'CH.AX.1')
-  assert.match(axOnly, /\*Harga AX\* \(Hal 1\/1 — 1 produk\)/)
-  assert.match(axOnly, /• \*AXLK9\*/)
+  const axOnly = await say('628222', 'CH.AX')
+  assert.match(axOnly, /\nAXLK9 = /)
   assert.doesNotMatch(axOnly, /AXP14/)
 
-  const smList = await say('628222', 'CH.SM.1')
-  assert.match(smList, /\*Harga SM\* \(Hal 1\/1 — 1 produk\)/)
-  assert.match(smList, /• \*M19\*/)
+  const smList = await say('628222', 'CH.SM')
+  assert.match(smList, /\nM19 = /)
 })
 
 test('MP ubah markup dan harga ikut berubah', async () => {
@@ -445,8 +435,8 @@ test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async 
   )
   // tercatat di mutasi (REK)
   const rek = await say('628222', 'REK')
-  assert.match(rek, /kredit 25\.000/)
-  assert.match(rek, /Tambah saldo oleh OWN01/)
+  assert.match(rek, / 25\.000 Tambah saldo oleh OWN01/)
+  assert.match(rek, /Saldo akhir Rp\. /)
 
   // admin isi saldo sendiri: saldo bertambah tanpa notifikasi ganda
   const adminAwal = db.findAgenByNohp('628111').saldo
@@ -480,8 +470,8 @@ test('KSAL: admin kurang saldo mitra via nomor HP + guard saldo cukup + mutasi',
     'notifikasi ke user tujuan'
   )
   const rek = await say('628222', 'REK')
-  assert.match(rek, /debit 10\.000/)
-  assert.match(rek, /Kurang saldo oleh OWN01/)
+  assert.match(rek, / -10\.000 Kurang saldo oleh OWN01/)
+  assert.match(rek, /Saldo akhir Rp\. /)
 
   // admin kurangi saldo sendiri tanpa notifikasi ganda
   const adminAwal = db.findAgenByNohp('628111').saldo
@@ -519,7 +509,7 @@ test('tujuan masih proses: order kedua ke nomor sama ditolak, tidak kirim ke sup
 
 test('LAP admin: seluruh session (Omzet = Modal + Komisi Jaringan + Profit)', async () => {
   const r = await say('628111', 'LAP.BULAN')
-  assert.match(r, /\*Laporan Sesi\*/)
+  assert.match(r, /^Trx: /)
   // 3 trx sukses:
   // - 2x oleh B: profit admin 1000 (MKP 0 + A.markup 1000), komisi A 500
   // - 1x oleh A: profit admin 3000 (MKP 2000 + A.markup 1000), komisi 0
@@ -527,14 +517,15 @@ test('LAP admin: seluruh session (Omzet = Modal + Komisi Jaringan + Profit)', as
   assert.match(r, /Modal: 28\.500/)
   assert.match(r, /Komisi Jaringan: 1\.000/)
   assert.match(r, /Profit: 5\.000/)
+  // daftar baris: KODE.TUJUAN Rp.harga @dd/mm hh:mm:ss =Sukses
+  assert.match(r, /\nPULSA10\.0811999 Rp\.12\.500 @\d\d\/\d\d \d\d:\d\d:\d\d =Sukses/)
   assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
 test('LAP uplink: jaringannya sendiri & TUKAR tidak menghapus histori komisi di LAP', async () => {
   const r = await say('628222', 'LAP.BULAN')
-  assert.match(r, /\*Laporan Jaringan\*/)
-  // 2 trx sukses dari B @500 = 1.000 (tetap 1.000 walau 500 pertama sudah di-TUKAR)
-  assert.match(r, /Komisi Anda: 1\.000/)
+  assert.doesNotMatch(r, /Trx: /) // mitra: langsung daftar transaksi
+  assert.match(r, /PULSA10\.081234567 Rp\.11\.000 @\d\d\/\d\d \d\d:\d\d:\d\d =Sukses/)
 })
 
 test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap level, LAP jaringan B)', async () => {
@@ -564,10 +555,9 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   assert.equal(db.findAgenByNohp('628222').komisi, komABefore + 500)
   assert.equal(db.findAgenByNohp('628444').komisi, komBBefore + 300)
 
-  // Level B yang punya downline C mendapat *Laporan Jaringan* + Komisi Anda 300
+  // Level B yang punya downline C: LAP memuat transaksi jaringan (termasuk milik C)
   const lapB = await say('628444', 'LAP.BULAN')
-  assert.match(lapB, /\*Laporan Jaringan\*/)
-  assert.match(lapB, /Komisi Anda: 300/)
+  assert.match(lapB, /PULSA10\.08991234 Rp\.11\.500 @\d\d\/\d\d \d\d:\d\d:\d\d =Sukses/)
 
   // Uji juga saat A.markup = 0 (admin tanpa markup per-reseller): A TETAP dapat komisi 500 dari B!
   assert.match(await say('628111', 'MP.RS00001.0.1234'), /Markup RS00001 diubah menjadi 0/)

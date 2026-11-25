@@ -474,16 +474,35 @@ export function openDb(path) {
       .get(...params)
   }
 
-  db.recentTransaksi = ({ agenIds = null, from, to, limit = 10 } = {}) => {
+  // Baris transaksi untuk LAP. `agenIds` null = seluruh session.
+  //   status: 'sukses' | 'semua' (sukses + gagal)
+  //   idTrx:  id spesifik, atau awalan `T` + tanggal (T25/11) = semua id hari itu
+  //           (id transaksi diawali T<epoch ms>, jadi rentang waktu dipakai).
+  db.listTransaksi = ({ agenIds = null, from, to, status = 'sukses', idTrx = '', limit = 100 } = {}) => {
     const ids = agenIds?.length ? agenIds : null
     const scope = ids ? `AND t.agen_id IN (${ids.map(() => '?').join(',')})` : ''
-    const params = ids ? [from, to, ...ids, limit] : [from, to, limit]
+    const st = status === 'semua' ? `t.status IN ('sukses','gagal')` : `t.status = 'sukses'`
+    let idScope = ''
+    let idParams = []
+    const day = String(idTrx).match(/^[Tt](\d{1,2})\/(\d{1,2})$/)
+    if (day) {
+      const [d, m] = [Number(day[1]), Number(day[2])]
+      const year = new Date().getFullYear()
+      const start = new Date(year, m - 1, d)
+      const end = new Date(year, m - 1, d + 1)
+      idScope = 'AND t.created_at >= ? AND t.created_at < ?'
+      idParams = [start.toISOString(), end.toISOString()]
+    } else if (idTrx) {
+      idScope = 'AND t.id_trx = ?'
+      idParams = [String(idTrx).toUpperCase()]
+    }
+    const params = ids ? [from, to, ...ids, ...idParams, limit] : [from, to, ...idParams, limit]
     return raw
       .prepare(
         `SELECT t.*, a.kode AS agen_kode FROM transaksi t
          LEFT JOIN agen a ON a.id = t.agen_id
-         WHERE t.status = 'sukses' AND t.created_at >= ? AND t.created_at < ? ${scope}
-         ORDER BY t.id DESC LIMIT ?`
+         WHERE ${st} AND t.created_at >= ? AND t.created_at < ? ${scope} ${idScope}
+         ORDER BY t.id ASC LIMIT ?`
       )
       .all(...params)
   }
