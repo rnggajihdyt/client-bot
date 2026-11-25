@@ -58,6 +58,14 @@ function ticketText(db, dep) {
   )
 }
 
+// Dipakai TIKET tanpa argumen dan TIKET saat masih ada tiket pending.
+function pendingTicketText(db, dep) {
+  return (
+    `Masih ada tiket Rp${formatRupiah(dep.total)} dengan id ${dep.id_deposit} yang belum di bayar.\n\n` +
+    `${ticketText(db, dep)}\n\nBatalkan dengan BTL.${dep.id_deposit}.PIN bila ingin membuat tiket baru.`
+  )
+}
+
 // Status ringkas satu tiket, dipakai TIKET.D0001 (mitra) dan TLIST (admin).
 function depositStatusText(dep) {
   const { tanggal, jam } = wib(new Date(dep.created_at))
@@ -91,7 +99,7 @@ register({
     const pending = db.pendingDepositOf(mitra.id)
     if (!args.length) {
       if (pending) {
-        await client.message.send(jid, ticketText(db, pending))
+        await client.message.send(jid, pendingTicketText(db, pending))
         return
       }
       await client.message.send(jid, 'Gunakan format: TIKET.NOMINAL.PIN')
@@ -109,11 +117,7 @@ register({
       return
     }
     if (pending) {
-      await client.message.send(
-        jid,
-        `Masih ada tiket Rp${formatRupiah(pending.nominal)} dengan id ${pending.id_deposit} yang belum di bayar.\n\n` +
-          `${ticketText(db, pending)}\n\nBatalkan dengan BTL.${pending.id_deposit}.PIN bila ingin membuat tiket baru.`
-      )
+      await client.message.send(jid, pendingTicketText(db, pending))
       return
     }
 

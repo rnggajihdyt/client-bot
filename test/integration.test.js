@@ -598,6 +598,8 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
     await say('628222', 'TIKET.50000.1234'),
     new RegExp(`^Masih ada tiket Rp1\\.700\\.\\d{3} dengan id ${depRow.id_deposit} yang belum di bayar\\.`)
   )
+  // TIKET tanpa argumen memakai kalimat yang sama
+  assert.equal(await say('628222', 'TIKET'), await say('628222', 'TIKET.50000.1234'))
 
   // BTL milik orang lain ditolak; milik sendiri dibatalkan
   assert.match(await say('628111', `BTL.${depRow.id_deposit}.1234`), /Tiket tidak ditemukan/)
