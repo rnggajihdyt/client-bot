@@ -4,7 +4,6 @@ import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
 import { normalizeNohp } from '../utils.js'
 import { ensureFreshCatalog } from '../catalog.js'
-import { reportUrl } from '../reportcode.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
 const PIN_SALAH = 'PIN salah'
@@ -26,23 +25,20 @@ function requireDownline(ctx, kode) {
 register({
   name: 'sal',
   description: 'Cek saldo',
-  async handler({ client, event, mitra, isAdmin, deactivated, db, sessionId }) {
+  async handler({ client, event, mitra, isAdmin, deactivated, db }) {
     const st = db.transaksiStats(mitra.id)
-    const link = `\n\nLaporan web: ${reportUrl(sessionId, mitra.kode)}`
     const text = isAdmin
       ? `Yth. Admin ${mitra.nama} ID: ${mitra.kode}\n` +
         `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
         `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)}\n\n` +
-        `Ketik LAP utk lihat laporan profit` +
-        link
+        `Ketik LAP utk lihat laporan profit`
       : `Yth. Mitra ${mitra.nama} ID: ${mitra.kode}\n` +
         `Saldo: ${formatRupiah(mitra.saldo)} Limit: 0\n` +
         `Dalam proses: ${formatRupiah(st.proses)} Terpakai hari ini: ${formatRupiah(st.hariIni)} Komisi: ${formatRupiah(mitra.komisi)}\n\n` +
         `Ketik TUKAR utk ambil komisi` +
         (deactivated
           ? `\n\n*Akun Anda sedang DINONAKTIFKAN.* Tidak dapat bertransaksi sampai diaktifkan kembali oleh uplink.`
-          : '') +
-        link
+          : '')
     await client.message.send(event.key.remoteJid, text)
   },
 })
@@ -524,9 +520,8 @@ register({
 register({
   name: 'lap',
   description: 'Laporan: LAP[HARI|MINGGU|BULAN|YYYY-MM-DD|DD|DD-MM-YYYY|YYYY-MM]',
-  async handler({ client, event, mitra, args, isAdmin, db, sessionId }) {
+  async handler({ client, event, mitra, args, isAdmin, db }) {
     const { from, to, label } = parseRange(args[0])
-    const link = `\n\nLaporan web: ${reportUrl(sessionId, mitra.kode)}`
 
     if (isAdmin) {
       const sum = db.profitSummary({ from, to })
@@ -539,7 +534,7 @@ register({
       const lines = list.map(
         (t) => `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`
       )
-      await client.message.send(event.key.remoteJid, lines.length ? `${head}\n\n${lines.join('\n')}${link}` : `${head}${link}`)
+      await client.message.send(event.key.remoteJid, lines.length ? `${head}\n\n${lines.join('\n')}` : head)
       return
     }
 
@@ -553,8 +548,7 @@ register({
         event.key.remoteJid,
         `*Laporan Jaringan* (${label})\n` +
           `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-          `Komisi Anda: ${formatRupiah(komisi)}` +
-          link
+          `Komisi Anda: ${formatRupiah(komisi)}`
       )
       return
     }
@@ -565,8 +559,7 @@ register({
       event.key.remoteJid,
       `*Laporan Anda* (${label})\n` +
         `Trx: ${sum.trx} Omzet: ${formatRupiah(sum.omzet)}\n` +
-        `Komisi Anda: ${formatRupiah(komisi)}` +
-        link
+        `Komisi Anda: ${formatRupiah(komisi)}`
     )
   },
 })
