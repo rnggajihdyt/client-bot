@@ -38,8 +38,9 @@ for (const sessionId of sessions) {
   await runtime.startSession(sessionId, { notify: runtime.consoleNotify(sessionId) })
 }
 
-// Supplier webhook (POST /webhook/<token>/<session>) + cron safety net that
-// settles pendings the webhook never delivered.
+// Supplier webhook (POST /webhook/<token>/<session>) + cron poll yang jadi jalur
+// utama penyelesaian transaksi. Server webhook dibiarkan hidup tapi tidak perlu
+// didaftarkan di dashboard ICS selama transaksi memakai CEK/poll.
 let webhookServer
 let poller
 let catalogCron

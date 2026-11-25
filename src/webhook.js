@@ -106,15 +106,16 @@ export function startWebhookServer(logger) {
   return server
 }
 
-// Safety net: settle pendings the webhook never reported.
-export async function pollPending(logger, sessionId) {
+// Safety net / mode utama: settle pendings. Tanpa webhook, poll ini satu-satunya
+// jalur penyelesaian, jadi dijalankan tiap POLL_INTERVAL_MS.
+export async function pollPending(logger, sessionId, minAgeMs = 10_000) {
   const db = openDb(sessionPath(sessionId))
   let rows = []
   let cfg
   try {
     cfg = icsConfig(db)
     if (!cfg.apiKey) return
-    rows = db.pendingTransaksi(60_000)
+    rows = db.pendingTransaksi(minAgeMs)
   } finally {
     db.close()
   }
@@ -142,7 +143,9 @@ export async function pollPending(logger, sessionId) {
   }
 }
 
-export function startPoller(logger, sessions, everyMs = 60_000) {
+export const POLL_INTERVAL_MS = 15_000
+
+export function startPoller(logger, sessions, everyMs = POLL_INTERVAL_MS) {
   const timer = setInterval(() => {
     for (const id of sessions()) void pollPending(logger, id)
   }, everyMs)

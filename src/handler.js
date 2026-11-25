@@ -9,7 +9,7 @@ import * as registry from './registry.js'
 import { wipeSessionStore } from './runtime.js'
 import { formatRupiah } from './money.js'
 import { parseRange } from './report.js'
-import { webhookUrl, icsConfig } from './webhook.js'
+import { icsConfig } from './webhook.js'
 import { apiKeyPrompt, extractApiKey, setupApiKey, sameNumberProblem, sessionReadyText } from './apikey.js'
 import { createHumanController } from './human.js'
 import { tryDirectOrder } from './commands/supplier.js'
@@ -185,7 +185,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
           await safeSend(
             client,
             event.key.remoteJid,
-            sessionReadyText(sessionId, { total: r.total, available: r.available, url: webhookUrl(db, sessionId) }),
+            sessionReadyText(sessionId, { total: r.total, available: r.available }),
             undefined,
             log
           )
@@ -202,7 +202,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
         return
       }
       if (!ALLOWED_WITHOUT_APIKEY.has(parsed.cmd)) {
-        await safeSend(client, event.key.remoteJid, apiKeyPrompt(webhookUrl(db, sessionId)), undefined, log)
+        await safeSend(client, event.key.remoteJid, apiKeyPrompt(), undefined, log)
         return
       }
     }

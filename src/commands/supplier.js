@@ -2,7 +2,7 @@ import { register } from './registry.js'
 import { verifyPin } from '../auth.js'
 import { formatRupiah } from '../money.js'
 import { ics } from '../ics.js'
-import { webhookUrl, icsConfig } from '../webhook.js'
+import { icsConfig } from '../webhook.js'
 import {
   finalize,
   formatOrderStatus,
@@ -18,25 +18,22 @@ const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
 
 // ---- APIKEY ----
-// The reseller (session admin) pastes the key ICS gave them; the webhook URL
-// handed back is what they register on the ICS dashboard.
+// The reseller (session admin) pastes the key ICS gave them. Transaksi dicek
+// lewat CEK/poll, jadi webhook tidak didaftarkan di sini.
 register({
   name: 'apikey',
   description: 'Admin: APIKEY.KEY — kredensial supplier ICS',
-  async handler({ client, event, args, isAdmin, db, sessionId, log }) {
+  async handler({ client, event, args, isAdmin, db, log }) {
     if (!isAdmin) {
       await client.message.send(event.key.remoteJid, ADMIN_ONLY)
       return
     }
     const key = extractApiKey(args.join('.'))
-    const url = webhookUrl(db, sessionId)
     if (!key) {
       const current = db.getSetting('ics_apikey')
       await client.message.send(
         event.key.remoteJid,
-        `Gunakan format: APIKEY.KEY\n` +
-          `API key saat ini: ${current ? `${current.slice(0, 10)}…` : '(belum diisi)'}\n` +
-          `Webhook URL: ${url}`
+        `Gunakan format: APIKEY.KEY\n` + `API key saat ini: ${current ? `${current.slice(0, 10)}…` : '(belum diisi)'}`
       )
       return
     }
@@ -45,8 +42,7 @@ register({
       db.setSetting('ready_notified', '1')
       await client.message.send(
         event.key.remoteJid,
-        `API key tersimpan. Produk: ${r.total} tersimpan (${r.available} online).\n` +
-          `Webhook: ${url}`
+        `API key tersimpan. Produk: ${r.total} tersimpan (${r.available} online).`
       )
     } catch (err) {
       log?.warn({ err: err?.message }, 'apikey ditolak ICS')

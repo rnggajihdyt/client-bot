@@ -1,7 +1,6 @@
 import { openDb } from './db.js'
 import { sessionPath } from './config.js'
 import { getSession } from './registry.js'
-import { webhookUrl } from './webhook.js'
 import { syncCatalog } from './catalog.js'
 
 // A session without a valid supplier key cannot sell anything, so the key is
@@ -22,17 +21,17 @@ export function extractApiKey(text) {
 }
 
 // Repeated on every message until a key is stored: no timeout, no way past it.
-export function apiKeyPrompt(url) {
-  return `*API Key ICS belum diisi*\nKirim: APIKEY.KEY\nWebhook: ${url}`
+export function apiKeyPrompt() {
+  return `*API Key ICS belum diisi*\nKirim: APIKEY.KEY`
 }
 
 // Sent once when the session first becomes ready with a valid API key.
-export function sessionReadyText(sessionId, { total, available, url }) {
+// Mode transaksi memakai CEK/poll status, jadi webhook tidak perlu disebut.
+export function sessionReadyText(sessionId, { total, available }) {
   return (
     `*Sesi ${sessionId} siap.*\n` +
-    `Produk: ${total} tersimpan (${available} online)\n` +
-    `Webhook: ${url}\n\n` +
-    `Salin URL webhook ke dashboard ICS → Webhook.`
+    `Produk: ${total} tersimpan (${available} online)\n\n` +
+    `Status transaksi dicek otomatis; cek manual dengan CEK.`
   )
 }
 
@@ -44,17 +43,16 @@ export function sameNumberProblem(adminNohp, pairingPhone) {
 
 // Runs the gate for a session that just connected. No API key → prompt the
 // admin; if already keyed and never notified yet → send the one-time ready
-// message with product counts + webhook URL. Reconnects stay silent once ready.
+// message with product counts. Reconnects stay silent once ready.
 export async function runOnboarding(logger, sessionId, notify) {
   const db = openDb(sessionPath(sessionId))
-  let to, key, url, alreadyReady, total, available
+  let to, key, alreadyReady, total, available
   try {
     const session = getSession(sessionId)
     to = session?.admin_nohp ?? ''
     if (!to || sameNumberProblem(to, session?.pairing_phone)) return
     key = db.getSetting('ics_apikey')
     alreadyReady = db.getSetting('ready_notified') === '1'
-    url = webhookUrl(db, sessionId)
     if (key && !alreadyReady) {
       const produk = db.listProduk()
       total = produk.length
@@ -67,12 +65,12 @@ export async function runOnboarding(logger, sessionId, notify) {
 
   if (!key) {
     logger.info({ sessionId, to }, 'onboarding: menunggu apikey ICS')
-    await send(apiKeyPrompt(url))
+    await send(apiKeyPrompt())
     return
   }
   if (alreadyReady) return
 
-  await send(sessionReadyText(sessionId, { total, available, url }))
+  await send(sessionReadyText(sessionId, { total, available }))
   const db2 = openDb(sessionPath(sessionId))
   try {
     db2.setSetting('ready_notified', '1')
