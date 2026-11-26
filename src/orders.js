@@ -158,7 +158,7 @@ export function finalize(db, idTrx, { status, sn = '', supplierTrxId = '', reaso
       if (a) {
         db.addSaldo(a.id, trx.harga_efektif)
         saldoAkhir = a.saldo + trx.harga_efektif
-        db.addMutasi(a.id, 'kredit', trx.harga_efektif, saldoAkhir, `Refund ${trx.produk_kode} (${idTrx})`)
+        db.addMutasi(a.id, 'kredit', trx.harga_efektif, saldoAkhir, `Refund ${trx.produk_kode} ${trx.tujuan}`)
       }
     }
     db.setTransaksiStatus(idTrx, status)

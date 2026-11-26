@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs'
 import { config } from './config.js'
-import { parseCommand, extractText, markRead, senderNumbers, normalizeNohp } from './utils.js'
+import { parseCommand, extractText, markRead, senderNumbers, normalizeNohp, displayNohp } from './utils.js'
 import { getCommand, unknownCommandText } from './commands/registry.js'
 import { getPrefix } from './settings.js'
 import { parsePpob } from './parse.js'
@@ -471,7 +471,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       const list = sdb.listTransaksi({ from, to, limit: 10 })
       const lines = list.map(
         (t) =>
-          `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${t.tujuan} ${formatRupiah(t.harga_efektif)}`
+          `• ${t.id_trx} ${t.agen_kode ?? '-'} ${t.produk_kode} → ${displayNohp(t.tujuan)} ${formatRupiah(t.harga_efektif)}`
       )
       const head =
         `*Transaksi ${id}* (${label})\n` +

@@ -91,3 +91,9 @@ export function normalizeNohp(value) {
 function digitsOnly(value) {
   return value.split('@')[0].split(':')[0].replace(/\D/g, '')
 }
+
+// Nomor untuk ditampilkan ke pengguna: "628123456789" -> "08123456789".
+export function displayNohp(value) {
+  const d = String(value ?? '').trim().split('@')[0].split(':')[0].replace(/\D/g, '')
+  return d.startsWith('62') ? `0${d.slice(2)}` : d
+}

@@ -13,7 +13,7 @@ import {
 } from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
 import { ensureFreshCatalog } from '../catalog.js'
-import { normalizeNohp } from '../utils.js'
+import { displayNohp, normalizeNohp } from '../utils.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -211,7 +211,7 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
   const saldoSetelah = freshMitra.saldo - p.hargaEfektif
   db.tx(() => {
     db.addSaldo(freshMitra.id, -p.hargaEfektif)
-    db.addMutasi(freshMitra.id, 'debit', p.hargaEfektif, saldoSetelah, `Beli ${p.kode} (${idTrx})`)
+    db.addMutasi(freshMitra.id, 'debit', p.hargaEfektif, saldoSetelah, `Beli ${p.kode} ${item.tujuan}`)
     db.insertTransaksi({
       idTrx,
       agenId: freshMitra.id,
@@ -346,7 +346,7 @@ register({
     if (!target) {
       const pending = db.pendingTransaksiOf(mitra.id)
       const text = pending.length
-        ? pending.map((t) => `• ${t.id_trx} — ${t.produk_kode} → ${t.tujuan} (proses)`).join('\n')
+        ? pending.map((t) => `• ${t.id_trx} — ${t.produk_kode} → ${displayNohp(t.tujuan)} (proses)`).join('\n')
         : 'Tidak ada transaksi diproses.'
       await client.message.send(event.key.remoteJid, `*Transaksi diproses:*\n${text}`)
       return
@@ -371,7 +371,7 @@ register({
     }
     await client.message.send(
       event.key.remoteJid,
-      `ID: ${trx.id_trx}\nProduk: ${trx.produk_kode}\nTujuan: ${trx.tujuan}\nStatus: ${trx.status}` +
+      `ID: ${trx.id_trx}\nProduk: ${trx.produk_kode}\nTujuan: ${displayNohp(trx.tujuan)}\nStatus: ${trx.status}` +
         `${trx.sn ? `\nSN: ${trx.sn}` : ''}\nHarga: ${formatRupiah(trx.harga_efektif)}`
     )
   },

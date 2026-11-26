@@ -1,6 +1,7 @@
 import { register } from './registry.js'
 import { verifyPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
+import { displayNohp } from '../utils.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -331,7 +332,7 @@ register({
       const { tanggal, jam } = wib(new Date(d.created_at))
       const sisa = Math.max(0, TICKET_TTL_MS - (Date.now() - new Date(d.created_at).getTime()))
       const menit = Math.ceil(sisa / 60000)
-      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} (${d.agen_nohp})\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam} | sisa ${menit} mnt`
+      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} ${displayNohp(d.agen_nohp)}\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam} | sisa ${menit} mnt`
     })
     await client.message.send(jid, `*Tiket Pending (${rows.length}):*\n${lines.join('\n')}`)
   },

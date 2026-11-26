@@ -177,7 +177,7 @@ test('info uplink/mitra tanpa section admin', async () => {
 
   // LDL memuat nomor WA downline
   const ldl = await say('628111', 'LDL')
-  assert.match(ldl, /RS0001 — Ani \(Bandung\) \| 628222 \|/)
+  assert.match(ldl, /RS0001 — Ani \(Bandung\) \| 08222 \|/)
 
   // uplink biasa: tidak ada section admin/super admin
   const up = await say('628222', 'all')
@@ -260,7 +260,7 @@ test('TUKAR dengan komisi 0', async () => {
 
 test('nomor paralel jadi mitra yang sama', async () => {
   const add = await say('628111', 'TNO.628333.1234')
-  assert.match(add, /628333/)
+  assert.match(add, /Nomor 08333 ditambahkan/)
   const r = await say('628333', 'SAL')
   assert.match(r, /ID Anda ADM001/)
 })
@@ -634,7 +634,7 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
 
   // CS tanpa pesan: kirim nomor admin sesi
   sent.length = 0
-  assert.equal(await say('628222', 'CS'), 'Silahkan hubungi CS kami di WhatsApp 628111')
+  assert.equal(await say('628222', 'CS'), 'Silahkan hubungi CS kami di WhatsApp 08111')
   assert.equal(sent.find((s) => s.jid === '628111@s.whatsapp.net'), undefined)
 
   // Pesan CS yang memuat ID deposit diteruskan sebagai konfirmasi (gambar tidak diunggah ulang)
@@ -720,9 +720,10 @@ test('CEK/REK: transaksi pending tampil & mutasi tercatat; BTL kini stub deposit
   const r = await say('628222', 'BELI.PULSA10.0811777')
   const idTrx = r.match(/^#(T\d+) /)[1]
 
-  assert.match(await say('628222', 'CEK'), new RegExp(`${idTrx} — PULSA10`))
+  assert.match(await say('628222', 'CEK'), new RegExp(`${idTrx} — PULSA10 → 0811777`))
   assert.match(await say('628222', `CEK.${idTrx}`), /Status: proses/)
-  assert.match(await say('628222', 'REK'), /Beli PULSA10/)
+  // keterangan mutasi: kode produk + nomor tujuan (tanpa id trx)
+  assert.match(await say('628222', 'REK'), /Beli PULSA10 0811777/)
 
   // BTL kini untuk tiket deposit; transaksi order tidak bisa dibatalkan
   assert.match(await say('628222', `BTL.${idTrx}.1234`), /Tiket tidak ditemukan/)

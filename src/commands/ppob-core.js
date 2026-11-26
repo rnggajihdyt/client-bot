@@ -2,7 +2,7 @@ import { register } from './registry.js'
 import { verifyPin, hashPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
-import { normalizeNohp } from '../utils.js'
+import { displayNohp, normalizeNohp } from '../utils.js'
 import { ensureFreshCatalog } from '../catalog.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
@@ -150,7 +150,7 @@ register({
     const isUplink = mitra.senior_id == null
     await client.message.send(
       event.key.remoteJid,
-      `Mitra baru: ${nama} (${created.kode}) ${nohpD} berhasil ditambahkan sebagai ${isUplink ? 'uplink' : 'downline'} Anda.`
+      `Mitra baru: ${nama} (${created.kode}) ${displayNohp(nohpD)} berhasil ditambahkan sebagai ${isUplink ? 'uplink' : 'downline'} Anda.`
     )
 
     // Welcome the new downline directly. Best-effort: a failed send must not
@@ -177,7 +177,7 @@ register({
       return
     }
     const lines = dl.map(
-      (d) => `• ${d.kode} — ${d.nama} (${d.kota}) | ${d.nohp} | markup ${formatRupiah(d.markup)} | ${d.aktif ? 'aktif' : 'nonaktif'}`
+      (d) => `• ${d.kode} — ${d.nama} (${d.kota}) | ${displayNohp(d.nohp)} | markup ${formatRupiah(d.markup)} | ${d.aktif ? 'aktif' : 'nonaktif'}`
     )
     await client.message.send(event.key.remoteJid, `*Downline Anda:*\n${lines.join('\n')}`)
   },
@@ -344,7 +344,7 @@ register({
 
     // Tanpa pesan: cukup kirim nomor CS admin sesi ini.
     if (!pesan) {
-      await client.message.send(event.key.remoteJid, `Silahkan hubungi CS kami di WhatsApp ${root.nohp}`)
+      await client.message.send(event.key.remoteJid, `Silahkan hubungi CS kami di WhatsApp ${displayNohp(root.nohp)}`)
       return
     }
 
@@ -361,7 +361,7 @@ register({
       await client.message
         .send(
           adminJid,
-          `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} (${mitra.nohp})\nPesan: "${pesan}"`
+          `*Konfirmasi Transfer*\nID: ${idDeposit} (${status})\nMitra: ${mitra.kode} ${mitra.nama} ${displayNohp(mitra.nohp)}\nPesan: "${pesan}"`
         )
         .catch((e) => log?.error?.({ err: e, admin: root.nohp }, 'cs konfirmasi transfer failed'))
       await client.message.send(
@@ -444,7 +444,7 @@ register({
       return
     }
     db.addNomor(mitra.id, nohpD)
-    await client.message.send(event.key.remoteJid, `Nomor ${nohpD} ditambahkan ke akun Anda.`)
+    await client.message.send(event.key.remoteJid, `Nomor ${displayNohp(nohpD)} ditambahkan ke akun Anda.`)
   },
 })
 
@@ -470,7 +470,7 @@ register({
       await client.message.send(event.key.remoteJid, 'Nomor paralel tidak ditemukan')
       return
     }
-    await client.message.send(event.key.remoteJid, `Nomor ${nohpD} dihapus.`)
+    await client.message.send(event.key.remoteJid, `Nomor ${displayNohp(nohpD)} dihapus.`)
   },
 })
 
@@ -478,7 +478,7 @@ register({
   name: 'lno',
   description: 'Cek daftar nomor',
   async handler({ client, event, mitra, db }) {
-    const all = [mitra.nohp, ...db.nomorOf(mitra.id)]
+    const all = [mitra.nohp, ...db.nomorOf(mitra.id)].map(displayNohp)
     await client.message.send(event.key.remoteJid, `*Nomor Anda:*\n${all.join('\n')}`)
   },
 })
@@ -492,7 +492,7 @@ function transaksiLine(t) {
   const p = (n) => String(n).padStart(2, '0')
   const when = `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
   const status = t.status === 'sukses' ? 'Sukses' : 'Gagal'
-  return `${t.produk_kode}.${t.tujuan} Rp.${formatRupiah(t.harga_efektif)} @${when} =${status}`
+  return `${t.produk_kode}.${displayNohp(t.tujuan)} Rp.${formatRupiah(t.harga_efektif)} @${when} =${status}`
 }
 
 // LAP[.id] — default sukses + gagal, default hari ini.
@@ -637,7 +637,7 @@ async function adjustSaldo({ client, event, mitra, args, isAdmin, db, log }, dir
   }
   const target = db.findAgenByNohp(nohp)
   if (!target) {
-    await client.message.send(event.key.remoteJid, `Mitra dengan nomor ${nohp} tidak ditemukan`)
+    await client.message.send(event.key.remoteJid, `Mitra dengan nomor ${displayNohp(nohp)} tidak ditemukan`)
     return
   }
 
@@ -673,7 +673,7 @@ async function adjustSaldo({ client, event, mitra, args, isAdmin, db, log }, dir
   const verb = isAdd ? 'ditambah' : 'dikurangi'
   await client.message.send(
     event.key.remoteJid,
-    `Saldo ${target.nama} (${target.kode} / ${target.nohp}) ${verb} ${formatRupiah(nominal)}. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
+    `Saldo ${target.nama} (${target.kode} / ${displayNohp(target.nohp)}) ${verb} ${formatRupiah(nominal)}. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
   )
 
   if (target.id !== mitra.id) {
