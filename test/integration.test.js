@@ -436,7 +436,7 @@ test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async 
   )
   // tercatat di mutasi (REK)
   const rek = await say('628222', 'REK')
-  assert.match(rek, / 25\.000 Tambah saldo oleh ADM001/)
+  assert.match(rek, / 25\.000 Tambah saldo oleh Admin/)
   assert.match(rek, /Saldo akhir Rp\. /)
   // admin isi saldo sendiri: saldo bertambah tanpa notifikasi ganda
   const adminAwal = db.findAgenByNohp('628111').saldo
@@ -470,7 +470,7 @@ test('KSAL: admin kurang saldo mitra via nomor HP + guard saldo cukup + mutasi',
     'notifikasi ke user tujuan'
   )
   const rek = await say('628222', 'REK')
-  assert.match(rek, / -10\.000 Kurang saldo oleh ADM001/)
+  assert.match(rek, / -10\.000 Kurang saldo oleh Admin/)
   assert.match(rek, /Saldo akhir Rp\. /)
 
   // admin kurangi saldo sendiri tanpa notifikasi ganda

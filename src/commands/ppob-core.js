@@ -658,7 +658,7 @@ async function adjustSaldo({ client, event, mitra, args, isAdmin, db, log }, dir
       isAdd ? 'kredit' : 'debit',
       nominal,
       saldoAkhir,
-      `${isAdd ? 'Tambah' : 'Kurang'} saldo oleh ${mitra.kode}`
+      `${isAdd ? 'Tambah' : 'Kurang'} saldo oleh Admin`
     )
   })
 
