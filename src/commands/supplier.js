@@ -4,6 +4,7 @@ import { formatRupiah } from '../money.js'
 import { ics } from '../ics.js'
 import { icsConfig } from '../webhook.js'
 import {
+  cleanSupplierReason,
   finalize,
   formatOrderStatus,
   isUpstreamBalanceError,
@@ -244,7 +245,7 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
           .catch((e) => log?.warn({ err: e?.message }, 'alert saldo supplier ke admin gagal'))
       }
     }
-    const reason = isAdmin ? err.message : sanitizeOrderErrorForMitra(err?.message)
+    const reason = cleanSupplierReason(err?.message, { forMitra: !isAdmin })
     const saldoRefund = settled?.saldoAkhir ?? freshMitra.saldo
     return {
       ok: false,

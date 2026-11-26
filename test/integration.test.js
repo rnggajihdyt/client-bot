@@ -874,6 +874,22 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     const errMitra = await say('628222', 'xda13.08555997')
     assert.match(errMitra, /Nomor tujuan tidak valid/)
     assert.doesNotMatch(errMitra, /ICS/i)
+
+    // 3b) Pesan panjang ICS saat POST: "Saldo dikembalikan: …" ikut dibuang
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({
+          success: false,
+          message:
+            'Transaksi XDA25 ke 085731409131 (RefID:T1795652125413689) GAGAL. Nomor tujuan salah. Saldo dikembalikan: 52615 + 52000 = 104615 @2026-11-26 00:15:27',
+        }),
+    })
+    db.upsertProdukIcs({ code: 'XDA25', name: 'XL AXIS Data 25Gb', price: 52000, type: 'xda', status: 'available', stock: 10 })
+    const errPanjang = await say('628222', 'xda25.085731409131')
+    assert.match(errPanjang, /^XDA25\.085731409131 GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
+    assert.doesNotMatch(errPanjang, /RefID|Saldo dikembalikan|Transaksi XDA25 ke/)
   } finally {
     globalThis.fetch = origFetch
   }

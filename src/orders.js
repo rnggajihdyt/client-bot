@@ -35,6 +35,27 @@ export function sanitizeOrderErrorForMitra(rawMsg) {
   return cleaned || 'Layanan sedang gangguan sementara, silakan coba lagi nanti'
 }
 
+// Alasan gagal supplier dibersihkan di satu tempat, dipakai jalur POST order
+// (supplier.js) maupun finalisasi poll/webhook (settledText).
+// Contoh mentah ICS:
+//   "Transaksi XDA25 ke 085731409131 (RefID:T1795652125413689) GAGAL. Nomor
+//    tujuan salah. Saldo dikembalikan: 52615 + 52000 = 104615 @2026-11-26 00:15:27"
+// Hasil: "Nomor tujuan salah."
+export function cleanSupplierReason(rawMsg, { forMitra = false } = {}) {
+  const raw = forMitra ? sanitizeOrderErrorForMitra(rawMsg) : String(rawMsg ?? '')
+  const cleaned = raw
+    .replace(/Transaksi\s+\S+\s+ke\s+\S+/gi, '')
+    .replace(/\(RefID:[^)]*\)/gi, '')
+    .replace(/Saldo\s+dikembalikan\s*:?[^@]*@?\s*\d{4}-\d{2}-\d{2}[^.]*/gi, '')
+    .replace(/\bGAGAL\b\.?/gi, '')
+    .replace(/^\s*[.:,\-–—]\s*/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  // Semua bagian teknis terbuang dan hanya tersisa info refund: baris GAGAL
+  // cukup tanpa alasan (jangan tulis "Saldo dikembalikan" lagi).
+  return ensurePeriod(cleaned)
+}
+
 export function cleanProductName(nama, kode) {
   const s = String(nama ?? '').trim()
   if (!s) return ''
@@ -150,20 +171,8 @@ export function finalize(db, idTrx, { status, sn = '', supplierTrxId = '', reaso
 // Message the buyer receives once the supplier settles the order.
 export function settledText({ trx, status, sn = '', reason = '', saldoAkhir = 0, at } = {}) {
   const isAdmin = trx.agen_senior_id == null
-  let detail = ''
-  if (status === 'gagal') {
-    const raw = isAdmin ? reason : sanitizeOrderErrorForMitra(reason)
-    // Pesan supplier sudah memuat kode.tujuan + RefID: sisakan alasannya saja.
-    // Contoh: "Transaksi XDA25 ke 0857… (RefID:T1795…) GAGAL. Nomor tujuan salah."
-    detail = String(raw ?? '')
-      .replace(/Transaksi\s+\S+\s+ke\s+\S+/gi, '')
-      .replace(/\(RefID:[^)]*\)/gi, '')
-      .replace(/\bGAGAL\b\.?/gi, '')
-      .replace(/^\s*[.:,\-–—]\s*/, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim()
-    if (!detail) detail = 'Saldo dikembalikan'
-  }
+  const detail =
+    status === 'gagal' ? cleanSupplierReason(reason, { forMitra: !isAdmin }) : ''
   return formatOrderStatus({
     nama: trx.produk_nama,
     kode: trx.produk_kode,
