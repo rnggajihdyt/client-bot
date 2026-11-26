@@ -51,9 +51,9 @@ export function cleanSupplierReason(rawMsg, { forMitra = false } = {}) {
     .replace(/^\s*[.:,\-–—]\s*/, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
-  // Semua bagian teknis terbuang dan hanya tersisa info refund: baris GAGAL
-  // cukup tanpa alasan (jangan tulis "Saldo dikembalikan" lagi).
-  return ensurePeriod(cleaned)
+  // Semua bagian teknis terbuang (mis. hanya info refund): pakai alasan umum,
+  // jangan tulis "Saldo dikembalikan" lagi.
+  return ensurePeriod(cleaned || 'Silakan dicoba kembali nanti')
 }
 
 export function cleanProductName(nama, kode) {

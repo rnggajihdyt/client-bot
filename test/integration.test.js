@@ -904,6 +904,17 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
   const text = settledText({ ...done, at: new Date() })
   assert.match(text, /^XDA38\.085731409131 GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
   assert.doesNotMatch(text, /RefID|Transaksi XDA38 ke/)
+
+  // 5) Poll gagal tanpa alasan jelas: pakai alasan umum, bukan "Saldo dikembalikan"
+  const beli2 = await say('628222', 'XDA38.085731409132')
+  const idTrx2 = beli2.match(/^#(T\d+) /)[1]
+  const done2 = finalize(db, idTrx2, {
+    status: 'gagal',
+    reason: `Transaksi XDA38 ke 085731409132 (RefID:${idTrx2}) GAGAL. Saldo dikembalikan: 61000 + 0 = 61000 @2026-11-26 00:15:27`,
+  })
+  const text2 = settledText({ ...done2, at: new Date() })
+  assert.match(text2, /^XDA38\.085731409132 GAGAL\. Silakan dicoba kembali nanti\. Sal [\d.]+ @\d\d:\d\d$/)
+  assert.doesNotMatch(text2, /Saldo dikembalikan|RefID/)
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {
