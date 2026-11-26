@@ -329,7 +329,7 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
 
 test('BELI ditolak saat saldo kurang', async () => {
   db.raw.prepare(`UPDATE agen SET saldo = 100 WHERE nohp = '628444'`).run()
-  assert.match(await say('628444', 'BELI.PULSA10.0812'), /^PULSA10\.0812 GAGAL\. Saldo tidak cukup\. Sal 100 @\d\d:\d\d$/)
+  assert.match(await say('628444', 'BELI.PULSA10.0812'), /^PULSA10\.0812 Pulsa 10 GAGAL\. Saldo tidak cukup\. Sal 100 @\d\d:\d\d$/)
 })
 
 test('transaksi menyimpan harga modal & markup admin saat itu', async () => {
@@ -838,7 +838,10 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     })
     await say('628222', 'xda13.08555999')
     const mitraMsg = sent.find((m) => m.jid === '628222@s.whatsapp.net')?.text ?? ''
-    assert.match(mitraMsg, /^XDA13\.08555999 GAGAL\. Sistem sedang gangguan sementara.*Sal 1\.911\.411 @\d\d:\d\d$/)
+    assert.match(
+      mitraMsg,
+      /^XDA13\.08555999 XL Data 13GB GAGAL\. Sistem sedang gangguan sementara.*Sal 1\.911\.411 @\d\d:\d\d$/
+    )
     assert.doesNotMatch(mitraMsg, /ICS/i)
     assert.doesNotMatch(mitraMsg, /Saldo operasional|Saldo Anda|Dibutuhkan|Rp 0|Rp 100/i)
     // saldo mitra tetap penuh (refunded)
@@ -861,7 +864,7 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     const errExact = await say('628222', 'XDA38.085731409131')
     assert.match(
       errExact,
-      /^XDA38\.085731409131 GAGAL\. Nomor tujuan salah\. Sal 1\.911\.411 @\d\d:\d\d$/
+      /^XDA38\.085731409131 XL AXIS Data 38Gb Reguler \+ Lokal GAGAL\. Nomor tujuan salah\. Sal 1\.911\.411 @\d\d:\d\d$/
     )
     assert.doesNotMatch(errExact, /ICS/i)
 
@@ -888,7 +891,7 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     })
     db.upsertProdukIcs({ code: 'XDA25', name: 'XL AXIS Data 25Gb', price: 52000, type: 'xda', status: 'available', stock: 10 })
     const errPanjang = await say('628222', 'xda25.085731409131')
-    assert.match(errPanjang, /^XDA25\.085731409131 GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
+    assert.match(errPanjang, /^XDA25\.085731409131 XL AXIS Data 25Gb GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
     assert.doesNotMatch(errPanjang, /RefID|Saldo dikembalikan|Transaksi XDA25 ke/)
   } finally {
     globalThis.fetch = origFetch
@@ -902,7 +905,7 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     reason: `Transaksi XDA38 ke 085731409131 (RefID:${idTrx}) GAGAL. Nomor tujuan salah.`,
   })
   const text = settledText({ ...done, at: new Date() })
-  assert.match(text, /^XDA38\.085731409131 GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
+  assert.match(text, /^XDA38\.085731409131 XL AXIS Data 38Gb Reguler \+ Lokal GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
   assert.doesNotMatch(text, /RefID|Transaksi XDA38 ke/)
 
   // 5) Poll gagal tanpa alasan jelas: pakai alasan umum, bukan "Saldo dikembalikan"
@@ -913,7 +916,10 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     reason: `Transaksi XDA38 ke 085731409132 (RefID:${idTrx2}) GAGAL. Saldo dikembalikan: 61000 + 0 = 61000 @2026-11-26 00:15:27`,
   })
   const text2 = settledText({ ...done2, at: new Date() })
-  assert.match(text2, /^XDA38\.085731409132 GAGAL\. Silakan dicoba kembali nanti\. Sal [\d.]+ @\d\d:\d\d$/)
+  assert.match(
+    text2,
+    /^XDA38\.085731409132 XL AXIS Data 38Gb Reguler \+ Lokal GAGAL\. Silakan dicoba kembali nanti\. Sal [\d.]+ @\d\d:\d\d$/
+  )
   assert.doesNotMatch(text2, /Saldo dikembalikan|RefID/)
 })
 

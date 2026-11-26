@@ -84,12 +84,12 @@ function ensurePeriod(text) {
 
 // Unified PPOB order status format (finalisasi):
 //   "TDF0.082135919281 SUKSES.SN/Ref: 0214998 Sisa Saldo Anda 746.766-6.331 = 740.435 Tanggal 24/11 18:01:44"
-// Gagal tetap satu baris:
-//   "<KODE>.<TUJUAN> GAGAL. Nomor tujuan salah. Sal 1.911.411 @14:19"
-// Semua baris memakai kode produk, bukan nama produk.
+// Gagal tetap satu baris, nama produk menyusul setelah kode:
+//   "<KODE>.<TUJUAN> <Nama> GAGAL. Nomor tujuan salah. Sal 1.911.411 @14:19"
 // `saldo` = saldo akhir setelah transaksi, `harga` = potongan biaya.
-export function formatOrderStatus({ kode, tujuan, status, detail = '', harga, idTrx, sn = '', saldo = 0, at } = {}) {
-  const head = `${kode}.${tujuan}`
+export function formatOrderStatus({ nama, kode, tujuan, status, detail = '', harga, idTrx, sn = '', saldo = 0, at } = {}) {
+  const cleanNama = cleanProductName(nama, kode)
+  const head = cleanNama ? `${kode}.${tujuan} ${cleanNama}` : `${kode}.${tujuan}`
   const sal = `Sal ${formatRupiah(saldo)}`
   const time = `@${formatOrderTime(at)}`
 
