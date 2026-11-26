@@ -1,4 +1,4 @@
-import { test, after } from 'node:test'
+﻿import { test, after } from 'node:test'
 import assert from 'node:assert'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -13,17 +13,17 @@ import { parseRange } from '../src/report.js'
 const dir = mkdtempSync(join(tmpdir(), 'ppob-'))
 const db = openDb(join(dir, 'test.sqlite'))
 
-// root (OWN01) — admin session
+// root (ADM001) — admin session
 const root = db.createAgen({ nama: 'Admin', kota: '', nohp: '6281000000001', seniorId: null, markup: 0, pin: '1234' })
-// uplink (RS00001) directly under root
+// uplink (RS0001) directly under root
 const r1 = db.createAgen({ nama: 'Reseller', kota: 'Jakarta', nohp: '6281000000002', seniorId: root.id, markup: 1000, pin: '1111' })
 // doni under r1
 const doni = db.createAgen({ nama: 'Doni', kota: 'Bogor', nohp: '6281000000003', seniorId: r1.id, markup: 500, pin: '2222' })
 
 test('kode generator', () => {
-  assert.equal(root.kode, 'OWN01')
-  assert.equal(r1.kode, 'RS00001')
-  assert.equal(doni.kode, 'RS00002')
+  assert.equal(root.kode, 'ADM001')
+  assert.equal(r1.kode, 'RS0001')
+  assert.equal(doni.kode, 'RS0002')
 })
 
 test('lookup by nohp (main)', () => {

@@ -1,4 +1,4 @@
-import { test, after } from 'node:test'
+﻿import { test, after } from 'node:test'
 import assert from 'node:assert'
 import { verifyPin } from '../src/auth.js'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -133,7 +133,7 @@ test('nomor asing chat pribadi dibalas ditolak, pesan grup (@g.us) diabaikan dia
 
 test('SAL format (admin tanpa komisi/TUKAR)', async () => {
   const r = await say('628111', 'SAL')
-  assert.match(r, /^Yth\. Kak Admin\nID Anda OWN01\n/)
+  assert.match(r, /^Yth\. Kak Admin\nID Anda ADM001\n/)
   assert.match(r, /Saldo: 0 Limit: 0/)
   assert.doesNotMatch(r, /Laporan web|report/i)
   assert.match(r, /Ketik LAP utk lihat laporan profit/)
@@ -161,23 +161,23 @@ test('info admin & super admin dapat section khusus', async () => {
 })
 
 test('info uplink/mitra tanpa section admin', async () => {
-  // DAFTAR admin → uplink RS00001 + welcome ke downline (butuh 628222 jadi mitra)
+  // DAFTAR admin → uplink RS0001 + welcome ke downline (butuh 628222 jadi mitra)
   sent.length = 0
   await say('628111', 'DAFTAR.Ani.Bandung.628222.500.1234')
   const ack = sent.find((s) => s.jid === '628111@s.whatsapp.net')
   assert.match(ack.text, /sebagai uplink Anda/)
-  assert.match(ack.text, /RS00001/)
+  assert.match(ack.text, /RS0001/)
   // welcome goes to the new downline's number, not the uplink
   const welcome = sent.find((s) => s.jid === '628222@s.whatsapp.net')
   assert.ok(welcome, 'welcome message sent to downline')
   assert.equal(
     welcome.text,
-    'Yth. Kak Ani, Selamat bergabung! Kode Agen anda adalah RS00001, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.'
+    'Yth. Kak Ani, Selamat bergabung! Kode Agen anda adalah RS0001, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.'
   )
 
   // LDL memuat nomor WA downline
   const ldl = await say('628111', 'LDL')
-  assert.match(ldl, /RS00001 — Ani \(Bandung\) \| 628222 \|/)
+  assert.match(ldl, /RS0001 — Ani \(Bandung\) \| 628222 \|/)
 
   // uplink biasa: tidak ada section admin/super admin
   const up = await say('628222', 'all')
@@ -242,14 +242,14 @@ test('CH untuk downline: modal + markup', async () => {
 })
 
 test('MP ubah markup dan harga ikut berubah', async () => {
-  const r = await say('628111', 'MP.RS00001.1000.1234')
+  const r = await say('628111', 'MP.RS0001.1000.1234')
   assert.match(r, /1\.000/)
   const h = await say('628222', 'CH.PULSA10')
   assert.match(h, /10\.500/) // 9500 + 1000
 })
 
 test('MP ditolak untuk bukan downline', async () => {
-  const r = await say('628222', 'MP.OWN01.999.1234')
+  const r = await say('628222', 'MP.ADM001.999.1234')
   assert.equal(r, 'Bukan downline Anda')
 })
 
@@ -262,37 +262,37 @@ test('nomor paralel jadi mitra yang sama', async () => {
   const add = await say('628111', 'TNO.628333.1234')
   assert.match(add, /628333/)
   const r = await say('628333', 'SAL')
-  assert.match(r, /ID Anda OWN01/)
+  assert.match(r, /ID Anda ADM001/)
 })
 
 test('PIN salah ditolak', async () => {
-  const r = await say('628111', 'MP.RS00001.1.9999')
+  const r = await say('628111', 'MP.RS0001.1.9999')
   assert.equal(r, 'PIN salah')
 })
 
 test('nonaktif: SAL & info boleh dengan keterangan, sisanya diblokir', async () => {
-  await say('628111', 'NA.RS00001.1234') // naikkan: A nonaktif
+  await say('628111', 'NA.RS0001.1234') // naikkan: A nonaktif
   const sal = await say('628222', 'SAL')
-  assert.match(sal, /^Yth\. Kak Ani\nID Anda RS00001\n/)
+  assert.match(sal, /^Yth\. Kak Ani\nID Anda RS0001\n/)
   assert.match(sal, /Akun Anda sedang DINONAKTIFKAN/)
   assert.match(await say('628222', 'format'), /PANDUAN TRANSAKSI/)
   assert.match(await say('628222', 'all'), /FORMAT 4/)
   assert.equal(await say('628222', 'LDL'), 'Akun Anda nonaktif')
   assert.equal(await say('628222', 'CH.PULSA10'), 'Akun Anda nonaktif')
-  await say('628111', 'AKTIF.RS00001.1234') // pulihkan untuk test berikutnya
+  await say('628111', 'AKTIF.RS0001.1234') // pulihkan untuk test berikutnya
   assert.doesNotMatch(await say('628222', 'SAL'), /DINONAKTIFKAN/)
 })
 
 test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async () => {
-  // A (RS00001 / 628222, markup 1000) mendaftarkan B
+  // A (RS0001 / 628222, markup 1000) mendaftarkan B
   const r = await say('628222', 'DAFTAR.Budi.Solo.628444.500.1234')
-  assert.match(r, /RS00002/)
+  assert.match(r, /RS0002/)
 
   // beri saldo B
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '628444'`).run()
 
   // A dinonaktifkan oleh uplink (admin)
-  assert.match(await say('628111', 'NA.RS00001.1234'), /DINONAKTIFKAN/)
+  assert.match(await say('628111', 'NA.RS0001.1234'), /DINONAKTIFKAN/)
 
   // A hanya bisa baca status, bukan transaksi
   assert.match(await say('628222', 'SAL'), /DINONAKTIFKAN/)
@@ -319,7 +319,7 @@ test('nonaktif A: B tetap transaksi, A dapat komisi, A tak bisa TUKAR', async ()
   assert.equal(await say('628222', 'TUKAR'), 'Akun Anda nonaktif')
 
   // aktifkan lagi -> komisi bisa dicairkan
-  assert.match(await say('628111', 'AKTIF.RS00001.1234'), /DIAKTIFKAN/)
+  assert.match(await say('628111', 'AKTIF.RS0001.1234'), /DIAKTIFKAN/)
   const tukar = await say('628222', 'TUKAR')
   assert.match(tukar, /500/)
   const a2 = db.raw.prepare(`SELECT komisi, saldo FROM agen WHERE nohp = '628222'`).get()
@@ -436,7 +436,7 @@ test('TSAL: admin tambah saldo mitra via nomor HP + mutasi + notifikasi', async 
   )
   // tercatat di mutasi (REK)
   const rek = await say('628222', 'REK')
-  assert.match(rek, / 25\.000 Tambah saldo oleh OWN01/)
+  assert.match(rek, / 25\.000 Tambah saldo oleh ADM001/)
   assert.match(rek, /Saldo akhir Rp\. /)
   // admin isi saldo sendiri: saldo bertambah tanpa notifikasi ganda
   const adminAwal = db.findAgenByNohp('628111').saldo
@@ -470,7 +470,7 @@ test('KSAL: admin kurang saldo mitra via nomor HP + guard saldo cukup + mutasi',
     'notifikasi ke user tujuan'
   )
   const rek = await say('628222', 'REK')
-  assert.match(rek, / -10\.000 Kurang saldo oleh OWN01/)
+  assert.match(rek, / -10\.000 Kurang saldo oleh ADM001/)
   assert.match(rek, /Saldo akhir Rp\. /)
 
   // admin kurangi saldo sendiri tanpa notifikasi ganda
@@ -530,7 +530,7 @@ test('LAP uplink: jaringannya sendiri & TUKAR tidak menghapus histori komisi di 
 
 test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap level, LAP jaringan B)', async () => {
   // B (628444, markup 500 dari A) mendaftarkan C (6285551) dengan markup 300
-  assert.match(await say('628444', 'DAFTAR.Citra.Depok.6285551.300.1234'), /RS00003/)
+  assert.match(await say('628444', 'DAFTAR.Citra.Depok.6285551.300.1234'), /RS0003/)
   db.raw.prepare(`UPDATE agen SET saldo = 50000 WHERE nohp = '6285551'`).run()
   // Set MKP general = 200; A.markup = 1000 (dr admin), B.markup = 500 (dr A), C.markup = 300 (dr B)
   assert.match(await say('628111', 'MKP.200'), /Markup general/)
@@ -560,7 +560,7 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   assert.match(lapB, /PULSA10\.08991234 Rp\.11\.500 @\d\d\/\d\d \d\d:\d\d:\d\d =Sukses/)
 
   // Uji juga saat A.markup = 0 (admin tanpa markup per-reseller): A TETAP dapat komisi 500 dari B!
-  assert.match(await say('628111', 'MP.RS00001.0.1234'), /Markup RS00001 diubah menjadi 0/)
+  assert.match(await say('628111', 'MP.RS0001.0.1234'), /Markup RS0001 diubah menjadi 0/)
   const beliC2 = await say('6285551', 'PULSA10.08991235')
   assert.match(beliC2, /- 10\.500 =/) // 9500 + 200 + 0 + 500 + 300
   const idTrx2 = beliC2.match(/^#(T\d+) /)[1]
@@ -570,7 +570,7 @@ test('berjenjang tak terbatas: Admin -> A -> B -> C (profit admin, komisi tiap l
   assert.equal(db.findAgenByNohp('628111').komisi, 0)
 
   // Kembalikan state untuk test selanjutnya
-  assert.match(await say('628111', 'MP.RS00001.1000.1234'), /1\.000/)
+  assert.match(await say('628111', 'MP.RS0001.1000.1234'), /1\.000/)
   assert.match(await say('628111', 'MKP.0'), /Markup general/)
 })
 
@@ -679,7 +679,7 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // TLIST — admin lihat tiket pending; mitra ditolak
   assert.match(await say('628222', 'TLIST'), /Khusus admin/)
   const tlist = await say('628111', 'TLIST')
-  assert.match(tlist, new RegExp(`${dep3.id_deposit} — RS00001`))
+  assert.match(tlist, new RegExp(`${dep3.id_deposit} — RS0001`))
   assert.match(tlist, /50\.000 \+ \d{3}/)
   assert.match(tlist, /sisa \d+ mnt/)
 
@@ -701,11 +701,11 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur rekening/)
 
   // GPN — admin reset PIN downline
-  assert.match(await say('628222', 'GPN.RS00001'), /GPN\.KODE/)
-  assert.match(await say('628111', 'GPN.RS00001.5678.9999'), /PIN salah/)
+  assert.match(await say('628222', 'GPN.RS0001'), /GPN\.KODE/)
+  assert.match(await say('628111', 'GPN.RS0001.5678.9999'), /PIN salah/)
   sent.length = 0
-  await say('628111', 'GPN.RS00001.5678.1234')
-  assert.ok(sent.some((s) => s.jid === '628111@s.whatsapp.net' && /PIN RS00001 direset/.test(s.text)))
+  await say('628111', 'GPN.RS0001.5678.1234')
+  assert.ok(sent.some((s) => s.jid === '628111@s.whatsapp.net' && /PIN RS0001 direset/.test(s.text)))
   assert.ok(verifyPin('5678', db.findAgenByNohp('628222').pin_hash))
   const notice = sent.find((s) => s.jid === '628222@s.whatsapp.net')
   assert.match(notice.text, /direset oleh admin menjadi 5678/)

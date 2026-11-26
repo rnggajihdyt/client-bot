@@ -144,10 +144,10 @@ export function openDb(path) {
     }
   }
 
-  // ---- kode generator: 'OWN' (root, 2 digit) | 'RS' (mitra, 5 digit) ----
+  // ---- kode generator: 'ADM' (root/admin sesi, 3 digit) | 'RS' (mitra, 4 digit) ----
   db.nextKode = (type) => {
-    const prefix = type === 'OWN' ? 'OWN' : 'RS'
-    const width = type === 'OWN' ? 2 : 5
+    const prefix = type === 'ADM' ? 'ADM' : 'RS'
+    const width = type === 'ADM' ? 3 : 4
     const row = raw
       .prepare(`SELECT kode FROM agen WHERE kode LIKE ? ORDER BY kode DESC LIMIT 1`)
       .get(prefix + '%')
@@ -160,7 +160,7 @@ export function openDb(path) {
   }
 
   db.createAgen = ({ nama, kota, nohp, seniorId, markup, pin }) => {
-    const kode = db.nextKode(seniorId == null ? 'OWN' : 'RS')
+    const kode = db.nextKode(seniorId == null ? 'ADM' : 'RS')
     const { lastInsertRowid } = raw
       .prepare(
         `INSERT INTO agen (kode, nama, kota, nohp, senior_id, markup, pin_hash, aktif, created_at)
