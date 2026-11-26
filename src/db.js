@@ -110,6 +110,7 @@ const MIGRATIONS = {
   deposit: {
     bank: `ALTER TABLE deposit ADD COLUMN bank TEXT NOT NULL DEFAULT ''`,
     selesai_at: `ALTER TABLE deposit ADD COLUMN selesai_at TEXT NOT NULL DEFAULT ''`,
+    method: `ALTER TABLE deposit ADD COLUMN method TEXT NOT NULL DEFAULT 'bank'`,
   },
 }
 
@@ -353,13 +354,13 @@ export function openDb(path) {
       .run(key, String(value))
 
   // ---- deposit tickets (TIKET / TPAY / BTL) ----
-  db.insertDeposit = ({ idDeposit, agenId, nominal, kodeUnik, total, bank = '', status = 'pending' }) => {
+  db.insertDeposit = ({ idDeposit, agenId, nominal, kodeUnik, total, bank = '', method = 'bank', status = 'pending' }) => {
     const { lastInsertRowid } = raw
       .prepare(
-        `INSERT INTO deposit (id_deposit, agen_id, nominal, kode_unik, total, bank, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO deposit (id_deposit, agen_id, nominal, kode_unik, total, bank, method, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(idDeposit, agenId, nominal, kodeUnik, total, bank, status, new Date().toISOString())
+      .run(idDeposit, agenId, nominal, kodeUnik, total, bank, method, status, new Date().toISOString())
     return lastInsertRowid
   }
 

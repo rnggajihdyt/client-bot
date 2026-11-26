@@ -671,34 +671,81 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(await say('628111', 'HPAY.BCA'), /dihapus/)
   assert.equal(db.depositSettings().channels.length, 0)
 
-  // TIKET.ID — cek status tiket (pending maupun sukses)
-  assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: pending/)
+  // ---- QRIS: hanya satu metode deposit aktif ----
+  // Tanpa metode: tiket ditolak (batalkan dulu tiket pending dep3)
+  await say('628222', `BTL.${dep3.id_deposit}.1234`)
+  assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur metode deposit/)
+
+  // TQRIS tanpa gambar ditolak; mitra ditolak
+  assert.match(await say('628111', 'TQRIS'), /kirim gambar QRIS/)
+  assert.match(await say('628222', 'TQRIS'), /Khusus admin/)
+
+  // TQRIS + gambar -> tersimpan
+  sent.length = 0
+  await handlers.message({
+    key: { remoteJid: '628111@s.whatsapp.net', fromMe: false },
+    message: { imageMessage: { caption: 'TQRIS', mimetype: 'image/jpeg' } },
+    pushName: 'tester',
+  })
+  assert.match(sent.at(-1).text, /Gambar QRIS disimpan/)
+  assert.ok(db.getSetting('qris_image'))
+
+  // Metode aktif = QRIS: TIKET bank ditolak, QRIS jalan & gambar dikirim
+  assert.match(await say('628222', 'TIKET.50000.1234'), /Deposit hanya lewat QRIS/)
+  sent.length = 0
+  await say('628222', 'QRIS.50000.1234')
+  const qrisMsg = sent.find((s) => s.jid === '628222@s.whatsapp.net')
+  assert.equal(qrisMsg.text.type, 'image')
+  assert.match(qrisMsg.text.caption, /Silahkan Scan QRIS Rp\. 50\.\d{3}/)
+  const qrisDep = db.pendingDepositOf(db.findAgenByNohp('628222').id)
+  assert.equal(qrisDep.method, 'qris')
+  assert.match(await say('628222', 'TIKET'), new RegExp(`Masih ada tiket Rp50\\.\\d{3} dengan id ${qrisDep.id_deposit}`))
+
+  // TDEP tetap bisa menutup tiket QRIS
+  sent.length = 0
+  await say('628111', `TDEP.${qrisDep.id_deposit}.1234`)
+  assert.match(sent.find((s) => s.jid === '628111@s.whatsapp.net').text, /lunas/)
+  assert.equal(db.getDeposit(qrisDep.id_deposit).status, 'sukses')
+
+  // HQRIS: hapus metode QRIS, tiket bank kembali tersedia
+  assert.match(await say('628222', 'HQRIS'), /Khusus admin/)
+  assert.match(await say('628111', 'HQRIS'), /QRIS dihapus/)
+  assert.equal(db.getSetting('qris_image'), '')
+  assert.match(await say('628111', 'HQRIS'), /QRIS belum diatur/)
+  assert.match(await say('628111', 'TPAY.BCA.2390922089.Muhammad.Tasin'), /BCA 2390922089/)
+  assert.match(await say('628222', 'QRIS.50000.1234'), /Deposit hanya lewat transfer bank/)
+
+  // TIKET.ID — cek status tiket (batal maupun sukses)
+  assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: batal/)
   assert.match(await say('628222', `TIKET.${dep2.id_deposit}`), /Status: sukses/)
   assert.match(await say('628222', 'TIKET.D9999'), /PIN salah|Tiket tidak ditemukan/)
 
-  // TLIST — admin lihat tiket pending; mitra ditolak
+  // TLIST — tiket pending baru (QRIS sudah TDEP, dep3 batal); mitra ditolak
   assert.match(await say('628222', 'TLIST'), /Khusus admin/)
+  const pend = await say('628222', 'TIKET.50000.1234')
+  const pendId = pend.match(/Tiket dibuat/) ? db.pendingDepositOf(db.findAgenByNohp('628222').id).id_deposit : ''
   const tlist = await say('628111', 'TLIST')
-  assert.match(tlist, new RegExp(`${dep3.id_deposit} — RS0001`))
+  assert.match(tlist, new RegExp(`${pendId} — RS0001`))
   assert.match(tlist, /50\.000 \+ \d{3}/)
   assert.match(tlist, /sisa \d+ mnt/)
 
   // Tiket lewat 30 menit otomatis kedaluwarsa + mitra dinotifikasi
   db.raw
     .prepare(`UPDATE deposit SET created_at = ? WHERE id_deposit = ?`)
-    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), dep3.id_deposit)
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), pendId)
   sent.length = 0
   const expired = await expireTickets(db, {
     notify: (d) => sent.push({ jid: `${d.agen_nohp}@s.whatsapp.net`, text: `expired ${d.id_deposit}` }),
   })
   assert.equal(expired.length, 1)
-  assert.equal(db.getDeposit(dep3.id_deposit).status, 'expired')
+  assert.equal(db.getDeposit(pendId).status, 'expired')
   assert.equal(db.pendingDepositOf(db.findAgenByNohp('628222').id), undefined)
-  assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: expired/)
-  assert.match(await say('628222', `BTL.${dep3.id_deposit}.1234`), /kedaluwarsa/)
-  assert.match(await say('628111', `TDEP.${dep3.id_deposit}.1234`), /kedaluwarsa/)
-  // tiket baru tidak lagi diblokir tiket yang sudah kedaluwarsa (rekening kosong: ditolak di langkah rekening)
-  assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur rekening/)
+  assert.match(await say('628222', `TIKET.${pendId}`), /Status: expired/)
+  assert.match(await say('628222', `BTL.${pendId}.1234`), /kedaluwarsa/)
+  assert.match(await say('628111', `TDEP.${pendId}.1234`), /kedaluwarsa/)
+  // tiket baru tidak lagi diblokir tiket yang sudah kedaluwarsa (rekening bank sudah diatur lagi)
+  assert.match(await say('628222', 'TIKET.50000.1234'), /^Tiket dibuat pada Tanggal/)
+  await say('628222', `BTL.${db.pendingDepositOf(db.findAgenByNohp('628222').id).id_deposit}.1234`)
 
   // GPN — admin reset PIN downline
   assert.match(await say('628222', 'GPN.RS0001'), /GPN\.KODE/)

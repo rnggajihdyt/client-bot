@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { register } from './registry.js'
 import { verifyPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
@@ -40,9 +42,24 @@ function nextDepositId(db) {
   return `D${String(n).padStart(4, '0')}`
 }
 
+// Satu metode deposit aktif: QRIS (kalau admin sudah kirim gambar) atau transfer bank.
+function depositMethod(db) {
+  if (db.getSetting('qris_image')) return 'qris'
+  return db.depositSettings().channels.length ? 'bank' : ''
+}
+
 function ticketText(db, dep) {
   const { channels } = db.depositSettings()
   const { tanggal, jam } = wib(new Date(dep.created_at))
+  if (dep.method === 'qris') {
+    return (
+      `Tiket dibuat pada Tanggal ${tanggal} ${jam} WIB\n` +
+      `Silahkan Scan QRIS Rp. ${formatRupiah(dep.total)}\n` +
+      `\nJika 10 menit Saldo tidak bertambah silahkan lapor CS\n` +
+      `Ketik CS\n` +
+      `Tiket Open jam 08.00 - 23.00`
+    )
+  }
   if (!channels.length) {
     return `*Tiket ${dep.id_deposit}*\nNominal: ${formatRupiah(dep.nominal)}\n\nAdmin belum mengatur rekening tujuan transfer. Hubungi CS.`
   }
@@ -97,60 +114,92 @@ function depositStatusText(dep) {
   )
 }
 
-// ---- TIKET ----
-register({
-  name: 'tiket',
-  description: 'Buat tiket deposit: TIKET.NOMINAL.PIN',
-  async handler({ client, event, mitra, args, db }) {
-    const jid = event.key.remoteJid
-    // TIKET.D0001 — status satu tiket (semua status, bukan cuma pending).
-    if (/^d\d{4}$/i.test(args[0] ?? '')) {
-      const dep = db.getDeposit(args[0].toUpperCase())
-      if (!dep || dep.agen_id !== mitra.id) {
-        await client.message.send(jid, 'Tiket tidak ditemukan')
-        return
-      }
-      await client.message.send(jid, depositStatusText(dep))
+// Alur bersama TIKET (transfer bank) dan QRIS (scan QRIS). Satu tiket pending
+// per mitra, apa pun metodenya.
+async function createTicket({ client, event, mitra, args, db }, method) {
+  const jid = event.key.remoteJid
+  // TIKET.D0001 — status satu tiket (semua status, bukan cuma pending).
+  if (method === 'bank' && /^d\d{4}$/i.test(args[0] ?? '')) {
+    const dep = db.getDeposit(args[0].toUpperCase())
+    if (!dep || dep.agen_id !== mitra.id) {
+      await client.message.send(jid, 'Tiket tidak ditemukan')
       return
     }
-    const pending = db.pendingDepositOf(mitra.id)
-    if (!args.length) {
-      if (pending) {
-        await client.message.send(jid, pendingTicketText(db, pending))
-        return
-      }
-      await client.message.send(jid, 'Gunakan format: TIKET.NOMINAL.PIN')
-      return
-    }
-
-    const pin = args[args.length - 1]
-    if (!verifyPin(pin, mitra.pin_hash)) {
-      await client.message.send(jid, PIN_SALAH)
-      return
-    }
-    const nominal = parseNumber(args[0])
-    if (!Number.isInteger(nominal) || nominal < TICKET_MIN) {
-      await client.message.send(jid, `Nominal minimal ${formatRupiah(TICKET_MIN)}`)
-      return
-    }
+    await client.message.send(jid, depositStatusText(dep))
+    return
+  }
+  const pending = db.pendingDepositOf(mitra.id)
+  if (!args.length) {
     if (pending) {
       await client.message.send(jid, pendingTicketText(db, pending))
       return
     }
+    await client.message.send(jid, `Gunakan format: ${method === 'qris' ? 'QRIS' : 'TIKET'}.NOMINAL.PIN`)
+    return
+  }
 
-    const { channels } = db.depositSettings()
-    if (!channels.length) {
-      await client.message.send(jid, 'Admin belum mengatur rekening deposit. Hubungi CS.')
+  const pin = args[args.length - 1]
+  if (!verifyPin(pin, mitra.pin_hash)) {
+    await client.message.send(jid, PIN_SALAH)
+    return
+  }
+  const nominal = parseNumber(args[0])
+  if (!Number.isInteger(nominal) || nominal < TICKET_MIN) {
+    await client.message.send(jid, `Nominal minimal ${formatRupiah(TICKET_MIN)}`)
+    return
+  }
+  if (pending) {
+    await client.message.send(jid, pendingTicketText(db, pending))
+    return
+  }
+
+  const active = depositMethod(db)
+  if (!active) {
+    await client.message.send(jid, 'Admin belum mengatur metode deposit. Hubungi CS.')
+    return
+  }
+  if (active !== method) {
+    await client.message.send(
+      jid,
+      active === 'qris'
+        ? 'Deposit hanya lewat QRIS. Ketik QRIS.NOMINAL.PIN'
+        : 'Deposit hanya lewat transfer bank. Ketik TIKET.NOMINAL.PIN'
+    )
+    return
+  }
+
+  const kodeUnik = uniqueCode(db)
+  const total = nominal + kodeUnik
+  const idDeposit = nextDepositId(db)
+  const bank = method === 'qris' ? 'QRIS' : db.depositSettings().channels[0].bank
+  db.insertDeposit({ idDeposit, agenId: mitra.id, nominal, kodeUnik, total, bank, method })
+
+  const dep = db.getDeposit(idDeposit)
+  const text = ticketText(db, dep)
+  if (method === 'qris') {
+    // Gambar QRIS dikirim bersama teks tiket; gagal kirim gambar tetap beri teks.
+    try {
+      await client.message.send(jid, { type: 'image', media: readFileSync(db.getSetting('qris_image')), caption: text })
       return
+    } catch {
+      // fallback ke teks saja
     }
+  }
+  await client.message.send(jid, text)
+}
 
-    const kodeUnik = uniqueCode(db)
-    const total = nominal + kodeUnik
-    const idDeposit = nextDepositId(db)
-    db.insertDeposit({ idDeposit, agenId: mitra.id, nominal, kodeUnik, total, bank: channels[0].bank })
+// ---- TIKET: deposit transfer bank ----
+register({
+  name: 'tiket',
+  description: 'Buat tiket deposit transfer: TIKET.NOMINAL.PIN',
+  handler: (ctx) => createTicket(ctx, 'bank'),
+})
 
-    await client.message.send(jid, ticketText(db, db.getDeposit(idDeposit)))
-  },
+// ---- QRIS: deposit scan QRIS ----
+register({
+  name: 'qris',
+  description: 'Buat tiket deposit QRIS: QRIS.NOMINAL.PIN',
+  handler: (ctx) => createTicket(ctx, 'qris'),
 })
 
 // ---- BTL: batalkan tiket deposit sendiri ----
@@ -310,6 +359,61 @@ register({
     }
     db.setSetting('deposit_channels', next.map((c) => `${c.bank}|${c.no}|${c.an}`).join(','))
     await client.message.send(jid, `Rekening ${args[0]} dihapus`)
+  },
+})
+
+// ---- TQRIS: admin simpan gambar QRIS (caption atau reply gambar) ----
+// Disimpan sebagai file + setting `qris_image`; tiket QRIS akan mengirim gambar ini.
+register({
+  name: 'tqris',
+  description: 'Admin: TQRIS + kirim/reply gambar QRIS',
+  async handler({ client, event, isAdmin, db, log }) {
+    const jid = event.key.remoteJid
+    if (!isAdmin) {
+      await client.message.send(jid, ADMIN_ONLY)
+      return
+    }
+    const quoted = event.message?.extendedTextMessage?.contextInfo?.quotedMessage
+    const image = event.message?.imageMessage ?? quoted?.imageMessage
+    if (!image) {
+      await client.message.send(jid, 'Gunakan format: kirim gambar QRIS dengan caption TQRIS, atau reply gambar lalu ketik TQRIS')
+      return
+    }
+    try {
+      const bytes = await client.message.downloadBytes(event, quoted?.imageMessage ? 'quoted' : 'current')
+      const file = join(dirname(db.path), 'qris.jpg')
+      writeFileSync(file, bytes)
+      db.setSetting('qris_image', file)
+      await client.message.send(jid, 'Gambar QRIS disimpan. Tiket QRIS akan mengirim gambar ini.')
+    } catch (err) {
+      log?.error({ err: err?.message }, 'gagal simpan gambar QRIS')
+      await client.message.send(jid, 'Gagal menyimpan gambar QRIS, coba kirim ulang')
+    }
+  },
+})
+
+// ---- HQRIS: admin hapus metode QRIS ----
+register({
+  name: 'hqris',
+  description: 'Admin: HQRIS — hapus metode QRIS',
+  async handler({ client, event, isAdmin, db }) {
+    const jid = event.key.remoteJid
+    if (!isAdmin) {
+      await client.message.send(jid, ADMIN_ONLY)
+      return
+    }
+    const file = db.getSetting('qris_image')
+    if (!file) {
+      await client.message.send(jid, 'QRIS belum diatur')
+      return
+    }
+    try {
+      rmSync(file, { force: true })
+    } catch {
+      // file sudah hilang: setting tetap dihapus
+    }
+    db.setSetting('qris_image', '')
+    await client.message.send(jid, 'QRIS dihapus. Mitra tidak bisa deposit lewat QRIS lagi.')
   },
 })
 

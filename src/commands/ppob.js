@@ -21,6 +21,7 @@ const FORMATS = {
 *(Bisa tanpa PIN, spasi, bolak-balik & multi nomor)*`,
   format2: `*FORMAT 2 (DEPOSIT & TAMBAH AGEN)*
 • Tiket Deposit : TIKET.NOMINAL.PIN
+• Deposit QRIS : QRIS.NOMINAL.PIN
 • Cek Tiket : TIKET.IDDEPOSIT
 • Tambah Agen : DAFTAR.NAMA.KOTA.NOHP.MARKUP.PIN
 • Hubungi Admin : CS.PESAN`,
@@ -64,6 +65,8 @@ const ADMIN_EXTRA = `*KHUSUS ADMIN*
 • Markup per Produk : MKP.KODE.NOMINAL
 • Rekening Deposit : TPAY.BANK.NO.A/N
 • Hapus Rekening : HPAY.BANK
+• Simpan QRIS : TQRIS + gambar
+• Hapus QRIS : HQRIS
 • Daftar Tiket Pending : TLIST
 • Konfirmasi Deposit : TDEP.IDDEPOSIT.PIN`
 
