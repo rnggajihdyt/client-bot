@@ -49,7 +49,7 @@ try {
   webhookServer = startWebhookServer(logger)
   reportServer = startReportServer(logger)
   poller = startPoller(logger, () => [...runtime.clients.keys()])
-  catalogCron = startCatalogSyncCron(logger, () => [...runtime.clients.keys()])
+  catalogCron = startCatalogSyncCron(logger, () => sessions)
 } catch (err) {
   logger.error({ err: err?.message }, 'webhook server gagal start')
 }

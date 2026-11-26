@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { openDb } from './db.js'
+import { openDb, isCndCode } from './db.js'
 import { ics } from './ics.js'
 import { icsConfig } from './webhook.js'
 import { config, sessionPath } from './config.js'
@@ -45,13 +45,12 @@ export function resetCatalogCache(dbPath) {
 export function isCnd(p) {
   const cat = String(p?.category ?? '').toUpperCase()
   const type = String(p?.type ?? '').toUpperCase()
-  const code = String(p?.code ?? '').toUpperCase()
-  return cat.includes('CND') || type.includes('CND') || code.startsWith('CND')
+  return cat.includes('CND') || type.includes('CND') || isCndCode(p?.code)
 }
 
 // Single-flight catalog sync against ICS. Concurrent callers for the same DB
 // share one HTTP request instead of hammering the supplier API.
-export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Date.now() } = {}) {
+export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Date.now(), afterSync } = {}) {
   const key = db.path
   const existing = inflight.get(key)
   if (existing && !saveKey) return existing
@@ -67,6 +66,8 @@ export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Dat
     const rows = all.filter((p) => !isCnd(p))
 
     let removed = 0
+    let restored = 0
+    let purged = 0
     db.tx(() => {
       const activeCodes = new Set()
       for (const p of rows) {
@@ -86,13 +87,25 @@ export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Dat
         removed = db.markRemovedProduk(activeCodes)
       }
       if (saveKey) db.setSetting('ics_apikey', token)
+      // afterSync dijalankan di transaksi yang sama: upsert mengosongkan markup
+      // dan baris CND lama ikut dibuang.
+      restored = afterSync?.() ?? 0
+      purged = db.pruneCndProduk()
     })
 
-    lastSynced.set(key, now())
+    const at = now()
+    lastSynced.set(key, at)
+    try {
+      db.setSetting('catalog_synced_at', String(at))
+    } catch {
+      // setting best-effort: sync tetap sukses walau DB read-only
+    }
     return {
       total: rows.length,
       available: rows.filter((p) => p.status === 'available').length,
       removed,
+      restored,
+      purged,
     }
   })()
 
@@ -108,24 +121,41 @@ export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Dat
 // if stale, await a single-flight sync from ICS. Transient ICS errors are
 // logged and fall back to cached DB rows so CH/BELI stay resilient.
 export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = () => Date.now() } = {}) {
-  const effectiveTtl = resolveCatalogTtlMs(ttlMs)
-  if (effectiveTtl <= 0) return { synced: false, fresh: true }
-
+  // `ttlMs` eksplisit berlaku apa adanya; 0 = selalu tarik dari ICS (dipakai
+  // sebelum order supaya stok tidak basi). Default ikut config/env.
+  const effectiveTtl = ttlMs !== undefined ? Math.max(0, Number(ttlMs) || 0) : resolveCatalogTtlMs()
   const cfg = icsConfig(db)
   if (!cfg.apiKey) return { synced: false, fresh: false }
 
-  const last = lastSynced.get(db.path) ?? 0
+  // Waktu sync terakhir ikut disimpan di DB: proses restart tidak boleh
+  // menganggap cache masih segar (atau sebaliknya) dari memori kosong.
+  const stored = Number(db.getSetting('catalog_synced_at') || 0)
+  const last = Math.max(stored, lastSynced.get(db.path) ?? 0)
   if (last > 0 && now() - last < effectiveTtl) {
     return { synced: false, fresh: true }
   }
 
   try {
     const t0 = Date.now()
-    const stats = await syncCatalog(db, { apiKey: cfg.apiKey, now })
+    // Upsert mengosongkan `markup` (kolom tidak ada di daftar UPDATE), jadi
+    // markup per produk diambil dulu lalu dipulihkan dalam transaksi yang sama.
+    const markups = db
+      .listProduk()
+      .filter((p) => p.markup != null)
+      .map((p) => [p.kode, p.markup])
+    const stats = await syncCatalog(db, {
+      apiKey: cfg.apiKey,
+      now,
+      afterSync: () => {
+        let n = 0
+        for (const [kode, markup] of markups) n += db.setProdukMarkup(kode, markup)
+        return n
+      },
+    })
     const durationMs = Date.now() - t0
     logger?.info?.(
       `[cache-sync] ${sessionId ?? db.path}: ${stats.total} produk (${stats.available} online, ${stats.removed} removed) dalam ${durationMs}ms`,
-      { sessionId, total: stats.total, available: stats.available, removed: stats.removed, durationMs }
+      { sessionId, total: stats.total, available: stats.available, removed: stats.removed, purged: stats.purged, durationMs }
     )
     return { synced: true, fresh: true, ...stats }
   } catch (err) {
@@ -168,6 +198,21 @@ export async function syncAllSessions(logger, sessionIds, { staggerMs = 1_500, s
   return results
 }
 
+// Cron menyentuh semua sesi yang punya API key, termasuk yang socket WA-nya
+// sedang down: stok di DB tidak boleh ikut beku saat sesi reconnect.
+export function syncableSessions(sessionIds) {
+  return sessionIds.filter((id) => {
+    const path = sessionPath(id)
+    if (!existsSync(path)) return false
+    const db = openDb(path)
+    try {
+      return Boolean(db.getSetting('ics_apikey'))
+    } finally {
+      db.close()
+    }
+  })
+}
+
 export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, staggerMs = 1_500 } = {}) {
   const everyMs = resolveSyncIntervalMs(intervalMs)
   if (everyMs <= 0) return { stop: () => {} }
@@ -179,7 +224,7 @@ export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, stagge
     if (running) return
     running = true
     try {
-      const ids = getSessionIds()
+      const ids = syncableSessions(getSessionIds())
       logger?.info?.(`[cron-sync] mulai cek ${ids.length} sesi`, { sessions: ids.length })
       await syncAllSessions(logger, ids, { staggerMs })
     } finally {

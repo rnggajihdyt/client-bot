@@ -296,6 +296,8 @@ export async function tryDirectOrder(ctx) {
   if (!batch) return false
 
   // Refresh catalog once when cache is stale, then re-check product codes.
+  // Saat cache sudah segar (BELI lewat command `beli` barusan sync paksa),
+  // panggilan ini tidak menambah request: single-flight + TTL tetap berlaku.
   await ensureFreshCatalog(db, { logger: log, sessionId })
   batch = parseOrderBatch(rawText, lookup)
   if (!batch || (!batch.anyExplicit && !batch.anyMatchedDb)) return false
@@ -323,7 +325,8 @@ register({
       )
       return
     }
-    await ensureFreshCatalog(db, { logger: log, sessionId })
+    // Order wajib memakai stok terbaru: abaikan TTL cache (CH tetap hemat kuota).
+    await ensureFreshCatalog(db, { ttlMs: 0, logger: log, sessionId })
     const lookup = (code) => db.effectivePrice(mitra.id, code)
     const textToParse = rawText || ['BELI', ...args].join('.')
     const batch = parseOrderBatch(textToParse, lookup)

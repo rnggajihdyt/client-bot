@@ -153,6 +153,42 @@ test('syncAllSessions (cron) melewati sesi tanpa apikey dan sync sesi ber-apikey
   assert.equal(logs[0].meta.sessionId, 'toko_cron')
 })
 
+test('ttlMs 0 memaksa sync (dipakai sebelum order), stok/markup/removed konsisten', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop5.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  db.createAgen({ nama: 'Admin', kota: '', nohp: '628111', seniorId: null, markup: 0, pin: '1234' })
+  db.upsertProdukIcs({ code: 'P1', name: 'P1', price: 1000, type: 'xda', status: 'available', stock: 5 })
+  db.upsertProdukIcs({ code: 'P2', name: 'P2', price: 2000, type: 'xda', status: 'available', stock: 5 })
+  db.setProdukMarkup('P1', 250)
+  resetCatalogCache(db.path)
+  failNext = false
+  mockProducts = [
+    { code: 'P1', name: 'P1', price: 1000, type: 'xda', status: 'empty', stock: 0 },
+    { code: 'P2', name: 'P2', price: 2000, type: 'xda', status: 'available', stock: 7 },
+    { code: 'CNDNEW', name: 'Token', price: 500, type: 'cnd', status: 'available', stock: 9 },
+  ]
+
+  const r = await ensureFreshCatalog(db, { ttlMs: 0 })
+  assert.equal(r.synced, true)
+  assert.equal(r.total, 2, 'CND tidak disimpan')
+  assert.equal(r.restored, 1, 'markup per produk dipulihkan setelah upsert')
+  const p1 = db.effectivePrice(1, 'P1')
+  assert.equal(p1.status_supplier, 'empty', 'status kosong langsung terlihat')
+  assert.equal(p1.markup, 250)
+  assert.equal(p1.hargaEfektif, 1250)
+  assert.equal(db.effectivePrice(1, 'P2').stok, 7)
+  assert.equal(db.listProduk().some((p) => p.kode === 'CNDNEW'), false)
+
+  // waktu sync disimpan di DB: proses restart tidak menganggap cache basi
+  assert.ok(Number(db.getSetting('catalog_synced_at')) > 0)
+  resetCatalogCache(db.path)
+  fetchCalls = 0
+  const r2 = await ensureFreshCatalog(db, { ttlMs: 60_000 })
+  assert.equal(r2.synced, false, 'masih dalam TTL menurut DB')
+  assert.equal(fetchCalls, 0)
+  db.close()
+})
+
 after(() => {
   globalThis.fetch = origFetch
   try {

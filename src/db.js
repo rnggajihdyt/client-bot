@@ -3,6 +3,14 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { hashPin } from './auth.js'
 
+// Produk CND (paket ribuan/token) tidak masuk database: bot fokus akrab dulu.
+// Satu definisi, dipakai saat sync dan saat membersihkan baris lama.
+export function isCndCode(code) {
+  return String(code ?? '')
+    .toUpperCase()
+    .startsWith('CND')
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS agen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,6 +302,22 @@ export function openDb(path) {
       .map((r) => r.kategori)
 
   // ---- produk ----
+  // Semua baris (termasuk `removed`) ikut: kalau baris hilang dari tabel, produk
+  // yang sudah dihapus ICS akan muncul lagi sebagai produk "baru" pada sync
+  // berikutnya. Baris CND (bukan produk jualan) tidak ikut disimpan.
+  db.pruneCndProduk = () => {
+    const rows = raw.prepare(`SELECT kode FROM produk`).all()
+    const del = raw.prepare(`DELETE FROM produk WHERE kode = ?`)
+    let n = 0
+    for (const r of rows) {
+      if (isCndCode(r.kode)) {
+        del.run(r.kode)
+        n += 1
+      }
+    }
+    return n
+  }
+
   db.upsertProduk = ({ kode, nama, hargaModal, kategori = '' }) => {
     raw
       .prepare(

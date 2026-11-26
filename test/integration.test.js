@@ -10,6 +10,9 @@ process.env.OWNERS = '628111'
 process.env.COMMAND_PREFIX = ''
 process.env.SESSION_DIR = join(dir, 'sessions')
 process.env.STORE_PATH = join(dir, 'state.sqlite')
+// Order memakai sync paksa (ttl 0), jadi fake ICS di bawah harus jadi satu-satunya
+// sumber produk selama test berjalan.
+process.env.PRODUCT_CACHE_TTL_SEC = '3600'
 
 const { openDb } = await import('../src/db.js')
 const { openRegistry } = await import('../src/registry.js')
@@ -31,6 +34,9 @@ db.setSetting('ics_apikey', 'ICS_sk_testok')
 
 // Fake ICS: order always accepted, status stays pending until a test resolves it.
 let icsOrders = []
+// Katalog versi fake ICS. Test yang menambah produk ke DB juga harus menambah ke
+// sini: order sekarang selalu sync ulang (ttl 0) sebelum mengecek produk.
+const icsCatalog = [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, category: 'Pulsa', status: 'available', stock: 10 }]
 globalThis.fetch = async (url, opts = {}) => {
   const body = opts.body ? JSON.parse(opts.body) : {}
   const u = String(url)
@@ -42,11 +48,7 @@ globalThis.fetch = async (url, opts = {}) => {
     return {
       ok: true,
       status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          data: [{ code: 'PULSA10', name: 'Pulsa 10', price: 9500, category: 'Pulsa', status: 'available', stock: 10 }],
-        }),
+      text: async () => JSON.stringify({ success: true, data: icsCatalog }),
     }
   }
   icsOrders.push({ url: u, body })
@@ -204,14 +206,17 @@ test('CH untuk downline: modal + markup', async () => {
 
   // produk kosong/empty tetap tampil di CH dengan penanda [K], dan ditolak di BELI sebagai tidak tersedia
   db.upsertProdukIcs({ code: 'XDA40', name: 'XL AXIS Data 40Gb', price: 76000, type: 'xda', category: 'BEST', status: 'empty', stock: 0 })
+  icsCatalog.push({ code: 'XDA40', name: 'XL AXIS Data 40Gb', price: 76000, type: 'xda', category: 'BEST', status: 'empty', stock: 0 })
   const chEmpty = await say('628222', 'CH.XDA40')
   assert.match(chEmpty, /^XDA40 = 76\.500 XL AXIS Data 40Gb  \[K\]$/)
   const beliEmpty = await say('628222', 'BELI.XDA40.08123456')
   assert.match(beliEmpty, /gangguan\/tidak tersedia/)
 
-  // daftar kategori: satu baris per produk, penanda hanya untuk kosong/gangguan
+  // daftar kategori: satu baris per produk, penanda hanya untuk kosong/gangguan.
+  // Produk baru juga masuk katalog fake ICS: CH menyegarkan cache kalau TTL basi.
+  const newProducts = []
   for (let i = 1; i <= 17; i++) {
-    db.upsertProdukIcs({
+    newProducts.push({
       code: `XDA${String(i).padStart(2, '0')}`,
       name: `XL Data ${i}GB`,
       price: 10000 + i * 1000,
@@ -221,9 +226,13 @@ test('CH untuk downline: modal + markup', async () => {
       stock: 10,
     })
   }
-  db.upsertProdukIcs({ code: 'AXLK9', name: 'Axis Lite 9', price: 9000, type: 'ax', category: 'General', status: 'available', stock: 5 })
-  db.upsertProdukIcs({ code: 'AXP14', name: 'Axis Pro 14', price: 14000, type: 'axp', category: 'General', status: 'available', stock: 5 })
-  db.upsertProdukIcs({ code: 'M19', name: 'Smartfren 19', price: 19000, type: 'sm', category: 'General', status: 'available', stock: 5 })
+  newProducts.push(
+    { code: 'AXLK9', name: 'Axis Lite 9', price: 9000, type: 'ax', category: 'General', status: 'available', stock: 5 },
+    { code: 'AXP14', name: 'Axis Pro 14', price: 14000, type: 'axp', category: 'General', status: 'available', stock: 5 },
+    { code: 'M19', name: 'Smartfren 19', price: 19000, type: 'sm', category: 'General', status: 'available', stock: 5 }
+  )
+  for (const p of newProducts) db.upsertProdukIcs(p)
+  icsCatalog.push(...newProducts)
 
   const list = await say('628222', 'CH.XDA')
   assert.match(list, /^Harga:\n/)
@@ -1117,14 +1126,17 @@ test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar
 
   // key benar (paste langsung hex 64-karakter, mock menerima yang berakhiran "ok") -> tersimpan + sinkron produk + pesan siap sekali
   const goodHex1 = '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok'
+  // Katalog fake ICS dipakai apa adanya saat APIKEY: jumlahnya ikut isi icsCatalog.
+  const nCatalog = icsCatalog.length
+  const nOnline = icsCatalog.filter((p) => p.status === 'available').length
   const readyMsg = await sayShop(goodHex1)
   assert.match(readyMsg, /\*Sesi toko3 siap\.\*/)
-  assert.match(readyMsg, /Produk: 1 tersimpan \(1 online\)/)
+  assert.match(readyMsg, new RegExp(`Produk: ${nCatalog} tersimpan \\(${nOnline} online\\)`))
   assert.match(readyMsg, /Status transaksi dicek otomatis; cek manual dengan CEK\./)
   assert.doesNotMatch(readyMsg, /Webhook/)
   assert.equal(sdb.getSetting('ics_apikey'), goodHex1)
   assert.equal(sdb.getSetting('ready_notified'), '1')
-  assert.equal(sdb.listProduk().length, 1)
+  assert.equal(sdb.listProduk().length, nCatalog)
 
   // reconnect / restart setelah siap -> runOnboarding TIDAK mengirim ulang pesan siap
   const { runOnboarding } = await import('../src/apikey.js')
@@ -1134,7 +1146,7 @@ test('gate apikey: admin tanpa key di-prompt terus, key salah ditolak, key benar
 
   // update key lewat command APIKEY.<hex>
   const goodHex2 = '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0bok'
-  assert.match(await sayShop(`APIKEY.${goodHex2}`), /API key tersimpan\. Produk: 1 tersimpan \(1 online\)/)
+  assert.match(await sayShop(`APIKEY.${goodHex2}`), new RegExp(`API key tersimpan\\. Produk: ${nCatalog} tersimpan \\(${nOnline} online\\)`))
   assert.equal(sdb.getSetting('ics_apikey'), goodHex2)
 
   // setelah ada key, SAL & LPRDK tidak lagi di-prompt
