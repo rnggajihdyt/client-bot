@@ -20,7 +20,7 @@ await import('../src/commands/ppob-core.js')
 await import('../src/commands/supplier.js')
 const { expireTickets } = await import('../src/commands/deposit.js')
 await import('../src/commands/owner.js')
-const { finalize } = await import('../src/orders.js')
+const { finalize, settledText } = await import('../src/orders.js')
 openRegistry(join(dir, 'registry.sqlite'))
 
 const dbPath = join(dir, 'sessions', 'default.sqlite')
@@ -852,7 +852,7 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
     const adminReply = await say('628111', 'xda13.08777777')
     assert.match(adminReply, /Saldo operasional tidak cukup/)
 
-    // 2) Format persis seperti contoh user: "<Nama> XDA38.085731409131 GAGAL. Nomor tujuan salah. Sal 1.911.411 @HH:MM"
+    // 2) Format persis seperti contoh user: "XDA38.085731409131 GAGAL. Nomor tujuan salah. Sal 1.911.411 @HH:MM"
     globalThis.fetch = async () => ({
       ok: false,
       status: 400,
@@ -877,6 +877,17 @@ test('sensor error supplier ICS & saldo operasional habis untuk downline/uplink 
   } finally {
     globalThis.fetch = origFetch
   }
+
+  // 4) Gagal dari poll (bukan POST): pesan supplier panjang diringkas jadi satu baris
+  const beli = await say('628222', 'XDA38.085731409131')
+  const idTrx = beli.match(/^#(T\d+) /)[1]
+  const done = finalize(db, idTrx, {
+    status: 'gagal',
+    reason: `Transaksi XDA38 ke 085731409131 (RefID:${idTrx}) GAGAL. Nomor tujuan salah.`,
+  })
+  const text = settledText({ ...done, at: new Date() })
+  assert.match(text, /^XDA38\.085731409131 GAGAL\. Nomor tujuan salah\. Sal [\d.]+ @\d\d:\d\d$/)
+  assert.doesNotMatch(text, /RefID|Transaksi XDA38 ke/)
 })
 
 test('super admin: SESIBUAT + SESI + LAPTRX lintas session', async () => {

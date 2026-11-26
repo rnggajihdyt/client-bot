@@ -150,14 +150,20 @@ export function finalize(db, idTrx, { status, sn = '', supplierTrxId = '', reaso
 // Message the buyer receives once the supplier settles the order.
 export function settledText({ trx, status, sn = '', reason = '', saldoAkhir = 0, at } = {}) {
   const isAdmin = trx.agen_senior_id == null
-  const detail =
-    status === 'gagal'
-      ? reason
-        ? isAdmin
-          ? reason
-          : sanitizeOrderErrorForMitra(reason)
-        : 'Saldo dikembalikan'
-      : ''
+  let detail = ''
+  if (status === 'gagal') {
+    const raw = isAdmin ? reason : sanitizeOrderErrorForMitra(reason)
+    // Pesan supplier sudah memuat kode.tujuan + RefID: sisakan alasannya saja.
+    // Contoh: "Transaksi XDA25 ke 0857… (RefID:T1795…) GAGAL. Nomor tujuan salah."
+    detail = String(raw ?? '')
+      .replace(/Transaksi\s+\S+\s+ke\s+\S+/gi, '')
+      .replace(/\(RefID:[^)]*\)/gi, '')
+      .replace(/\bGAGAL\b\.?/gi, '')
+      .replace(/^\s*[.:,\-–—]\s*/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    if (!detail) detail = 'Saldo dikembalikan'
+  }
   return formatOrderStatus({
     nama: trx.produk_nama,
     kode: trx.produk_kode,
