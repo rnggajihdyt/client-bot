@@ -671,10 +671,11 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(await say('628111', 'HPAY.BCA'), /dihapus/)
   assert.equal(db.depositSettings().channels.length, 0)
 
-  // ---- QRIS: hanya satu metode deposit aktif ----
-  // Tanpa metode: tiket ditolak (batalkan dulu tiket pending dep3)
+  // ---- QRIS: metode kedua di samping transfer bank, gambar maksimal 1 ----
+  // Tanpa metode sama sekali: tiket ditolak (batalkan dulu tiket pending dep3)
   await say('628222', `BTL.${dep3.id_deposit}.1234`)
-  assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur metode deposit/)
+  assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur rekening deposit/)
+  assert.match(await say('628222', 'QRIS.50000.1234'), /Admin belum mengatur QRIS/)
 
   // TQRIS tanpa gambar ditolak; mitra ditolak
   assert.match(await say('628111', 'TQRIS'), /kirim gambar QRIS/)
@@ -690,8 +691,16 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(sent.at(-1).text, /Gambar QRIS disimpan/)
   assert.ok(db.getSetting('qris_image'))
 
-  // Metode aktif = QRIS: TIKET bank ditolak, QRIS jalan & gambar dikirim
-  assert.match(await say('628222', 'TIKET.50000.1234'), /Deposit hanya lewat QRIS/)
+  // Gambar QRIS maksimal 1: kirim lagi ditolak sampai HQRIS
+  sent.length = 0
+  await handlers.message({
+    key: { remoteJid: '628111@s.whatsapp.net', fromMe: false },
+    message: { imageMessage: { caption: 'TQRIS', mimetype: 'image/jpeg' } },
+    pushName: 'tester',
+  })
+  assert.match(sent.at(-1).text, /QRIS sudah ada \(maksimal 1\)/)
+
+  // Kedua metode aktif bersamaan: QRIS jalan & gambar dikirim
   sent.length = 0
   await say('628222', 'QRIS.50000.1234')
   const qrisMsg = sent.find((s) => s.jid === '628222@s.whatsapp.net')
@@ -707,13 +716,15 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(sent.find((s) => s.jid === '628111@s.whatsapp.net').text, /lunas/)
   assert.equal(db.getDeposit(qrisDep.id_deposit).status, 'sukses')
 
-  // HQRIS: hapus metode QRIS, tiket bank kembali tersedia
+  // HQRIS: hapus gambar QRIS, tiket bank tetap jalan
   assert.match(await say('628222', 'HQRIS'), /Khusus admin/)
   assert.match(await say('628111', 'HQRIS'), /QRIS dihapus/)
   assert.equal(db.getSetting('qris_image'), '')
   assert.match(await say('628111', 'HQRIS'), /QRIS belum diatur/)
+  assert.match(await say('628222', 'QRIS.50000.1234'), /Admin belum mengatur QRIS/)
   assert.match(await say('628111', 'TPAY.BCA.2390922089.Muhammad.Tasin'), /BCA 2390922089/)
-  assert.match(await say('628222', 'QRIS.50000.1234'), /Deposit hanya lewat transfer bank/)
+  assert.match(await say('628222', 'TIKET.50000.1234'), /^Tiket dibuat pada Tanggal/)
+  await say('628222', `BTL.${db.pendingDepositOf(db.findAgenByNohp('628222').id).id_deposit}.1234`)
 
   // TIKET.ID — cek status tiket (batal maupun sukses)
   assert.match(await say('628222', `TIKET.${dep3.id_deposit}`), /Status: batal/)

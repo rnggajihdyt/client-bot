@@ -42,12 +42,6 @@ function nextDepositId(db) {
   return `D${String(n).padStart(4, '0')}`
 }
 
-// Satu metode deposit aktif: QRIS (kalau admin sudah kirim gambar) atau transfer bank.
-function depositMethod(db) {
-  if (db.getSetting('qris_image')) return 'qris'
-  return db.depositSettings().channels.length ? 'bank' : ''
-}
-
 function ticketText(db, dep) {
   const { channels } = db.depositSettings()
   const { tanggal, jam } = wib(new Date(dep.created_at))
@@ -153,17 +147,15 @@ async function createTicket({ client, event, mitra, args, db }, method) {
     return
   }
 
-  const active = depositMethod(db)
-  if (!active) {
-    await client.message.send(jid, 'Admin belum mengatur metode deposit. Hubungi CS.')
-    return
-  }
-  if (active !== method) {
+  // QRIS dan transfer bank bisa aktif bersamaan; masing-masing dicek sendiri.
+  const hasQris = Boolean(db.getSetting('qris_image'))
+  const hasBank = db.depositSettings().channels.length > 0
+  if (method === 'qris' ? !hasQris : !hasBank) {
     await client.message.send(
       jid,
-      active === 'qris'
-        ? 'Deposit hanya lewat QRIS. Ketik QRIS.NOMINAL.PIN'
-        : 'Deposit hanya lewat transfer bank. Ketik TIKET.NOMINAL.PIN'
+      method === 'qris'
+        ? 'Admin belum mengatur QRIS. Hubungi CS.'
+        : 'Admin belum mengatur rekening deposit. Hubungi CS.'
     )
     return
   }
@@ -371,6 +363,11 @@ register({
     const jid = event.key.remoteJid
     if (!isAdmin) {
       await client.message.send(jid, ADMIN_ONLY)
+      return
+    }
+    // QRIS maksimal 1: kalau sudah ada gambar, admin harus HQRIS dulu.
+    if (db.getSetting('qris_image')) {
+      await client.message.send(jid, 'QRIS sudah ada (maksimal 1). Hapus dulu dengan HQRIS bila ingin mengganti.')
       return
     }
     const quoted = event.message?.extendedTextMessage?.contextInfo?.quotedMessage
