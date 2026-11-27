@@ -80,7 +80,8 @@ function pendingTicketText(db, dep) {
 
 // Tiket pending otomatis kedaluwarsa setelah TICKET_TTL_MS (dipanggil dari poller
 // tiap POLL_INTERVAL_MS). Mitra diberi tahu sekali saat tiket ditutup.
-export const TICKET_TTL_MS = 30 * 60 * 1000
+export const TICKET_TTL_MS = 12 * 60 * 60 * 1000
+const TTL_JAM = TICKET_TTL_MS / 3_600_000
 
 export async function expireTickets(db, { notify } = {}) {
   const expired = db.expireDeposits(TICKET_TTL_MS)
@@ -215,7 +216,7 @@ register({
       return
     }
     if (dep.status === 'expired') {
-      await client.message.send(jid, `Tiket ${id} sudah kedaluwarsa (lewat 30 menit). Silahkan buat tiket baru.`)
+      await client.message.send(jid, `Tiket ${id} sudah kedaluwarsa (lewat ${TTL_JAM} jam). Silahkan buat tiket baru.`)
       return
     }
     if (dep.status !== 'pending') {
@@ -256,7 +257,7 @@ register({
     if (dep.status === 'expired') {
       await client.message.send(
         jid,
-        `Tiket ${id} sudah kedaluwarsa (lewat 30 menit). Minta mitra ${dep.agen_kode} membuat tiket baru.`
+        `Tiket ${id} sudah kedaluwarsa (lewat ${TTL_JAM} jam). Minta mitra ${dep.agen_kode} membuat tiket baru.`
       )
       return
     }
@@ -431,8 +432,9 @@ register({
     const lines = rows.map((d) => {
       const { tanggal, jam } = wib(new Date(d.created_at))
       const sisa = Math.max(0, TICKET_TTL_MS - (Date.now() - new Date(d.created_at).getTime()))
-      const menit = Math.ceil(sisa / 60000)
-      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} ${displayNohp(d.agen_nohp)}\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam} | sisa ${menit} mnt`
+      const sisaMenit = Math.ceil(sisa / 60000)
+      const sisaText = sisaMenit >= 60 ? `${Math.floor(sisaMenit / 60)}j ${sisaMenit % 60}m` : `${sisaMenit} mnt`
+      return `• ${d.id_deposit} — ${d.agen_kode} ${d.agen_nama} ${displayNohp(d.agen_nohp)}\n  ${formatRupiah(d.total)} = ${formatRupiah(d.nominal)} + ${d.kode_unik} | ${d.bank || 'BANK'} | ${tanggal} ${jam} | sisa ${sisaText}`
     })
     await client.message.send(jid, `*Tiket Pending (${rows.length}):*\n${lines.join('\n')}`)
   },

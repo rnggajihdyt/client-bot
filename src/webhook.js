@@ -147,7 +147,7 @@ export async function pollPending(logger, sessionId, minAgeMs = 10_000) {
   }
 }
 
-// Tiket deposit yang lewat 30 menit ditutup di sini juga (satu timer untuk semua).
+// Tiket deposit yang lewat 12 jam ditutup di sini juga (satu timer untuk semua).
 async function expireTicketsIn(logger, sessionId) {
   const db = openDb(sessionPath(sessionId))
   let expired = []

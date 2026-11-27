@@ -750,12 +750,12 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   const tlist = await say('628111', 'TLIST')
   assert.match(tlist, new RegExp(`${pendId} — RS0001`))
   assert.match(tlist, /50\.000 \+ \d{3}/)
-  assert.match(tlist, /sisa \d+ mnt/)
+  assert.match(tlist, /sisa \d+j \d+m/)
 
-  // Tiket lewat 30 menit otomatis kedaluwarsa + mitra dinotifikasi
+  // Tiket lewat 12 jam otomatis kedaluwarsa + mitra dinotifikasi
   db.raw
     .prepare(`UPDATE deposit SET created_at = ? WHERE id_deposit = ?`)
-    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), pendId)
+    .run(new Date(Date.now() - 12 * 60 * 60 * 1000 - 60 * 1000).toISOString(), pendId)
   sent.length = 0
   const expired = await expireTickets(db, {
     notify: (d) => sent.push({ jid: `${d.agen_nohp}@s.whatsapp.net`, text: `expired ${d.id_deposit}` }),
