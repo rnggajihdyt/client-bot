@@ -684,7 +684,10 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   // Tanpa metode sama sekali: tiket ditolak (batalkan dulu tiket pending dep3)
   await say('628222', `BTL.${dep3.id_deposit}.1234`)
   assert.match(await say('628222', 'TIKET.50000.1234'), /Admin belum mengatur rekening deposit/)
-  assert.match(await say('628222', 'QRIS.50000.1234'), /Admin belum mengatur QRIS/)
+  assert.match(await say('628222', 'QRIS.50000.1234'), /Method QRIS belum di atur oleh admin/)
+  // Semua bentuk QRIS kena pesan sama: tanpa parameter & PIN salah
+  assert.match(await say('628222', 'QRIS'), /Method QRIS belum di atur oleh admin/)
+  assert.match(await say('628222', 'QRIS.50000.9999'), /Method QRIS belum di atur oleh admin/)
 
   // TQRIS tanpa gambar ditolak; mitra ditolak
   assert.match(await say('628111', 'TQRIS'), /kirim gambar QRIS/)
@@ -730,7 +733,7 @@ test('TIKET deposit: tiket dengan kode unik, BTL batalkan, TDEP konfirmasi saldo
   assert.match(await say('628111', 'HQRIS'), /QRIS dihapus/)
   assert.equal(db.getSetting('qris_image'), '')
   assert.match(await say('628111', 'HQRIS'), /QRIS belum diatur/)
-  assert.match(await say('628222', 'QRIS.50000.1234'), /Admin belum mengatur QRIS/)
+  assert.match(await say('628222', 'QRIS.50000.1234'), /Method QRIS belum di atur oleh admin/)
   assert.match(await say('628111', 'TPAY.BCA.2390922089.Muhammad.Tasin'), /BCA 2390922089/)
   assert.match(await say('628222', 'TIKET.50000.1234'), /^Tiket dibuat pada Tanggal/)
   await say('628222', `BTL.${db.pendingDepositOf(db.findAgenByNohp('628222').id).id_deposit}.1234`)

@@ -112,6 +112,12 @@ function depositStatusText(dep) {
 // per mitra, apa pun metodenya.
 async function createTicket({ client, event, mitra, args, db }, method) {
   const jid = event.key.remoteJid
+  // QRIS belum diatur admin: tolak semua bentuk QRIS (tanpa parameter, PIN salah,
+  // nominal apa pun) dengan satu pesan yang sama.
+  if (method === 'qris' && !db.getSetting('qris_image')) {
+    await client.message.send(jid, 'Method QRIS belum di atur oleh admin')
+    return
+  }
   // TIKET.D0001 — status satu tiket (semua status, bukan cuma pending).
   if (method === 'bank' && /^d\d{4}$/i.test(args[0] ?? '')) {
     const dep = db.getDeposit(args[0].toUpperCase())
@@ -147,16 +153,9 @@ async function createTicket({ client, event, mitra, args, db }, method) {
     return
   }
 
-  // QRIS dan transfer bank bisa aktif bersamaan; masing-masing dicek sendiri.
-  const hasQris = Boolean(db.getSetting('qris_image'))
-  const hasBank = db.depositSettings().channels.length > 0
-  if (method === 'qris' ? !hasQris : !hasBank) {
-    await client.message.send(
-      jid,
-      method === 'qris'
-        ? 'Admin belum mengatur QRIS. Hubungi CS.'
-        : 'Admin belum mengatur rekening deposit. Hubungi CS.'
-    )
+  // Transfer bank dicek di sini; QRIS sudah dipastikan ada di awal.
+  if (method === 'bank' && db.depositSettings().channels.length === 0) {
+    await client.message.send(jid, 'Admin belum mengatur rekening deposit. Hubungi CS.')
     return
   }
 
