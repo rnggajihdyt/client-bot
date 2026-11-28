@@ -256,7 +256,7 @@ export function createRuntime(logger) {
     let codes = 0
     let retryTimer = null
     const MAX_CODE_ATTEMPTS = 6
-    const MAX_CODES = 3
+    const MAX_CODES = 1
     const clearRetry = () => {
       if (retryTimer) clearTimeout(retryTimer)
       retryTimer = null

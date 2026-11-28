@@ -173,7 +173,7 @@ SESIBUAT.tokoku.628895560325.62856429274736[Toko Rangga]
 - Minta kode diulang dengan jeda menaik (15 dtk → 2 mnt, maks 6 percobaan) supaya tidak kena `429 rate-overlimit` dari WhatsApp saat permintaan beruntun.
 - Sesi hanya boleh minta kode satu per satu (antrean global), dan kalau 429: jeda 5 → 15 → 30 menit, lalu putaran ditutup sampai ada `SESION` manual.
 - Sesi yang perangkatnya dicabut ditandai status `pairing` di `SESI`: watchdog hanya membangunnya ulang tiap 15 menit (bukan 3 menit), dan admin dapat satu pesan peringatan (maks sekali per 30 menit). Taut ulang dengan `SESION.ID`, lalu masukkan kode yang dikirim.
-- Kalau kode sudah kedaluwarsa **3x** tanpa tertaut, sesi berhenti minta kode dan masuk status `pairing_hold` (watchdog tidak menyentuhnya). Bot mengirim pesan "kirim `SESION.ID` saat siap"; admin minta kode lagi saat benar-benar siap, tidak dibanjiri kode.
+- Kalau kode sudah kedaluwarsa **sekali** tanpa tertaut, sesi berhenti minta kode dan masuk status `pairing_hold` (watchdog tidak menyentuhnya). Bot mengirim pesan "kirim `SESION.ID` saat siap"; admin minta kode lagi saat benar-benar siap, tidak dibanjiri kode.
 - Sesi pusat (`owner`) dinyalakan paling dulu: ia yang mengantar kode sesi lain. Kalau pesan belum bisa terkirim (pusat belum terbuka), pesan ditunda dan dikirim begitu ada sesi yang terhubung; klien mana pun dipakai sebagai cadangan.
 - Kalau nomor pusat sendiri yang lepas, tautkan pusat sendirian dulu (scan QR di log, karena pusat tanpa nomor admin), baru sesi lain menyusul satu per satu.
 - Sesudah tertaut: DB sesi di-seed admin (kode `OWN01`, PIN `OWNER_PIN`), onboarding APIKEY otomatis dikirim ke nomor admin (lihat di bawah).

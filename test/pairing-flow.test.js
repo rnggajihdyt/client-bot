@@ -6,7 +6,7 @@ import test from 'node:test'
 // global slot; a 429 backs off 5/15/30 minutes and closes the round after the
 // third one. Sessions in status `pairing` are only rebuilt every 15 minutes.
 const MAX_CODE_ATTEMPTS = 6
-const MAX_CODES = 3
+const MAX_CODES = 1
 const PAIRING_REBUILD_MS = 15 * 60 * 1000
 const RATE_LIMIT_BACKOFF_MS = [5, 15, 30].map((m) => m * 60_000)
 
@@ -104,13 +104,14 @@ test('auth_qr without a phone falls back to QR (no code request)', () => {
   assert.equal(f.stats().sent, 0)
 })
 
-test('plain pairing refresh does not re-request, forceManual does', () => {
+test('plain pairing refresh tidak minta ulang; forceManual menahan (kode habis)', () => {
   const f = createFlow()
   f.emit('auth_qr')
   f.emit('auth_pairing_required', { forceManual: false })
   assert.equal(f.stats().sent, 1)
   f.emit('auth_pairing_required', { forceManual: true })
-  assert.equal(f.stats().sent, 2)
+  assert.equal(f.stats().sent, 1)
+  assert.equal(f.status(), 'pairing_hold')
 })
 
 test('429 beruntun: jeda 5 lalu 15 lalu 30 menit, putaran ditutup', () => {
@@ -162,27 +163,23 @@ test('auth_paired mengembalikan status ke on', () => {
   assert.equal(f.watchdogRebuild(4 * 60_000, 0), true)
 })
 
-test('kode kedaluwarsa 3x menahan sesi dan berhenti minta kode', () => {
+test('kode kedaluwarsa sekali menahan sesi dan berhenti minta kode', () => {
   const f = createFlow()
   f.emit('auth_qr')
-  f.emit('auth_pairing_required', { forceManual: true })
-  f.emit('auth_pairing_required', { forceManual: true })
-  assert.equal(f.stats().sent, MAX_CODES)
+  assert.equal(f.stats().sent, 1)
   assert.equal(f.status(), 'pairing')
-  // kode ke-3 kedaluwarsa: hold, tidak ada permintaan baru
+  // kode pertama kedaluwarsa: langsung hold, tidak ada kode kedua
   f.emit('auth_pairing_required', { forceManual: true })
   assert.equal(f.status(), 'pairing_hold')
   assert.equal(f.alerts(), 1)
   f.emit('auth_qr')
   f.emit('auth_pairing_required', { forceManual: true })
-  assert.equal(f.stats().sent, MAX_CODES)
+  assert.equal(f.stats().sent, 1)
 })
 
 test('watchdog tidak membangun ulang sesi yang ditahan', () => {
   const f = createFlow()
   f.emit('auth_qr')
-  f.emit('auth_pairing_required', { forceManual: true })
-  f.emit('auth_pairing_required', { forceManual: true })
   f.emit('auth_pairing_required', { forceManual: true })
   assert.equal(f.status(), 'pairing_hold')
   // lewat 1 jam pun tidak rebuild
@@ -192,8 +189,6 @@ test('watchdog tidak membangun ulang sesi yang ditahan', () => {
 test('SESION manual melepas hold dan meminta kode baru', () => {
   const f = createFlow()
   f.emit('auth_qr')
-  f.emit('auth_pairing_required', { forceManual: true })
-  f.emit('auth_pairing_required', { forceManual: true })
   f.emit('auth_pairing_required', { forceManual: true })
   assert.equal(f.status(), 'pairing_hold')
   f.sesion()
