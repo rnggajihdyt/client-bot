@@ -178,6 +178,9 @@ export function createRuntime(logger) {
   // sesi pusat belum terbuka): disimpan dan dikirim begitu ada sesi pusat open.
   const PENDING_TTL_MS = 10 * 60 * 1000
   const pendingAdmin = new Map() // sessionId tujuan -> { jid, text, at }
+  // Hitungan 429 disimpan per sesi (bukan per klien) supaya jeda panjang tidak
+  // hilang saat watchdog membangun ulang klien.
+  const rateLimitStrikes = new Map() // sessionId -> jumlah 429 berturut
 
   function deliverAdmin(sessionId, text) {
     const adminNohp = getSession(sessionId)?.admin_nohp
@@ -246,7 +249,6 @@ export function createRuntime(logger) {
     // request the code; without one, fall back to QR in the terminal.
     let requested = false
     let attempts = 0
-    let rateLimited = 0
     let retryTimer = null
     const MAX_CODE_ATTEMPTS = 6
     const clearRetry = () => {
@@ -276,7 +278,7 @@ export function createRuntime(logger) {
       if (force) {
         clearRetry()
         attempts = 0
-        rateLimited = 0
+        rateLimitStrikes.delete(sessionId)
       }
       if (attempts >= MAX_CODE_ATTEMPTS) {
         requested = false // biarkan auth_qr berikutnya memulai putaran baru
@@ -290,15 +292,17 @@ export function createRuntime(logger) {
           // The code surfaces via the `auth_pairing_code` listener below.
         } catch (err) {
           const limited = /429|rate-limit/i.test(String(err?.message ?? ''))
-          rateLimited = limited ? rateLimited + 1 : 0
+          const strikes = limited ? (rateLimitStrikes.get(sessionId) ?? 0) + 1 : 0
+          if (strikes) rateLimitStrikes.set(sessionId, strikes)
+          else rateLimitStrikes.delete(sessionId)
           const delayMs = limited
-            ? RATE_LIMIT_BACKOFF_MS[Math.min(rateLimited, RATE_LIMIT_BACKOFF_MS.length) - 1]
+            ? RATE_LIMIT_BACKOFF_MS[Math.min(strikes, RATE_LIMIT_BACKOFF_MS.length) - 1]
             : Math.min(120_000, 15_000 * 2 ** (attempts - 1))
-          if (limited && rateLimited >= RATE_LIMIT_BACKOFF_MS.length) {
+          if (limited && strikes >= RATE_LIMIT_BACKOFF_MS.length) {
             requested = false // putaran ditutup: tunggu auth_qr/forceManual/SESION
           }
           logger.warn(
-            { sessionId, attempt: attempts, rateLimited, retryMs: delayMs, err: err?.message },
+            { sessionId, attempt: attempts, rateLimited: strikes, retryMs: delayMs, err: err?.message },
             'requestPairingCode failed'
           )
           // Notifikasi owner cukup sekali per putaran, bukan tiap percobaan.
@@ -339,7 +343,7 @@ export function createRuntime(logger) {
     client.on('auth_paired', ({ credentials }) => {
       requested = false
       attempts = 0
-      rateLimited = 0
+      rateLimitStrikes.delete(sessionId)
       clearRetry()
       setSessionStatus(sessionId, 'on')
       alertSent.delete(sessionId)
@@ -356,7 +360,7 @@ export function createRuntime(logger) {
       if (!phone()) return
       clearRetry()
       attempts = 0
-      rateLimited = 0
+      rateLimitStrikes.delete(sessionId)
       requested = true
       void requestCode({ force: true })
     })
@@ -410,10 +414,11 @@ export function createRuntime(logger) {
     connectWithRetry(client, sessionId, human)
     client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api, human))
-    // Status `on` hanya kalau kredensial ada; sesi tanpa kredensial (perangkat
-    // dicabut / belum pernah tertaut) jujur ditandai `pairing`.
+    // Status `on` hanya kalau kredensial terdaftar (`meJid` ada); sisanya
+    // `pairing`. Kredensial setengah jadi (noise key saja) tetap dihitung belum
+    // tertaut — itulah yang membuat FUAD/UMMUL dulu tampil `on`.
     const creds = await store.session(sessionId).auth.load().catch(() => null)
-    setSessionStatus(sessionId, creds ? 'on' : 'pairing')
+    setSessionStatus(sessionId, creds?.meJid ? 'on' : 'pairing')
 
     // connect() stays pending until paired; never await it here.
     client.connect().catch((err) => logger.error({ sessionId, err }, 'connect failed'))

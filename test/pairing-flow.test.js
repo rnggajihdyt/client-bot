@@ -9,17 +9,16 @@ const MAX_CODE_ATTEMPTS = 6
 const PAIRING_REBUILD_MS = 15 * 60 * 1000
 const RATE_LIMIT_BACKOFF_MS = [5, 15, 30].map((m) => m * 60_000)
 
-function createFlow({ phone = '628111', status = 'pairing', fail = () => '' } = {}) {
+function createFlow({ phone = '628111', status = 'pairing', fail = () => '', strikes = new Map() } = {}) {
   let requested = false
   let attempts = 0
-  let rateLimited = 0
   let timerMs = null
   const sent = []
   const request = ({ force = false } = {}) => {
     if (!phone) return
     if (force) {
       attempts = 0
-      rateLimited = 0
+      strikes.delete('s')
     }
     if (attempts >= MAX_CODE_ATTEMPTS) {
       requested = false
@@ -32,11 +31,13 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '' } = 
       return
     }
     const limited = /429|rate-limit/i.test(err)
-    rateLimited = limited ? rateLimited + 1 : 0
+    const n = limited ? (strikes.get('s') ?? 0) + 1 : 0
+    if (n) strikes.set('s', n)
+    else strikes.delete('s')
     timerMs = limited
-      ? RATE_LIMIT_BACKOFF_MS[Math.min(rateLimited, RATE_LIMIT_BACKOFF_MS.length) - 1]
+      ? RATE_LIMIT_BACKOFF_MS[Math.min(n, RATE_LIMIT_BACKOFF_MS.length) - 1]
       : Math.min(120_000, 15_000 * 2 ** (attempts - 1))
-    if (limited && rateLimited >= RATE_LIMIT_BACKOFF_MS.length) requested = false
+    if (limited && n >= RATE_LIMIT_BACKOFF_MS.length) requested = false
   }
   const emit = (event, payload = {}) => {
     if (event === 'auth_qr') {
@@ -54,7 +55,7 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '' } = 
     if (event === 'auth_paired') {
       requested = false
       attempts = 0
-      rateLimited = 0
+      strikes.delete('s')
       status = 'on'
     }
   }
@@ -62,7 +63,7 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '' } = 
     emit,
     retry: () => request(),
     watchdogRebuild: (now, since) => !(status === 'pairing' && now - since <= PAIRING_REBUILD_MS),
-    stats: () => ({ attempts, rateLimited, timerMs, sent: sent.length }),
+    stats: () => ({ attempts, rateLimited: strikes.get('s') ?? 0, timerMs, sent: sent.length }),
   }
 }
 
@@ -137,13 +138,27 @@ test('auth_paired mengembalikan status ke on', () => {
   assert.equal(f.watchdogRebuild(4 * 60_000, 0), true)
 })
 
-// Mirrors the status set at startSession: `on` hanya kalau kredensial tersimpan
-// ada; sesi tanpa kredensial ditandai `pairing` supaya tidak tampil seolah hidup.
-const bootStatus = (creds) => (creds ? 'on' : 'pairing')
+// Mirrors the status set at startSession: `on` hanya kalau kredensial sudah
+// terdaftar (`meJid`); kredensial setengah jadi dihitung belum tertaut.
+const bootStatus = (creds) => (creds?.meJid ? 'on' : 'pairing')
 
-test('sesi tanpa kredensial tampil pairing, bukan on', () => {
+test('sesi tanpa kredensial terdaftar tampil pairing, bukan on', () => {
   assert.equal(bootStatus(null), 'pairing')
+  assert.equal(bootStatus({ noiseKeyPair: {} }), 'pairing')
   assert.equal(bootStatus({ meJid: '628@s.whatsapp.net' }), 'on')
+})
+
+test('hitungan 429 bertahan saat klien dibangun ulang', () => {
+  const strikes = new Map()
+  const a = createFlow({ fail: () => '429 rate-overlimit', strikes })
+  a.emit('auth_qr')
+  a.retry()
+  a.retry()
+  assert.equal(strikes.get('s'), 3)
+  // klien baru (watchdog rebuild) tidak mengulang jeda dari 5 menit
+  const b = createFlow({ fail: () => '429', strikes })
+  b.emit('auth_qr')
+  assert.equal(b.stats().timerMs, 30 * 60_000)
 })
 
 test('status pairing menahan rebuild sampai 15 menit', () => {
