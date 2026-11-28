@@ -182,7 +182,9 @@ export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = (
 
 // Syncs every active session that has an ICS API key, staggered gently so
 // multiple shop sessions do not hit ICS in the same millisecond.
-export async function syncAllSessions(logger, sessionIds, { staggerMs = 6_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+// ICS membatasi GET /reseller/products 30 req / 10 dtk (3/dtk): jarak 1 dtk
+// antar sesi cukup aman, sisa 429 ditangani cooldown.
+export async function syncAllSessions(logger, sessionIds, { staggerMs = 1_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const results = []
   for (let i = 0; i < sessionIds.length; i++) {
     const id = sessionIds[i]
@@ -226,7 +228,7 @@ export function syncableSessions(sessionIds) {
   })
 }
 
-export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, staggerMs = 6_000 } = {}) {
+export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, staggerMs = 1_000 } = {}) {
   const everyMs = resolveSyncIntervalMs(intervalMs)
   if (everyMs <= 0) return { stop: () => {} }
 
