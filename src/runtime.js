@@ -192,9 +192,12 @@ export function createRuntime(logger) {
       logger.warn({ sessionId }, 'tidak ada klien terhubung — pesan admin ditunda')
       return
     }
-    void central.message
-      .send(jid, text)
-      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim pesan ke admin gagal'))
+    void central.message.send(jid, text).catch((err) => {
+      // 401 (perangkat basi) tetap gagal walau socket terbuka: simpan lagi
+      // supaya dicoba klien lain / saat sesi kembali sehat.
+      logger.warn({ sessionId, err: err?.message }, 'kirim pesan ke admin gagal — ditunda')
+      pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
+    })
   }
 
   function flushPendingAdmin(fromSessionId) {
@@ -205,9 +208,10 @@ export function createRuntime(logger) {
       if (sessionId === fromSessionId) continue
       pendingAdmin.delete(sessionId)
       if (now - p.at > PENDING_TTL_MS) continue
-      void central.message
-        .send(p.jid, p.text)
-        .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim pesan tertunda ke admin gagal'))
+      void central.message.send(p.jid, p.text).catch((err) => {
+        logger.warn({ sessionId, err: err?.message }, 'kirim pesan tertunda ke admin gagal — ditunda lagi')
+        pendingAdmin.set(sessionId, p)
+      })
     }
   }
 
@@ -430,8 +434,11 @@ export function createRuntime(logger) {
     const now = Date.now()
     for (const sessionId of clients.keys()) {
       const h = health.get(sessionId) ?? { since: now, open: false, stableAt: null }
+      // Sehat: cukup buang penanda stabil, entri `health` tetap ada supaya
+      // `open` masih terbaca centralClient() dan watchdog punya patokan waktu.
       if (h.stableAt && now - h.stableAt > STABLE_MS) {
-        health.delete(sessionId) // healthy again
+        h.stableAt = null
+        h.since = now
         continue
       }
       // Sesi menunggu taut ulang: jangan bangun ulang tiap 3 menit, cukup tiap
@@ -441,6 +448,15 @@ export function createRuntime(logger) {
         logger.error({ sessionId }, 'watchdog: no stable connection, rebuilding client')
         health.delete(sessionId)
         void rebuild(sessionId)
+      }
+    }
+    // Pesan admin yang tertunda dicoba lagi tiap putaran, bukan hanya saat ada
+    // event open (sesi bisa sudah terbuka tapi pengiriman sebelumnya gagal).
+    if (pendingAdmin.size) {
+      for (const id of clients.keys()) {
+        if (!health.get(id)?.open) continue
+        flushPendingAdmin(id)
+        break
       }
     }
   }, 30_000)

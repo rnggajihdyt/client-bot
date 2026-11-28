@@ -161,6 +161,23 @@ test('hitungan 429 bertahan saat klien dibangun ulang', () => {
   assert.equal(b.stats().timerMs, 30 * 60_000)
 })
 
+// Mirrors watchdog's "healthy" reset: penanda stabil dibuang, entri `health`
+// tetap ada sehingga `open` masih terbaca centralClient().
+function healthAfterStable(h) {
+  if (h.stableAt && Date.now() - h.stableAt > 120_000) {
+    h.stableAt = null
+    h.since = Date.now()
+  }
+  return h
+}
+
+test('sesi sehat tetap open setelah penanda stabil dibuang', () => {
+  const h = { since: 0, open: true, stableAt: 1 }
+  const out = healthAfterStable(h)
+  assert.equal(out.open, true)
+  assert.equal(out.stableAt, null)
+})
+
 test('status pairing menahan rebuild sampai 15 menit', () => {
   const f = createFlow()
   f.emit('auth_qr')
@@ -187,6 +204,7 @@ function createRouter() {
   const deliver = (sessionId, text) => {
     const c = central(sessionId)
     if (!c) return pending.set(sessionId, text)
+    if (c.fail) return pending.set(sessionId, text) // 401: ditunda lagi
     c.sent.push(text)
   }
   const flush = (fromId) => {
@@ -217,6 +235,18 @@ test('klien bukan pusat dipakai sebagai cadangan', () => {
   r.add('BRSTORE', true)
   r.deliver('FUAD', 'kode')
   assert.deepEqual(r.clients.get('BRSTORE').sent, ['kode'])
+})
+
+test('pengiriman 401 tidak menghilangkan pesan (ditunda ulang)', () => {
+  const r = createRouter()
+  r.add('owner', true, true)
+  r.clients.get('owner').fail = true
+  r.deliver('FUAD', 'kode')
+  assert.equal(r.pending.get('FUAD'), 'kode')
+  // sesi lain yang sehat mengambil alih
+  r.add('UMMUL', true)
+  r.flush('UMMUL')
+  assert.deepEqual(r.clients.get('UMMUL').sent, ['kode'])
 })
 
 test('pusat didahulukan dari klien biasa', () => {
