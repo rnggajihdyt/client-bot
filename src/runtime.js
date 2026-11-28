@@ -51,6 +51,7 @@ export async function wipeSessionStore(sessionId) {
 export function createRuntime(logger) {
   const clients = new Map()
   const handles = new Map() // sessionId -> handler bundle (owns its DB handle)
+  const rearmers = new Map() // sessionId -> mulai ulang permintaan kode
   const api = { startSession, stopSession, stopAll, clients, consoleNotify }
 
   // Watchdog: a client that never reaches a stable connection is rebuilt from
@@ -106,6 +107,15 @@ export function createRuntime(logger) {
       )
       if (event.isLogout || FATAL.has(event.reason)) {
         logger.error({ sessionId, reason: event.reason, code: event.code }, 'logged out — re-pairing required')
+        // Perangkat dicabut: reconnecting dengan kredensial yang sama hanya
+        // mengulang kegagalan yang sama. Status `pairing` menahan watchdog dan
+        // memberi tahu admin, supaya tidak ada 1000 percobaan kode sia-sia.
+        setSessionStatus(sessionId, 'pairing')
+        alertAdmin(
+          sessionId,
+          `Session ${sessionId} ter-logout (${event.reason || 'perangkat dihapus'}).\n` +
+            `Perlu taut ulang. Kirim SESION.${sessionId} saat siap menerima kode.`
+        )
         return
       }
       // A single drop can surface more than one close event; without this
@@ -174,6 +184,35 @@ export function createRuntime(logger) {
       .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim kode pairing ke admin gagal'))
   }
 
+  // Sesi yang butuh taut ulang ditandai status `pairing`: watchdog tidak
+  // membangunnya ulang tiap 3 menit, dan permintaan kode diserialkan supaya boot
+  // beberapa sesi tidak menembak WhatsApp serentak (pemicu 429).
+  const ALERT_RESEND_MS = 30 * 60 * 1000
+  const alertSent = new Map() // sessionId -> at
+  const PAIRING_REBUILD_MS = 15 * 60 * 1000
+  const RATE_LIMIT_BACKOFF_MS = [5, 15, 30].map((m) => m * 60_000)
+  let pairingChain = Promise.resolve()
+  // ponytail: satu antrean global, tanpa timeout sendiri — kalau satu permintaan
+  // menggantung, sesi lain ikut menunggu. Pindah ke antrean ber-timeout kalau
+  // pernah kejadian (klien sudah punya connectTimeoutMs 15 dtk).
+  const withPairingSlot = (fn) => (pairingChain = pairingChain.then(fn, fn))
+
+  function alertAdmin(sessionId, text) {
+    const adminNohp = getSession(sessionId)?.admin_nohp
+    if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
+    const at = alertSent.get(sessionId)
+    if (at && Date.now() - at < ALERT_RESEND_MS) return
+    const central = centralClient(sessionId)
+    if (!central) {
+      logger.warn({ sessionId }, 'alert pairing tidak terkirim: tidak ada klien pusat yang terhubung')
+      return
+    }
+    alertSent.set(sessionId, Date.now())
+    void central.message
+      .send(`${adminNohp}@s.whatsapp.net`, text)
+      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim alert pairing ke admin gagal'))
+  }
+
   // Phone known -> link-code; no phone -> QR in the terminal. The QR path
   // requests nothing, so it can render on every refresh and wait for a scan.
   function handlePairing(client, sessionId, notify) {
@@ -184,6 +223,7 @@ export function createRuntime(logger) {
     // request the code; without one, fall back to QR in the terminal.
     let requested = false
     let attempts = 0
+    let rateLimited = 0
     let retryTimer = null
     const MAX_CODE_ATTEMPTS = 6
     const clearRetry = () => {
@@ -203,8 +243,9 @@ export function createRuntime(logger) {
       void requestCode()
     })
 
-    // 429 `companion hello iq failed` muncul kalau minta kode tiap refresh (20
-    // dtk). Jeda dibuat menaik dan putaran dibatasi supaya rate-limit reda.
+    // 429 `companion hello iq failed` muncul kalau minta kode terus-menerus.
+    // Dua lapis penahan: satu permintaan sekali jalan (slot global) dan jeda
+    // panjang khusus 429; setelah 3x 429 putaran ditutup sampai ada pemicu baru.
     async function requestCode({ force = false } = {}) {
       if (clients.get(sessionId) !== client) return
       const p = phone()
@@ -212,31 +253,44 @@ export function createRuntime(logger) {
       if (force) {
         clearRetry()
         attempts = 0
+        rateLimited = 0
       }
       if (attempts >= MAX_CODE_ATTEMPTS) {
         requested = false // biarkan auth_qr berikutnya memulai putaran baru
         return
       }
       attempts += 1
-      try {
-        await client.auth.requestPairingCode(p)
-        // The code surfaces via the `auth_pairing_code` listener below.
-      } catch (err) {
-        const delayMs = Math.min(120_000, 15_000 * 2 ** (attempts - 1))
-        logger.warn(
-          { sessionId, attempt: attempts, retryMs: delayMs, err: err?.message },
-          'requestPairingCode failed'
-        )
-        // Notifikasi owner cukup sekali per putaran, bukan tiap percobaan.
-        if (attempts === 1) {
-          await notify?.(
-            `Gagal minta kode pairing untuk ${sessionId}. Mencoba lagi otomatis (±${Math.round(delayMs / 1000)} dtk).`
+      await withPairingSlot(async () => {
+        if (clients.get(sessionId) !== client) return
+        try {
+          await client.auth.requestPairingCode(p)
+          // The code surfaces via the `auth_pairing_code` listener below.
+        } catch (err) {
+          const limited = /429|rate-limit/i.test(String(err?.message ?? ''))
+          rateLimited = limited ? rateLimited + 1 : 0
+          const delayMs = limited
+            ? RATE_LIMIT_BACKOFF_MS[Math.min(rateLimited, RATE_LIMIT_BACKOFF_MS.length) - 1]
+            : Math.min(120_000, 15_000 * 2 ** (attempts - 1))
+          if (limited && rateLimited >= RATE_LIMIT_BACKOFF_MS.length) {
+            requested = false // putaran ditutup: tunggu auth_qr/forceManual/SESION
+          }
+          logger.warn(
+            { sessionId, attempt: attempts, rateLimited, retryMs: delayMs, err: err?.message },
+            'requestPairingCode failed'
           )
+          // Notifikasi owner cukup sekali per putaran, bukan tiap percobaan.
+          if (attempts === 1) {
+            await notify?.(
+              `Gagal minta kode pairing untuk ${sessionId}. Mencoba lagi otomatis (±${Math.round(delayMs / 1000)} dtk).`
+            )
+          }
+          clearRetry()
+          if (requested) {
+            retryTimer = setTimeout(() => void requestCode(), delayMs)
+            retryTimer.unref?.()
+          }
         }
-        clearRetry()
-        retryTimer = setTimeout(() => void requestCode(), delayMs)
-        retryTimer.unref?.()
-      }
+      })
     }
 
     client.on('auth_pairing_code', ({ code }) => {
@@ -262,13 +316,26 @@ export function createRuntime(logger) {
     client.on('auth_paired', ({ credentials }) => {
       requested = false
       attempts = 0
+      rateLimited = 0
       clearRetry()
+      setSessionStatus(sessionId, 'on')
+      alertSent.delete(sessionId)
       logger.info({ sessionId }, `Paired as ${credentials.meJid}`)
       void notify?.(`Session ${sessionId} berhasil tertaut sebagai ${credentials.meJid}.`)
     })
 
     client.on('auth_passkey_required', ({ hasSigner }) => {
       if (!hasSigner) logger.warn({ sessionId }, 'passkey required — link cannot proceed headless')
+    })
+
+    // Dipakai SESION: mulai putaran baru walaupun sebelumnya kena batas 429.
+    rearmers.set(sessionId, () => {
+      if (!phone()) return
+      clearRetry()
+      attempts = 0
+      rateLimited = 0
+      requested = true
+      void requestCode({ force: true })
     })
   }
 
@@ -294,8 +361,11 @@ export function createRuntime(logger) {
     }
   }
 
-  async function startSession(sessionId, { notify } = {}) {
-    if (clients.has(sessionId)) return clients.get(sessionId)
+  async function startSession(sessionId, { notify, rearm = false } = {}) {
+    if (clients.has(sessionId)) {
+      if (rearm) rearmers.get(sessionId)?.()
+      return clients.get(sessionId)
+    }
 
     const rawClient = new WaClient(
       {
@@ -310,11 +380,15 @@ export function createRuntime(logger) {
     const human = createHumanController(rawClient, sessionId, logger)
     const client = human.client
     clients.set(sessionId, client)
+    // Pastikan ada patokan waktu supaya watchdog bisa menghitung umur koneksi
+    // walau klien belum pernah memancarkan event apa pun.
+    if (!health.has(sessionId)) health.set(sessionId, { since: Date.now(), open: false, stableAt: null })
     handlePairing(client, sessionId, notify ?? consoleNotify(sessionId))
     connectWithRetry(client, sessionId, human)
     client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api, human))
-    setSessionStatus(sessionId, 'on')
+    // Sesi yang menunggu taut ulang tetap `pairing`; hanya selain itu jadi `on`.
+    if (getSession(sessionId)?.status !== 'pairing') setSessionStatus(sessionId, 'on')
 
     // connect() stays pending until paired; never await it here.
     client.connect().catch((err) => logger.error({ sessionId, err }, 'connect failed'))
@@ -330,6 +404,9 @@ export function createRuntime(logger) {
         health.delete(sessionId) // healthy again
         continue
       }
+      // Sesi menunggu taut ulang: jangan bangun ulang tiap 3 menit, cukup tiap
+      // 15 menit (maks 4x/jam), bukan 20x/menit.
+      if (getSession(sessionId)?.status === 'pairing' && now - h.since <= PAIRING_REBUILD_MS) continue
       if (now - h.since > GIVE_UP_MS) {
         logger.error({ sessionId }, 'watchdog: no stable connection, rebuilding client')
         health.delete(sessionId)
@@ -342,6 +419,7 @@ export function createRuntime(logger) {
   async function rebuild(sessionId) {
     const client = clients.get(sessionId)
     clients.delete(sessionId)
+    rearmers.delete(sessionId)
     handles.get(sessionId)?.close()
     handles.delete(sessionId)
     if (client) await client.disconnect().catch(() => {})
@@ -351,6 +429,7 @@ export function createRuntime(logger) {
   async function stopSession(sessionId) {
     const client = clients.get(sessionId)
     clients.delete(sessionId)
+    rearmers.delete(sessionId)
     handles.get(sessionId)?.close()
     handles.delete(sessionId)
     setSessionStatus(sessionId, 'off')
@@ -362,6 +441,7 @@ export function createRuntime(logger) {
   async function stopAll() {
     const entries = [...clients.entries()]
     clients.clear()
+    rearmers.clear()
     await Promise.allSettled(
       entries.map(async ([id, client]) => {
         handles.get(id)?.close()

@@ -34,7 +34,10 @@ const fromEnv = (process.env.SESSIONS ?? config.sessionId)
 const sessions = registered.length ? registered : [...new Set(fromEnv)]
 
 // Startup sessions have no owner chat yet: pairing output goes to the console.
-for (const sessionId of sessions) {
+// Satu sesi tiap 10 detik supaya permintaan kode tidak menumpuk di WhatsApp
+// (5 sesi serentak = 5 `companion hello iq` → 429).
+for (const [i, sessionId] of sessions.entries()) {
+  if (i) await new Promise((r) => setTimeout(r, 10_000))
   await runtime.startSession(sessionId, { notify: runtime.consoleNotify(sessionId) })
 }
 

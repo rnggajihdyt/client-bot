@@ -300,7 +300,8 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
         ? `owner ${owners.join(',') || '-'}`
         : `admin ${s.admin_nohp || '-'}`
       const wa = s.wa_nohp || s.pairing_phone || '-'
-      return `• ${s.id} — ${role} — WA ${wa} — ${s.status}${s.label ? ` — ${s.label}` : ''}`
+      const status = s.status === 'pairing' ? 'pairing (perlu taut ulang)' : s.status
+      return `• ${s.id} — ${role} — WA ${wa} — ${status}${s.label ? ` — ${s.label}` : ''}`
     })
     await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
   }
@@ -384,13 +385,14 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
   // Connects a session now. `notify(text)` delivers pairing codes and link
   // status back to the owner chat; admin onboarding is sent by the session's
   // own client once its socket opens (see src/runtime.js).
-  async function startRuntimeSession(reply, id) {
+  async function startRuntimeSession(reply, id, { rearm = false } = {}) {
     if (!runtime) {
       await reply(`Runtime belum siap, restart bot lalu SESION.${id}`)
       return
     }
     await runtime.startSession(id, {
       notify: (text) => reply(text),
+      rearm,
     })
   }
 
@@ -405,8 +407,11 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       return
     }
     if (status === 'on') {
+      // Membersihkan status `pairing` supaya permintaan kode dimulai ulang.
+      const wasPairing = registry.getSession(id)?.status === 'pairing'
+      registry.setSessionStatus(id, 'on')
       await reply(`Session ${id} dinyalakan. Menyambungkan + minta kode pairing…`)
-      await startRuntimeSession(reply, id)
+      await startRuntimeSession(reply, id, { rearm: wasPairing })
       return
     }
     if (registry.isBootstrapSession(id)) {

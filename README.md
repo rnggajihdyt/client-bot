@@ -171,6 +171,8 @@ SESIBUAT.tokoku.628895560325.62856429274736[Toko Rangga]
 - Masukkan kode di WhatsApp nomor bot (kedaluwarsa ± beberapa menit; kalau mati, `RESTART.tokoku` memicu kode baru).
 - Kode juga dikirim otomatis ke nomor admin sesi lewat sesi pusat, jadi tetap sampai walau koneksi sesi itu mati tepat setelah kode terbit (kode sama tidak diulang dalam 10 menit).
 - Minta kode diulang dengan jeda menaik (15 dtk → 2 mnt, maks 6 percobaan) supaya tidak kena `429 rate-overlimit` dari WhatsApp saat permintaan beruntun.
+- Sesi hanya boleh minta kode satu per satu (antrean global), dan kalau 429: jeda 5 → 15 → 30 menit, lalu putaran ditutup sampai ada `SESION` manual.
+- Sesi yang perangkatnya dicabut ditandai status `pairing` di `SESI`: watchdog hanya membangunnya ulang tiap 15 menit (bukan 3 menit), dan admin dapat satu pesan peringatan (maks sekali per 30 menit). Taut ulang dengan `SESION.ID`, lalu masukkan kode yang dikirim.
 - Sesudah tertaut: DB sesi di-seed admin (kode `OWN01`, PIN `OWNER_PIN`), onboarding APIKEY otomatis dikirim ke nomor admin (lihat di bawah).
 
 ### 3) Adopsi sesi bootstrap lewat `SESIBUAT`
