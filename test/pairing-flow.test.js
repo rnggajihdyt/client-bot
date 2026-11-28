@@ -15,7 +15,7 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '', str
   let attempts = 0
   let codes = 0
   let timerMs = null
-  let alerts = 0
+  const alerts = [] // target pesan "menunggu SESION": selalu owner pusat
   const held = () => status === 'pairing_hold'
   const sent = []
   const request = ({ force = false } = {}) => {
@@ -56,7 +56,7 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '', str
       if (requested || held()) return
       if (payload.forceManual && codes >= MAX_CODES) {
         status = 'pairing_hold'
-        alerts += 1
+        alerts.push('owner')
         return
       }
       requested = true
@@ -171,7 +171,7 @@ test('kode kedaluwarsa sekali menahan sesi dan berhenti minta kode', () => {
   // kode pertama kedaluwarsa: langsung hold, tidak ada kode kedua
   f.emit('auth_pairing_required', { forceManual: true })
   assert.equal(f.status(), 'pairing_hold')
-  assert.equal(f.alerts(), 1)
+  assert.deepEqual(f.alerts(), ['owner'])
   f.emit('auth_qr')
   f.emit('auth_pairing_required', { forceManual: true })
   assert.equal(f.stats().sent, 1)

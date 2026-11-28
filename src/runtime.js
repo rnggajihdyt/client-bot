@@ -243,6 +243,24 @@ export function createRuntime(logger) {
     deliverAdmin(sessionId, text)
   }
 
+  // Peringatan yang harus dibaca pemilik bot (mis. sesi ditahan menunggu
+  // SESION), bukan admin sesi: kirim ke nomor owner pertama lewat klien pusat.
+  function deliverOwner(sessionId, text) {
+    const nohp = config.owners?.[0]
+    if (!nohp) return deliverAdmin(sessionId, text)
+    const jid = `${nohp}@s.whatsapp.net`
+    const central = centralClient(sessionId)
+    if (!central) {
+      pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
+      logger.warn({ sessionId }, 'tidak ada klien terhubung — pesan owner ditunda')
+      return
+    }
+    void central.message.send(jid, text).catch((err) => {
+      logger.warn({ sessionId, err: err?.message }, 'kirim pesan ke owner gagal — ditunda')
+      pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
+    })
+  }
+
   // Phone known -> link-code; no phone -> QR in the terminal. The QR path
   // requests nothing, so it can render on every refresh and wait for a scan.
   function handlePairing(client, sessionId, notify) {
@@ -349,9 +367,8 @@ export function createRuntime(logger) {
       if (onHold()) return
       if (forceManual && codes >= MAX_CODES) {
         setSessionStatus(sessionId, 'pairing_hold')
-        alertSent.delete(sessionId) // pesan "menunggu" jangan tertahan dedupe
         logger.warn({ sessionId, codes }, 'kode pairing habis — menunggu SESION manual')
-        alertAdmin(
+        deliverOwner(
           sessionId,
           `Session ${sessionId} belum tertaut setelah ${codes} kode. Bot berhenti mengirim kode.\n` +
             `Kirim SESION.${sessionId} saat siap menerima kode baru.`
