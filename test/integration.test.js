@@ -1276,6 +1276,15 @@ test('utilitas owner ditolak untuk mitra', async () => {
   assert.equal(await say('628222', 'RESTART.toko2'), 'Khusus owner')
 })
 
+test('nomor yang didaftarkan tanpa 0/62 tetap ditemukan (kasus FUAD)', async () => {
+  const { openDb: open } = await import('../src/db.js')
+  const sdb = open(join(dir, 'sessions', 'nohpvar.sqlite'))
+  sdb.createAgen({ nama: 'Lama', kota: '', nohp: '85940800009', seniorId: null, markup: 0, pin: '1234' })
+  assert.equal(sdb.findAgenByNohp('6285940800009')?.nama, 'Lama')
+  assert.equal(sdb.findAgenByNohp('085940800009')?.nama, 'Lama')
+  sdb.close()
+})
+
 after(() => {
   db.close()
   try {

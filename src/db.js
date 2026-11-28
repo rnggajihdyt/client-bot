@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { hashPin } from './auth.js'
+import { nohpVariants } from './utils.js'
 
 // Produk CND (paket ribuan/token) tidak masuk database: bot fokus akrab dulu.
 // Satu definisi, dipakai saat sync dan saat membersihkan baris lama.
@@ -180,14 +181,19 @@ export function openDb(path) {
   }
 
   // ---- lookup ----
+  // Cocokkan juga variasi "0..."/"8..."/"62..." supaya baris lama tetap ketemu.
   db.findAgenByNohp = (nohp) => {
-    const d = String(nohp).split('@')[0].split(':')[0].replace(/\D/g, '')
-    if (!d) return undefined
-    const row = raw.prepare(`SELECT * FROM agen WHERE nohp = ?`).get(d)
-    if (row) return row
-    return raw
-      .prepare(`SELECT a.* FROM agen_nomor n JOIN agen a ON a.id = n.agen_id WHERE n.nohp = ?`)
-      .get(d)
+    const variants = nohpVariants(nohp)
+    if (!variants.length) return undefined
+    const byUtama = raw.prepare(`SELECT * FROM agen WHERE nohp = ?`)
+    const byNomor = raw.prepare(
+      `SELECT a.* FROM agen_nomor n JOIN agen a ON a.id = n.agen_id WHERE n.nohp = ?`
+    )
+    for (const d of variants) {
+      const row = byUtama.get(d) ?? byNomor.get(d)
+      if (row) return row
+    }
+    return undefined
   }
 
   db.findAgenById = (id) => raw.prepare(`SELECT * FROM agen WHERE id = ?`).get(id)

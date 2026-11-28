@@ -79,12 +79,30 @@ export function isOwner(event, owners) {
   })
 }
 
-// "08123456789" / "628123456789" / "+62 812-3456" -> "628123456789".
-// WhatsApp JIDs are always country-coded without the trunk 0; a local number
-// addressed as "0..." never resolves, so a failed welcome send is expected.
+// "08123456789" / "8123456789" / "+62 812-3456" -> "628123456789".
+// WhatsApp JIDs are always country-coded without the trunk 0, so a number typed
+// as "8..." or "0..." must be stored as "62..." or it never resolves.
 export function normalizeNohp(value) {
   const d = String(value ?? '').replace(/\D/g, '')
-  return d.startsWith('0') ? `62${d.slice(1)}` : d
+  if (!d) return ''
+  if (d.startsWith('62')) return d
+  if (d.startsWith('0')) return `62${d.slice(1)}`
+  return `62${d}`
+}
+
+// Bentuk lain dari nomor yang sama, untuk mencocokkan baris lama yang tersimpan
+// sebelum normalisasi (mis. "85940800009" alih-alih "6285940800009").
+export function nohpVariants(value) {
+  const d = String(value ?? '').split('@')[0].split(':')[0].replace(/\D/g, '')
+  if (!d) return []
+  const out = new Set([d])
+  const bare = d.replace(/^62/, '').replace(/^0/, '')
+  if (bare) {
+    out.add(bare)
+    out.add(`0${bare}`)
+    out.add(`62${bare}`)
+  }
+  return [...out]
 }
 
 // "628123456:12@s.whatsapp.net" -> "628123456"; "+62 812-3456" -> "628123456"
