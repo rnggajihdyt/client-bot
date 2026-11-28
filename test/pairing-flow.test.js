@@ -137,6 +137,15 @@ test('auth_paired mengembalikan status ke on', () => {
   assert.equal(f.watchdogRebuild(4 * 60_000, 0), true)
 })
 
+// Mirrors the status set at startSession: `on` hanya kalau kredensial tersimpan
+// ada; sesi tanpa kredensial ditandai `pairing` supaya tidak tampil seolah hidup.
+const bootStatus = (creds) => (creds ? 'on' : 'pairing')
+
+test('sesi tanpa kredensial tampil pairing, bukan on', () => {
+  assert.equal(bootStatus(null), 'pairing')
+  assert.equal(bootStatus({ meJid: '628@s.whatsapp.net' }), 'on')
+})
+
 test('status pairing menahan rebuild sampai 15 menit', () => {
   const f = createFlow()
   f.emit('auth_qr')

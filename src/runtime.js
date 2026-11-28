@@ -410,8 +410,10 @@ export function createRuntime(logger) {
     connectWithRetry(client, sessionId, human)
     client.on('auth_paired', ({ credentials }) => registerBootstrapSession(sessionId, credentials.meJid))
     handles.set(sessionId, attachHandlers(client, sessionId, logger, api, human))
-    // Sesi yang menunggu taut ulang tetap `pairing`; hanya selain itu jadi `on`.
-    if (getSession(sessionId)?.status !== 'pairing') setSessionStatus(sessionId, 'on')
+    // Status `on` hanya kalau kredensial ada; sesi tanpa kredensial (perangkat
+    // dicabut / belum pernah tertaut) jujur ditandai `pairing`.
+    const creds = await store.session(sessionId).auth.load().catch(() => null)
+    setSessionStatus(sessionId, creds ? 'on' : 'pairing')
 
     // connect() stays pending until paired; never await it here.
     client.connect().catch((err) => logger.error({ sessionId, err }, 'connect failed'))
