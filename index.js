@@ -1,6 +1,6 @@
 import { createPinoLogger } from 'zapo-js'
 import { config } from './src/config.js'
-import { openRegistry, closeRegistry, listSessions } from './src/registry.js'
+import { openRegistry, closeRegistry, listSessions, isBootstrapSession } from './src/registry.js'
 import { createRuntime } from './src/runtime.js'
 import './src/commands/demo.js' // registers the demo commands
 import './src/commands/ppob.js' // info / format1..4 menus
@@ -31,7 +31,11 @@ const fromEnv = (process.env.SESSIONS ?? config.sessionId)
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
-const sessions = registered.length ? registered : [...new Set(fromEnv)]
+// Sesi pusat didahulukan: ia pengirim kode pairing sesi lain. Kalau pusat
+// menyala terakhir, kode yang terbit lebih dulu tidak ada yang mengantar.
+const sessions = (registered.length ? registered : [...new Set(fromEnv)]).sort(
+  (a, b) => Number(isBootstrapSession(b)) - Number(isBootstrapSession(a))
+)
 
 // Startup sessions have no owner chat yet: pairing output goes to the console.
 // Satu sesi tiap 10 detik supaya permintaan kode tidak menumpuk di WhatsApp

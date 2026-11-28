@@ -143,3 +143,63 @@ test('status pairing menahan rebuild sampai 15 menit', () => {
   assert.equal(f.watchdogRebuild(10 * 60_000, 0), false)
   assert.equal(f.watchdogRebuild(PAIRING_REBUILD_MS + 1, 0), true)
 })
+
+// Mirrors centralClient + deliverAdmin/flushPendingAdmin in src/runtime.js:
+// pesan admin ditunda kalau belum ada klien terbuka, lalu dikirim saat ada yang
+// open; klien pusat diutamakan, klien lain hanya cadangan.
+function createRouter() {
+  const clients = new Map() // id -> { open, sent }
+  const pending = new Map()
+  const add = (id, open, bootstrap = false) => clients.set(id, { open, bootstrap, sent: [] })
+  const central = (excludeId) => {
+    let fallback = null
+    for (const [id, c] of clients) {
+      if (id === excludeId || !c.open) continue
+      if (c.bootstrap) return c
+      fallback ??= c
+    }
+    return fallback
+  }
+  const deliver = (sessionId, text) => {
+    const c = central(sessionId)
+    if (!c) return pending.set(sessionId, text)
+    c.sent.push(text)
+  }
+  const flush = (fromId) => {
+    const c = clients.get(fromId)
+    if (!c?.open) return
+    for (const [sessionId, text] of pending) {
+      if (sessionId === fromId) continue
+      pending.delete(sessionId)
+      c.sent.push(text)
+    }
+  }
+  return { add, deliver, flush, clients, pending, open: (id) => (clients.get(id).open = true) }
+}
+
+test('kode ditunda kalau belum ada klien, terkirim begitu pusat open', () => {
+  const r = createRouter()
+  r.add('owner', false, true)
+  r.deliver('FUAD', 'kode')
+  assert.equal(r.pending.has('FUAD'), true)
+  r.open('owner')
+  r.flush('owner')
+  assert.deepEqual(r.clients.get('owner').sent, ['kode'])
+  assert.equal(r.pending.size, 0)
+})
+
+test('klien bukan pusat dipakai sebagai cadangan', () => {
+  const r = createRouter()
+  r.add('BRSTORE', true)
+  r.deliver('FUAD', 'kode')
+  assert.deepEqual(r.clients.get('BRSTORE').sent, ['kode'])
+})
+
+test('pusat didahulukan dari klien biasa', () => {
+  const r = createRouter()
+  r.add('BRSTORE', true)
+  r.add('owner', true, true)
+  r.deliver('FUAD', 'kode')
+  assert.deepEqual(r.clients.get('owner').sent, ['kode'])
+  assert.deepEqual(r.clients.get('BRSTORE').sent, [])
+})

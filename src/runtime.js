@@ -84,6 +84,8 @@ export function createRuntime(logger) {
       if (event.status === 'open') {
         attempt = 0
         logger.info({ sessionId }, 'connected')
+        // Ada klien hidup: kirim pesan admin yang tadi tertunda.
+        flushPendingAdmin(sessionId)
         // First open of this client: warm up briefly before going online and
         // pushing the ICS apikey gate to the admin from this session's client.
         if (!onboarded) {
@@ -160,28 +162,57 @@ export function createRuntime(logger) {
   const CODE_RESEND_MS = 10 * 60 * 1000
   const codeSent = new Map() // sessionId -> { code, at }
 
+  // Sesi pusat (bootstrap) diutamakan, tapi klien mana pun yang terbuka dipakai
+  // sebagai cadangan: saat semua sesi rusak, justru hanya ada satu yang hidup.
   function centralClient(excludeId) {
+    let fallback = null
     for (const [id, c] of clients) {
-      if (id === excludeId) continue
-      if (isBootstrapSession(id) && health.get(id)?.open) return c
+      if (id === excludeId || !health.get(id)?.open) continue
+      if (isBootstrapSession(id)) return c
+      fallback ??= c
     }
-    return null
+    return fallback
+  }
+
+  // Pesan ke admin tidak dibuang kalau belum ada klien terhubung (mis. saat boot
+  // sesi pusat belum terbuka): disimpan dan dikirim begitu ada sesi pusat open.
+  const PENDING_TTL_MS = 10 * 60 * 1000
+  const pendingAdmin = new Map() // sessionId tujuan -> { jid, text, at }
+
+  function deliverAdmin(sessionId, text) {
+    const adminNohp = getSession(sessionId)?.admin_nohp
+    if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
+    const jid = `${adminNohp}@s.whatsapp.net`
+    const central = centralClient(sessionId)
+    if (!central) {
+      pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
+      logger.warn({ sessionId }, 'tidak ada klien terhubung — pesan admin ditunda')
+      return
+    }
+    void central.message
+      .send(jid, text)
+      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim pesan ke admin gagal'))
+  }
+
+  function flushPendingAdmin(fromSessionId) {
+    const central = clients.get(fromSessionId)
+    if (!central || !health.get(fromSessionId)?.open) return
+    const now = Date.now()
+    for (const [sessionId, p] of pendingAdmin) {
+      if (sessionId === fromSessionId) continue
+      pendingAdmin.delete(sessionId)
+      if (now - p.at > PENDING_TTL_MS) continue
+      void central.message
+        .send(p.jid, p.text)
+        .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim pesan tertunda ke admin gagal'))
+    }
   }
 
   function forwardPairingCode(sessionId, code, text) {
-    const adminNohp = getSession(sessionId)?.admin_nohp
-    if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
     const prev = codeSent.get(sessionId)
     if (prev?.code === code && Date.now() - prev.at < CODE_RESEND_MS) return
-    const central = centralClient(sessionId)
-    if (!central) {
-      logger.warn({ sessionId }, 'kode pairing tidak diteruskan: tidak ada klien pusat yang terhubung')
-      return
-    }
     codeSent.set(sessionId, { code, at: Date.now() })
-    void central.message
-      .send(`${adminNohp}@s.whatsapp.net`, text)
-      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim kode pairing ke admin gagal'))
+    deliverAdmin(sessionId, text)
   }
 
   // Sesi yang butuh taut ulang ditandai status `pairing`: watchdog tidak
@@ -198,19 +229,11 @@ export function createRuntime(logger) {
   const withPairingSlot = (fn) => (pairingChain = pairingChain.then(fn, fn))
 
   function alertAdmin(sessionId, text) {
-    const adminNohp = getSession(sessionId)?.admin_nohp
-    if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
+    if (!getSession(sessionId)?.admin_nohp) return
     const at = alertSent.get(sessionId)
     if (at && Date.now() - at < ALERT_RESEND_MS) return
-    const central = centralClient(sessionId)
-    if (!central) {
-      logger.warn({ sessionId }, 'alert pairing tidak terkirim: tidak ada klien pusat yang terhubung')
-      return
-    }
     alertSent.set(sessionId, Date.now())
-    void central.message
-      .send(`${adminNohp}@s.whatsapp.net`, text)
-      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim alert pairing ke admin gagal'))
+    deliverAdmin(sessionId, text)
   }
 
   // Phone known -> link-code; no phone -> QR in the terminal. The QR path
