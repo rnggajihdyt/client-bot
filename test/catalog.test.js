@@ -126,6 +126,32 @@ test('fallback ke cache DB saat ICS error sementara pada ensureFreshCatalog', as
   db.close()
 })
 
+test('gagal ICS menahan percobaan berikutnya selama masa tunggu', async () => {
+  const db = openDb(join(dir, 'sessions', 'shop5.sqlite'))
+  db.setSetting('ics_apikey', '816c461e02197c4650f8c4cf393753ab8195309628b2b94619c60f271d8e0aok')
+  resetCatalogCache(db.path)
+  let clock = 1_000_000
+  const now = () => clock
+
+  failNext = true
+  const r1 = await ensureFreshCatalog(db, { ttlMs: 0, now })
+  assert.equal(r1.synced, false)
+
+  failNext = false
+  mockProducts = [{ code: 'WAIT1', name: 'Tunggu', price: 1000, type: 'xda', status: 'available', stock: 1 }]
+  fetchCalls = 0
+  // masih dalam 5 dtk: tidak menembak ICS lagi
+  const r2 = await ensureFreshCatalog(db, { ttlMs: 0, now })
+  assert.equal(fetchCalls, 0)
+  assert.equal(r2.synced, false)
+
+  clock += 6_000
+  const r3 = await ensureFreshCatalog(db, { ttlMs: 0, now })
+  assert.equal(fetchCalls, 1)
+  assert.equal(r3.synced, true)
+  db.close()
+})
+
 test('syncAllSessions (cron) melewati sesi tanpa apikey dan sync sesi ber-apikey', async () => {
   const ownerDb = openDb(join(dir, 'sessions', 'owner.sqlite'))
   ownerDb.close()

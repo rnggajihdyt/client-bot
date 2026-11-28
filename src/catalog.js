@@ -7,6 +7,9 @@ import { config, sessionPath } from './config.js'
 // Per-session catalog sync state (keyed by DB path so tests stay isolated).
 const lastSynced = new Map() // dbPath -> epoch ms
 const inflight = new Map() // dbPath -> Promise<{ total, available, removed }>
+// Setelah ICS menolak ("tunggu 5 detik"), jangan langsung coba lagi: semua
+// pemanggil berikutnya (CH/BELI per pesan) akan menghantam api yang sama.
+const cooldownUntil = new Map() // dbPath -> epoch ms
 
 export function resolveCatalogTtlMs(explicit) {
   if (explicit !== undefined) return Math.max(0, Number(explicit) || 0)
@@ -34,10 +37,12 @@ export function resetCatalogCache(dbPath) {
   if (dbPath) {
     lastSynced.delete(dbPath)
     inflight.delete(dbPath)
+    cooldownUntil.delete(dbPath)
     return
   }
   lastSynced.clear()
   inflight.clear()
+  cooldownUntil.clear()
 }
 
 // Produk CND (paket ribuan/token) tidak masuk database: bot fokus akrab dulu.
@@ -95,6 +100,7 @@ export async function syncCatalog(db, { apiKey, saveKey = false, now = () => Dat
 
     const at = now()
     lastSynced.set(key, at)
+    cooldownUntil.delete(db.path)
     try {
       db.setSetting('catalog_synced_at', String(at))
     } catch {
@@ -126,6 +132,9 @@ export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = (
   const effectiveTtl = ttlMs !== undefined ? Math.max(0, Number(ttlMs) || 0) : resolveCatalogTtlMs()
   const cfg = icsConfig(db)
   if (!cfg.apiKey) return { synced: false, fresh: false }
+
+  // Sedang masa tunggu ICS: pakai cache DB walau ttl sudah lewat.
+  if ((cooldownUntil.get(db.path) ?? 0) > now()) return { synced: false, fresh: false }
 
   // Waktu sync terakhir ikut disimpan di DB: proses restart tidak boleh
   // menganggap cache masih segar (atau sebaliknya) dari memori kosong.
@@ -159,6 +168,10 @@ export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = (
     )
     return { synced: true, fresh: true, ...stats }
   } catch (err) {
+    // Hormati permintaan supplier ("tunggu 5 detik") — default 5 dtk kalau pesan
+    // tidak menyebut angka, supaya tidak menembak api berulang tiap pesan.
+    const waitSec = Number(String(err?.message ?? '').match(/(\d+)\s*(detik|detik|second)/i)?.[1]) || 5
+    cooldownUntil.set(db.path, now() + waitSec * 1000)
     logger?.warn?.(`[cache-sync] ${sessionId ?? db.path} gagal, pakai cache DB: ${err?.message}`, {
       sessionId,
       err: err?.message,
@@ -169,7 +182,7 @@ export async function ensureFreshCatalog(db, { ttlMs, logger, sessionId, now = (
 
 // Syncs every active session that has an ICS API key, staggered gently so
 // multiple shop sessions do not hit ICS in the same millisecond.
-export async function syncAllSessions(logger, sessionIds, { staggerMs = 1_500, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+export async function syncAllSessions(logger, sessionIds, { staggerMs = 6_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const results = []
   for (let i = 0; i < sessionIds.length; i++) {
     const id = sessionIds[i]
@@ -213,7 +226,7 @@ export function syncableSessions(sessionIds) {
   })
 }
 
-export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, staggerMs = 1_500 } = {}) {
+export function startCatalogSyncCron(logger, getSessionIds, { intervalMs, staggerMs = 6_000 } = {}) {
   const everyMs = resolveSyncIntervalMs(intervalMs)
   if (everyMs <= 0) return { stop: () => {} }
 
