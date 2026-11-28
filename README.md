@@ -169,6 +169,8 @@ SESIBUAT.tokoku.628895560325.62856429274736[Toko Rangga]
   ```
 
 - Masukkan kode di WhatsApp nomor bot (kedaluwarsa ± beberapa menit; kalau mati, `RESTART.tokoku` memicu kode baru).
+- Kode juga dikirim otomatis ke nomor admin sesi lewat sesi pusat, jadi tetap sampai walau koneksi sesi itu mati tepat setelah kode terbit (kode sama tidak diulang dalam 10 menit).
+- Minta kode diulang dengan jeda menaik (15 dtk → 2 mnt, maks 6 percobaan) supaya tidak kena `429 rate-overlimit` dari WhatsApp saat permintaan beruntun.
 - Sesudah tertaut: DB sesi di-seed admin (kode `OWN01`, PIN `OWNER_PIN`), onboarding APIKEY otomatis dikirim ke nomor admin (lihat di bawah).
 
 ### 3) Adopsi sesi bootstrap lewat `SESIBUAT`

@@ -144,6 +144,36 @@ export function createRuntime(logger) {
     }
   }
 
+  // Kode pairing diteruskan ke admin sesi lewat klien sesi pusat: klien sesi itu
+  // sendiri bisa mati tepat setelah kode terbit. Kode yang sama tidak dikirim
+  // ulang sebelum CODE_RESEND_MS supaya tidak spam.
+  const CODE_RESEND_MS = 10 * 60 * 1000
+  const codeSent = new Map() // sessionId -> { code, at }
+
+  function centralClient(excludeId) {
+    for (const [id, c] of clients) {
+      if (id === excludeId) continue
+      if (isBootstrapSession(id) && health.get(id)?.open) return c
+    }
+    return null
+  }
+
+  function forwardPairingCode(sessionId, code, text) {
+    const adminNohp = getSession(sessionId)?.admin_nohp
+    if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
+    const prev = codeSent.get(sessionId)
+    if (prev?.code === code && Date.now() - prev.at < CODE_RESEND_MS) return
+    const central = centralClient(sessionId)
+    if (!central) {
+      logger.warn({ sessionId }, 'kode pairing tidak diteruskan: tidak ada klien pusat yang terhubung')
+      return
+    }
+    codeSent.set(sessionId, { code, at: Date.now() })
+    void central.message
+      .send(`${adminNohp}@s.whatsapp.net`, text)
+      .catch((err) => logger.warn({ sessionId, err: err?.message }, 'kirim kode pairing ke admin gagal'))
+  }
+
   // Phone known -> link-code; no phone -> QR in the terminal. The QR path
   // requests nothing, so it can render on every refresh and wait for a scan.
   function handlePairing(client, sessionId, notify) {
@@ -153,6 +183,14 @@ export function createRuntime(logger) {
     // only on refresh/re-arm). With a phone known, the first QR is the cue to
     // request the code; without one, fall back to QR in the terminal.
     let requested = false
+    let attempts = 0
+    let retryTimer = null
+    const MAX_CODE_ATTEMPTS = 6
+    const clearRetry = () => {
+      if (retryTimer) clearTimeout(retryTimer)
+      retryTimer = null
+    }
+
     client.on('auth_qr', ({ qr, ttlMs }) => {
       if (!phone()) {
         logger.info({ sessionId }, `QR valid for ${ttlMs}ms — scan from WhatsApp → Linked devices`)
@@ -161,31 +199,54 @@ export function createRuntime(logger) {
       }
       if (requested) return
       requested = true
+      attempts = 0
       void requestCode()
     })
 
-    async function requestCode() {
+    // 429 `companion hello iq failed` muncul kalau minta kode tiap refresh (20
+    // dtk). Jeda dibuat menaik dan putaran dibatasi supaya rate-limit reda.
+    async function requestCode({ force = false } = {}) {
+      if (clients.get(sessionId) !== client) return
       const p = phone()
       if (!p) return
+      if (force) {
+        clearRetry()
+        attempts = 0
+      }
+      if (attempts >= MAX_CODE_ATTEMPTS) {
+        requested = false // biarkan auth_qr berikutnya memulai putaran baru
+        return
+      }
+      attempts += 1
       try {
         await client.auth.requestPairingCode(p)
         // The code surfaces via the `auth_pairing_code` listener below.
       } catch (err) {
-        logger.error({ sessionId, err }, 'requestPairingCode failed')
-        requested = false
-        await notify?.(`Gagal minta kode pairing untuk ${sessionId}. Cek nomor ${p}.`)
+        const delayMs = Math.min(120_000, 15_000 * 2 ** (attempts - 1))
+        logger.warn(
+          { sessionId, attempt: attempts, retryMs: delayMs, err: err?.message },
+          'requestPairingCode failed'
+        )
+        // Notifikasi owner cukup sekali per putaran, bukan tiap percobaan.
+        if (attempts === 1) {
+          await notify?.(
+            `Gagal minta kode pairing untuk ${sessionId}. Mencoba lagi otomatis (±${Math.round(delayMs / 1000)} dtk).`
+          )
+        }
+        clearRetry()
+        retryTimer = setTimeout(() => void requestCode(), delayMs)
+        retryTimer.unref?.()
       }
     }
 
     client.on('auth_pairing_code', ({ code }) => {
       const p = phone()
-      // Pairing code at startup goes to the console only: the owner chat does
-      // not exist yet, so `notify` is absent. Later sessions push it to chat.
+      const text = `*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
+      // Startup sessions have no owner chat: console only.
       logger.info({ sessionId }, `Pairing ${sessionId} nomor ${p}: ${formatCode(code)}`)
-      if (!notify) return
-      void notify(
-        `*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
-      )
+      if (notify) void notify(text)
+      // Klien sesi bisa mati setelah kode terbit: kirim juga ke admin sesi.
+      forwardPairingCode(sessionId, code, text)
     })
 
     // Re-arm: forceManual means the pending code died with its connection and
@@ -195,11 +256,13 @@ export function createRuntime(logger) {
       if (forceManual) requested = false
       if (requested) return
       requested = true
-      void requestCode()
+      void requestCode({ force: true })
     })
 
     client.on('auth_paired', ({ credentials }) => {
       requested = false
+      attempts = 0
+      clearRetry()
       logger.info({ sessionId }, `Paired as ${credentials.meJid}`)
       void notify?.(`Session ${sessionId} berhasil tertaut sebagai ${credentials.meJid}.`)
     })
