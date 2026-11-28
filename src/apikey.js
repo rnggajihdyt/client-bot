@@ -1,6 +1,7 @@
 import { openDb } from './db.js'
 import { sessionPath } from './config.js'
 import { getSession } from './registry.js'
+import { toJid, normalizeNohp } from './utils.js'
 import { syncCatalog } from './catalog.js'
 
 // A session without a valid supplier key cannot sell anything, so the key is
@@ -38,7 +39,9 @@ export function sessionReadyText(sessionId, { total, available }) {
 // The admin's own number must differ from the bot's: the same phone cannot be
 // the bot and its customer, and such a session could never be operated.
 export function sameNumberProblem(adminNohp, pairingPhone) {
-  return Boolean(adminNohp && pairingPhone && adminNohp === pairingPhone)
+  const a = normalizeNohp(adminNohp)
+  const p = normalizeNohp(pairingPhone)
+  return Boolean(a && p && a === p)
 }
 
 // Runs the gate for a session that just connected. No API key → prompt the
@@ -61,7 +64,7 @@ export async function runOnboarding(logger, sessionId, notify) {
   } finally {
     db.close()
   }
-  const send = (text) => notify?.(`${to}@s.whatsapp.net`, text)
+  const send = (text) => notify?.(toJid(to), text)
 
   if (!key) {
     logger.info({ sessionId, to }, 'onboarding: menunggu apikey ICS')

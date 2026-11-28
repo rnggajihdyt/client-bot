@@ -7,6 +7,7 @@ import { ics } from './ics.js'
 import { config, sessionPath } from './config.js'
 import { expireTickets } from './commands/deposit.js'
 import { formatRupiah } from './money.js'
+import { toJid } from './utils.js'
 
 // One random token per session, minted on first use and stable afterwards.
 export function webhookToken(db) {
@@ -78,7 +79,7 @@ function notifyBuyer(logger, sessionId, result) {
   if (!client || !result.trx.agen_nohp) return
   // Waktu finalisasi ikut dikirim supaya baris sukses mencetak "Tanggal ..." saat settle.
   const text = settledText({ ...result, at: new Date() })
-  client.message.send(`${result.trx.agen_nohp}@s.whatsapp.net`, text).catch((err) =>
+  client.message.send(toJid(result.trx.agen_nohp), text).catch((err) =>
     logger.child({ sessionId }).warn({ err: err?.message, idTrx: result.trx.id_trx }, 'buyer notify failed')
   )
 }
@@ -161,7 +162,7 @@ async function expireTicketsIn(logger, sessionId) {
           globalThis.__waRuntime?.clients
             ?.get(sessionId)
             ?.message.send(
-              `${dep.agen_nohp}@s.whatsapp.net`,
+              toJid(dep.agen_nohp),
               `Tiket Rp${formatRupiah(dep.nominal)} pada ${tgl} sudah dibatalkan (kadaluarsa).\nSilakan mengambil tiket lagi`
             ) ?? Promise.resolve()
         )

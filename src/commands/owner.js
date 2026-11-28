@@ -2,6 +2,7 @@ import { totalmem, freemem, uptime as osUptime, hostname, platform, release } fr
 import { register, listCommands } from './registry.js'
 import { formatRupiah } from '../money.js'
 import { config } from '../config.js'
+import { displayNohp } from '../utils.js'
 import { resolveHumanMode } from '../human.js'
 import * as registry from '../registry.js'
 
@@ -75,9 +76,9 @@ register({
     const lines = rows.map((s) => {
       const state = live.includes(s.id) ? '🟢 live' : s.status === 'on' ? '🟡 on (belum live)' : '⚪ off'
       const role = registry.isOwnerSession(s)
-        ? `owner ${owners.join(',') || '-'}`
-        : `admin ${s.admin_nohp || '-'}`
-      const wa = s.wa_nohp || s.pairing_phone || '-'
+        ? `owner ${owners.map(displayNohp).join(',') || '-'}`
+        : `admin ${displayNohp(s.admin_nohp) || '-'}`
+      const wa = displayNohp(s.wa_nohp || s.pairing_phone) || '-'
       return `• ${s.id} — ${state} — ${role} — WA ${wa}${s.label ? ` — ${s.label}` : ''}`
     })
     await client.message.send(event.key.remoteJid, `*Sessions:*\n${lines.join('\n')}`)

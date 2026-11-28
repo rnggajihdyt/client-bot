@@ -6,6 +6,7 @@ import { attachHandlers } from './handler.js'
 import { setSessionStatus, getSession, isBootstrapSession, createSession } from './registry.js'
 import { runOnboarding } from './apikey.js'
 import { createHumanController, withJitter } from './human.js'
+import { toJid, to62, displayNohp } from './utils.js'
 
 const formatCode = (code) => code.match(/.{1,4}/g)?.join('-') ?? code
 
@@ -185,7 +186,7 @@ export function createRuntime(logger) {
   function deliverAdmin(sessionId, text) {
     const adminNohp = getSession(sessionId)?.admin_nohp
     if (!adminNohp) return // sesi pusat (owner) tidak punya admin penerima
-    const jid = `${adminNohp}@s.whatsapp.net`
+    const jid = toJid(adminNohp)
     const central = centralClient(sessionId)
     if (!central) {
       pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
@@ -248,7 +249,7 @@ export function createRuntime(logger) {
   function deliverOwner(sessionId, text) {
     const nohp = config.owners?.[0]
     if (!nohp) return deliverAdmin(sessionId, text)
-    const jid = `${nohp}@s.whatsapp.net`
+    const jid = toJid(nohp)
     const central = centralClient(sessionId)
     if (!central) {
       pendingAdmin.set(sessionId, { jid, text, at: Date.now() })
@@ -264,7 +265,7 @@ export function createRuntime(logger) {
   // Phone known -> link-code; no phone -> QR in the terminal. The QR path
   // requests nothing, so it can render on every refresh and wait for a scan.
   function handlePairing(client, sessionId, notify) {
-    const phone = () => getSession(sessionId)?.pairing_phone || config.pairingPhone
+    const phone = () => to62(getSession(sessionId)?.pairing_phone || config.pairingPhone)
 
     // Fresh sessions surface as `auth_qr` (zapo emits `auth_pairing_required`
     // only on refresh/re-arm). With a phone known, the first QR is the cue to
@@ -347,10 +348,10 @@ export function createRuntime(logger) {
 
     client.on('auth_pairing_code', ({ code }) => {
       const p = phone()
-      const text = `*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
+      const text = `*Pairing ${sessionId}*\nNomor: ${displayNohp(p)}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
       // Startup sessions have no owner chat: console only.
       codes += 1
-      logger.info({ sessionId }, `Pairing ${sessionId} nomor ${p}: ${formatCode(code)}`)
+      logger.info({ sessionId }, `Pairing ${sessionId} nomor ${displayNohp(p)}: ${formatCode(code)}`)
       if (notify) void notify(text)
       // Klien sesi bisa mati setelah kode terbit: kirim juga ke admin sesi.
       forwardPairingCode(sessionId, code, text)

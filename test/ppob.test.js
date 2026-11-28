@@ -119,6 +119,41 @@ test('profitSummary scope by agenIds', () => {
   assert.equal(none.trx, 0)
 })
 
+test('migrasi: nomor lama "62..." jadi "0...", bentrok UNIQUE dilewati', () => {
+  const oldPath = join(dir, 'old-nohp.sqlite')
+  const raw = new DatabaseSync(oldPath)
+  raw.exec(`CREATE TABLE agen (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kode TEXT UNIQUE NOT NULL,
+    nama TEXT NOT NULL,
+    kota TEXT NOT NULL DEFAULT '',
+    nohp TEXT UNIQUE NOT NULL,
+    senior_id INTEGER,
+    markup INTEGER NOT NULL DEFAULT 0,
+    saldo INTEGER NOT NULL DEFAULT 0,
+    komisi INTEGER NOT NULL DEFAULT 0,
+    pin_hash TEXT NOT NULL,
+    aktif INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  )`)
+  const ins = raw.prepare(
+    `INSERT INTO agen (kode, nama, nohp, pin_hash, created_at) VALUES (?, ?, ?, 'x', 'now')`
+  )
+  ins.run('ADM001', 'A', '628111')
+  ins.run('ADM002', 'B', '08111') // bentrok setelah normalisasi
+  ins.run('ADM003', 'C', '628222')
+  raw.close()
+
+  const migrated = openDb(oldPath)
+  const nohp = migrated.raw.prepare(`SELECT kode, nohp FROM agen ORDER BY kode`).all()
+  assert.deepEqual(
+    nohp.map((r) => r.nohp),
+    ['628111', '08111', '08222']
+  )
+  assert.equal(migrated.getSetting('nohp_zero_migrated'), '1')
+  migrated.close()
+})
+
 test('migrasi: DB lama tanpa kolom deposit.bank tetap bisa TIKET', () => {
   // Simulates a session DB created before `bank` existed on the deposit table.
   const oldPath = join(dir, 'old-deposit.sqlite')

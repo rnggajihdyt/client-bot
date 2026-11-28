@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { register } from './registry.js'
 import { verifyPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
-import { displayNohp } from '../utils.js'
+import { displayNohp, toJid } from '../utils.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -284,7 +284,7 @@ register({
     try {
       const { tanggal, jam } = wib(new Date())
       await client.message.send(
-        `${dep.agen_nohp}@s.whatsapp.net`,
+        toJid(dep.agen_nohp),
         `Saldo Anda ditambahkan Rp. ${formatRupiah(kredit)} (Tiket deposit ${dep.bank || 'BANK'}).\n` +
           `Total Saldo ${formatRupiah(saldoSebelum)} + ${formatRupiah(kredit)} = ${formatRupiah(saldoAkhir)}.\n` +
           `${tanggal} ${jam}`

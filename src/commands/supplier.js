@@ -13,7 +13,7 @@ import {
 } from '../orders.js'
 import { extractApiKey, setupApiKey } from '../apikey.js'
 import { ensureFreshCatalog } from '../catalog.js'
-import { displayNohp, normalizeNohp } from '../utils.js'
+import { displayNohp, normalizeNohp, to62, toJid } from '../utils.js'
 
 const ADMIN_ONLY = 'Khusus admin'
 const PIN_SALAH = 'PIN salah'
@@ -228,7 +228,7 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
   })
 
   try {
-    await ics.order(cfg.baseUrl, cfg.apiKey, { productCode: p.kode, dest: item.tujuan, refId: idTrx })
+    await ics.order(cfg.baseUrl, cfg.apiKey, { productCode: p.kode, dest: to62(item.tujuan), refId: idTrx })
   } catch (err) {
     log?.error({ err: err?.message, idTrx }, 'order ICS gagal')
     const settled = finalize(db, idTrx, { status: 'gagal' }) // supplier never took it: refund now
@@ -239,7 +239,7 @@ async function executeOneOrder({ client, db, mitraId, isAdmin, cfg, item, log })
         lastBalanceAlert.set(db.path, Date.now())
         void client.message
           .send(
-            `${root.nohp}@s.whatsapp.net`,
+            toJid(root.nohp),
             `*Peringatan Saldo Supplier*\nOrder ${p.kode} dari ${freshMitra.kode} gagal karena saldo ICS tidak cukup.\nDetail: ${err.message}`
           )
           .catch((e) => log?.warn({ err: e?.message }, 'alert saldo supplier ke admin gagal'))

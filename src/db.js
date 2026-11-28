@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { hashPin } from './auth.js'
-import { nohpVariants } from './utils.js'
+import { nohpVariants, normalizeNohp } from './utils.js'
 
 // Produk CND (paket ribuan/token) tidak masuk database: bot fokus akrab dulu.
 // Satu definisi, dipakai saat sync dan saat membersihkan baris lama.
@@ -123,6 +123,30 @@ const MIGRATIONS = {
   },
 }
 
+// Nomor disimpan dalam bentuk lokal "08...". Baris lama berbentuk "62..." (atau
+// tanpa awalan) dimigrasi sekali per DB.
+function migrateNohpZero(raw) {
+  const done = raw.prepare(`SELECT value FROM settings WHERE key = ?`).get('nohp_zero_migrated')
+  if (done?.value === '1') return
+  for (const [table, col] of [
+    ['agen', 'nohp'],
+    ['agen_nomor', 'nohp'],
+    ['transaksi', 'tujuan'],
+  ]) {
+    const rows = raw.prepare(`SELECT id, ${col} v FROM ${table}`).all()
+    const upd = raw.prepare(`UPDATE ${table} SET ${col} = ? WHERE id = ?`)
+    const clash = raw.prepare(`SELECT 1 FROM ${table} WHERE ${col} = ? AND id <> ?`)
+    for (const r of rows) {
+      const n = normalizeNohp(r.v)
+      if (!n || n === r.v || clash.get(n, r.id)) continue
+      upd.run(n, r.id)
+    }
+  }
+  raw
+    .prepare(`INSERT INTO settings (key, value) VALUES ('nohp_zero_migrated', '1') ON CONFLICT(key) DO UPDATE SET value = '1'`)
+    .run()
+}
+
 function migrate(raw) {
   for (const [table, cols] of Object.entries(MIGRATIONS)) {
     const have = raw.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name)
@@ -130,6 +154,7 @@ function migrate(raw) {
       if (!have.includes(name)) raw.exec(sql)
     }
   }
+  migrateNohpZero(raw)
 }
 
 // One DB handle per session (`.data/sessions/<id>.sqlite`). Nothing is shared
@@ -170,13 +195,14 @@ export function openDb(path) {
   }
 
   db.createAgen = ({ nama, kota, nohp, seniorId, markup, pin }) => {
+    const nohpD = normalizeNohp(nohp)
     const kode = db.nextKode(seniorId == null ? 'ADM' : 'RS')
     const { lastInsertRowid } = raw
       .prepare(
         `INSERT INTO agen (kode, nama, kota, nohp, senior_id, markup, pin_hash, aktif, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`
       )
-      .run(kode, nama, kota, nohp, seniorId, markup, hashPin(pin), new Date().toISOString())
+      .run(kode, nama, kota, nohpD, seniorId, markup, hashPin(pin), new Date().toISOString())
     return { id: lastInsertRowid, kode }
   }
 
@@ -568,19 +594,19 @@ export function openDb(path) {
   }
 
   db.addNomor = (agenId, nohp) =>
-    raw.prepare(`INSERT INTO agen_nomor (agen_id, nohp) VALUES (?, ?)`).run(agenId, nohp)
+    raw.prepare(`INSERT INTO agen_nomor (agen_id, nohp) VALUES (?, ?)`).run(agenId, normalizeNohp(nohp))
 
   db.removeNomor = (agenId, nohp) =>
-    raw.prepare(`DELETE FROM agen_nomor WHERE agen_id = ? AND nohp = ?`).run(agenId, nohp).changes
+    raw.prepare(`DELETE FROM agen_nomor WHERE agen_id = ? AND nohp = ?`).run(agenId, normalizeNohp(nohp)).changes
 
   db.nomorOf = (agenId) =>
     raw.prepare(`SELECT nohp FROM agen_nomor WHERE agen_id = ? ORDER BY id`).all(agenId).map((r) => r.nohp)
 
-  db.nomorTaken = (nohp) =>
-    Boolean(
-      raw.prepare(`SELECT 1 FROM agen WHERE nohp = ?`).get(nohp) ||
-        raw.prepare(`SELECT 1 FROM agen_nomor WHERE nohp = ?`).get(nohp)
-    )
+  db.nomorTaken = (nohp) => {
+    const byUtama = raw.prepare(`SELECT 1 FROM agen WHERE nohp = ?`)
+    const byNomor = raw.prepare(`SELECT 1 FROM agen_nomor WHERE nohp = ?`)
+    return nohpVariants(nohp).some((d) => Boolean(byUtama.get(d) ?? byNomor.get(d)))
+  }
 
   db.transaksiStats = (agenId) => {
     const today = new Date().toISOString().slice(0, 10)

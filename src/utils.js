@@ -79,19 +79,27 @@ export function isOwner(event, owners) {
   })
 }
 
-// "08123456789" / "8123456789" / "+62 812-3456" -> "628123456789".
-// WhatsApp JIDs are always country-coded without the trunk 0, so a number typed
-// as "8..." or "0..." must be stored as "62..." or it never resolves.
+// Semua nomor disimpan & ditampilkan dalam bentuk lokal "08...". WhatsApp JID
+// butuh bentuk internasional "628...", jadi pakai to62()/toJid() saat kirim.
 export function normalizeNohp(value) {
   const d = String(value ?? '').replace(/\D/g, '')
   if (!d) return ''
-  if (d.startsWith('62')) return d
-  if (d.startsWith('0')) return `62${d.slice(1)}`
-  return `62${d}`
+  const bare = d.replace(/^62/, '').replace(/^0/, '')
+  return bare ? `0${bare}` : ''
+}
+
+export function to62(value) {
+  const d = normalizeNohp(value)
+  return d ? `62${d.slice(1)}` : ''
+}
+
+export function toJid(value) {
+  const d = to62(value)
+  return d ? `${d}@s.whatsapp.net` : ''
 }
 
 // Bentuk lain dari nomor yang sama, untuk mencocokkan baris lama yang tersimpan
-// sebelum normalisasi (mis. "85940800009" alih-alih "6285940800009").
+// dalam bentuk "62..." (sebelum migrasi ke bentuk 0).
 export function nohpVariants(value) {
   const d = String(value ?? '').split('@')[0].split(':')[0].replace(/\D/g, '')
   if (!d) return []
@@ -110,8 +118,8 @@ function digitsOnly(value) {
   return value.split('@')[0].split(':')[0].replace(/\D/g, '')
 }
 
-// Nomor untuk ditampilkan ke pengguna: "628123456789" -> "08123456789".
+// Nomor untuk ditampilkan ke pengguna: selalu bentuk lokal "08123456789".
 export function displayNohp(value) {
-  const d = String(value ?? '').trim().split('@')[0].split(':')[0].replace(/\D/g, '')
-  return d.startsWith('62') ? `0${d.slice(2)}` : d
+  const d = normalizeNohp(value)
+  return d || String(value ?? '').replace(/\D/g, '')
 }

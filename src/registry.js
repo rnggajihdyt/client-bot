@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { normalizeNohp } from './utils.js'
 
 // Session directory: which WhatsApp accounts exist, who their admin is, and
 // which phone pairs them. Kept in its own DB so it is readable before any
@@ -47,6 +48,21 @@ export function openRegistry(path) {
   if (!cols.includes('wa_nohp')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN wa_nohp TEXT NOT NULL DEFAULT ''`)
   }
+  // Migrasi sekali: nomor registry ke bentuk lokal "08..." (dulu 62...).
+  const done = db.prepare(`SELECT 1 FROM sessions WHERE id = '__nohp_zero'`).get()
+  if (!done) {
+    for (const col of ['admin_nohp', 'pairing_phone', 'wa_nohp']) {
+      const rows = db.prepare(`SELECT rowid r, ${col} v FROM sessions`).all()
+      const upd = db.prepare(`UPDATE sessions SET ${col} = ? WHERE rowid = ?`)
+      for (const row of rows) {
+        const n = normalizeNohp(row.v)
+        if (n !== row.v) upd.run(n, row.r)
+      }
+    }
+    db.prepare(
+      `INSERT INTO sessions (id, created_at) VALUES ('__nohp_zero', ?)`
+    ).run(new Date().toISOString())
+  }
   return db
 }
 
@@ -56,7 +72,7 @@ function ensure() {
 }
 
 export function listSessions() {
-  return ensure().prepare(`SELECT * FROM sessions ORDER BY id`).all()
+  return ensure().prepare(`SELECT * FROM sessions WHERE id <> '__nohp_zero' ORDER BY id`).all()
 }
 
 export function getSession(id) {
@@ -68,7 +84,7 @@ export function createSession({ id, label = '', adminNohp, pairingPhone = '', wa
   if (d.prepare(`SELECT 1 FROM sessions WHERE id = ?`).get(id)) return null
   d.prepare(
     `INSERT INTO sessions (id, label, admin_nohp, pairing_phone, wa_nohp, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, label, adminNohp, pairingPhone, waNohp, status, new Date().toISOString())
+  ).run(id, label, normalizeNohp(adminNohp), normalizeNohp(pairingPhone), normalizeNohp(waNohp), status, new Date().toISOString())
   return getSession(id)
 }
 
@@ -77,13 +93,13 @@ export function setSessionStatus(id, status) {
 }
 
 export function setPairingPhone(id, phone) {
-  return ensure().prepare(`UPDATE sessions SET pairing_phone = ? WHERE id = ?`).run(phone, id).changes
+  return ensure().prepare(`UPDATE sessions SET pairing_phone = ? WHERE id = ?`).run(normalizeNohp(phone), id).changes
 }
 
 export function updateSessionAdmin(id, { label, adminNohp, pairingPhone }) {
   return ensure()
     .prepare(`UPDATE sessions SET label = ?, admin_nohp = ?, pairing_phone = ? WHERE id = ?`)
-    .run(label ?? '', adminNohp, pairingPhone, id).changes
+    .run(label ?? '', normalizeNohp(adminNohp), normalizeNohp(pairingPhone), id).changes
 }
 
 export function removeSession(id) {

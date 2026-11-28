@@ -294,6 +294,7 @@ mitra: BELI.PULSA10.0812xxxx
 | **Uplink** | anak langsung admin | Transaksi + `LAP` jaringannya sendiri |
 | **Mitra** | downline | Transaksi, kelola downline-nya sendiri |
 
+- **Nomor HP selalu bentuk lokal `08…`** — di balasan bot, DB, dan input. Nomor yang diketik `62…`/`8…` otomatis dinormalkan sebelum disimpan; pengiriman WhatsApp memakai `62…` di baliknya (`toJid`). Migrasi otomatis saat DB/registry dibuka, plus `node scripts/fix-nohp.mjs`.
 - **DB terpisah per session** (`.data/sessions/<id>.sqlite`): tabel `agen`, `agen_nomor`, `produk`, `transaksi`, `mutasi`, `deposit`, `settings`. Tidak ada data yang bocor antar admin.
 - **Registry** `.data/sessions/_registry.sqlite`: id, label, admin, nomor WA, status. Semua sesi di registry otomatis di-connect saat start.
 - **Kredensial WA** `.auth/state.sqlite` satu file untuk semua session, dipisah per `sessionId`.

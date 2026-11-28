@@ -2,7 +2,7 @@ import { register } from './registry.js'
 import { verifyPin, hashPin } from '../auth.js'
 import { formatRupiah, parseNumber } from '../money.js'
 import { parseRange } from '../report.js'
-import { displayNohp, normalizeNohp } from '../utils.js'
+import { displayNohp, normalizeNohp, to62, toJid } from '../utils.js'
 import { ensureFreshCatalog } from '../catalog.js'
 
 const NOT_DOWNLINE = 'Bukan downline Anda'
@@ -157,7 +157,7 @@ register({
     // undo the registration.
     try {
       await client.message.send(
-        `${nohpD}@s.whatsapp.net`,
+        toJid(nohpD),
         `Yth. Kak ${nama}, Selamat bergabung! Kode Agen anda adalah ${created.kode}, PIN: 1234, Saldo sekarang 0. Ketik FORMAT untuk mengetahui format-format transaksi.`
       )
     } catch (err) {
@@ -253,7 +253,7 @@ function statusHandler(action, text) {
 
     // Same style as the DAFTAR welcome. PIN is never included (it is hashed).
     try {
-      await client.message.send(`${target.nohp}@s.whatsapp.net`, downlineNotice(target, active))
+      await client.message.send(toJid(target.nohp), downlineNotice(target, active))
     } catch (err) {
       log?.warn({ err, nohp: target.nohp }, 'status notice failed')
     }
@@ -291,7 +291,7 @@ register({
     await client.message.send(jid, `PIN ${target.kode} direset.`)
     try {
       await client.message.send(
-        `${target.nohp}@s.whatsapp.net`,
+        toJid(target.nohp),
         `PIN akun ${target.kode} Anda telah direset oleh admin menjadi ${pinBaru}. Segera ganti dengan GP.PINBARU.PINLAMA.`
       )
     } catch (err) {
@@ -348,7 +348,7 @@ register({
       return
     }
 
-    const adminJid = `${root.nohp}@s.whatsapp.net`
+    const adminJid = toJid(root.nohp)
     if (idDeposit) {
       // Konfirmasi transfer kini otomatis (TDEP), bukti tf tidak lagi diminta:
       // id tiket hanya diteruskan sebagai konteks, lampiran gambar diabaikan.
@@ -679,7 +679,7 @@ async function adjustSaldo({ client, event, mitra, args, isAdmin, db, log }, dir
   if (target.id !== mitra.id) {
     try {
       await client.message.send(
-        `${target.nohp}@s.whatsapp.net`,
+        toJid(target.nohp),
         `Saldo Anda ${isAdd ? 'telah ditambah' : 'dikurangi'} ${formatRupiah(nominal)} oleh Admin. Saldo sekarang: ${formatRupiah(saldoAkhir)}.`
       )
     } catch (err) {

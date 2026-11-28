@@ -145,7 +145,7 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       await safeSend(
         client,
         event.key.remoteJid,
-        `*Session ${sessionId} salah konfigurasi*\nNomor admin = nomor bot (${session.pairing_phone}).\n` +
+        `*Session ${sessionId} salah konfigurasi*\nNomor admin = nomor bot (${displayNohp(session.pairing_phone)}).\n` +
           `Hapus dan buat ulang dari nomor owner:\nSESIHAPUS.${sessionId}\nSESIBUAT.${sessionId}.NOMORADMIN.NOMORBOT[LABEL]`,
         undefined,
         log
@@ -297,9 +297,9 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
     }
     const lines = rows.map((s) => {
       const role = registry.isOwnerSession(s)
-        ? `owner ${owners.join(',') || '-'}`
-        : `admin ${s.admin_nohp || '-'}`
-      const wa = s.wa_nohp || s.pairing_phone || '-'
+        ? `owner ${owners.map(displayNohp).join(',') || '-'}`
+        : `admin ${displayNohp(s.admin_nohp) || '-'}`
+      const wa = displayNohp(s.wa_nohp || s.pairing_phone) || '-'
       const status = s.status === 'pairing' ? 'pairing (perlu taut ulang)'
         : s.status === 'pairing_hold' ? 'pairing (menunggu SESION)'
         : s.status
