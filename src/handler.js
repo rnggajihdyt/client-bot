@@ -300,7 +300,9 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
         ? `owner ${owners.join(',') || '-'}`
         : `admin ${s.admin_nohp || '-'}`
       const wa = s.wa_nohp || s.pairing_phone || '-'
-      const status = s.status === 'pairing' ? 'pairing (perlu taut ulang)' : s.status
+      const status = s.status === 'pairing' ? 'pairing (perlu taut ulang)'
+        : s.status === 'pairing_hold' ? 'pairing (menunggu SESION)'
+        : s.status
       return `• ${s.id} — ${role} — WA ${wa} — ${status}${s.label ? ` — ${s.label}` : ''}`
     })
     await reply(`*Sessions:*\n${lines.join('\n')}\n\nLaporan: LAPTRX.ID`)
@@ -407,8 +409,8 @@ export function attachHandlers(rawClient, sessionId, logger, runtime = null, hum
       return
     }
     if (status === 'on') {
-      // Membersihkan status `pairing` supaya permintaan kode dimulai ulang.
-      const wasPairing = registry.getSession(id)?.status === 'pairing'
+      // Membersihkan status pairing/pairing_hold supaya permintaan kode dimulai ulang.
+      const wasPairing = ['pairing', 'pairing_hold'].includes(registry.getSession(id)?.status)
       registry.setSessionStatus(id, 'on')
       await reply(`Session ${id} dinyalakan. Menyambungkan + minta kode pairing…`)
       await startRuntimeSession(reply, id, { rearm: wasPairing })

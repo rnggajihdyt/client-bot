@@ -6,13 +6,17 @@ import test from 'node:test'
 // global slot; a 429 backs off 5/15/30 minutes and closes the round after the
 // third one. Sessions in status `pairing` are only rebuilt every 15 minutes.
 const MAX_CODE_ATTEMPTS = 6
+const MAX_CODES = 3
 const PAIRING_REBUILD_MS = 15 * 60 * 1000
 const RATE_LIMIT_BACKOFF_MS = [5, 15, 30].map((m) => m * 60_000)
 
 function createFlow({ phone = '628111', status = 'pairing', fail = () => '', strikes = new Map() } = {}) {
   let requested = false
   let attempts = 0
+  let codes = 0
   let timerMs = null
+  let alerts = 0
+  const held = () => status === 'pairing_hold'
   const sent = []
   const request = ({ force = false } = {}) => {
     if (!phone) return
@@ -27,6 +31,7 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '', str
     attempts += 1
     const err = fail(attempts)
     if (!err) {
+      codes += 1
       sent.push('code')
       return
     }
@@ -41,28 +46,47 @@ function createFlow({ phone = '628111', status = 'pairing', fail = () => '', str
   }
   const emit = (event, payload = {}) => {
     if (event === 'auth_qr') {
-      if (!phone || requested) return
+      if (!phone || requested || held()) return
       requested = true
       attempts = 0
       request()
     }
     if (event === 'auth_pairing_required') {
       if (payload.forceManual) requested = false
-      if (requested) return
+      if (requested || held()) return
+      if (payload.forceManual && codes >= MAX_CODES) {
+        status = 'pairing_hold'
+        alerts += 1
+        return
+      }
       requested = true
       request({ force: true })
     }
     if (event === 'auth_paired') {
       requested = false
       attempts = 0
+      codes = 0
       strikes.delete('s')
       status = 'on'
     }
   }
   return {
     emit,
+    // Timer retry: request tanpa mereset hitungan
     retry: () => request(),
-    watchdogRebuild: (now, since) => !(status === 'pairing' && now - since <= PAIRING_REBUILD_MS),
+    // SESION manual: buka status hold, putaran baru
+    sesion: () => {
+      status = 'pairing'
+      codes = 0
+      attempts = 0
+      strikes.delete('s')
+      requested = true
+      request({ force: true })
+    },
+    watchdogRebuild: (now, since) =>
+      status === 'pairing_hold' ? false : !(status === 'pairing' && now - since <= PAIRING_REBUILD_MS),
+    status: () => status,
+    alerts: () => alerts,
     stats: () => ({ attempts, rateLimited: strikes.get('s') ?? 0, timerMs, sent: sent.length }),
   }
 }
@@ -136,6 +160,47 @@ test('auth_paired mengembalikan status ke on', () => {
   f.emit('auth_paired')
   // sudah on: watchdog memakai ambang normal (3 menit), bukan 15 menit
   assert.equal(f.watchdogRebuild(4 * 60_000, 0), true)
+})
+
+test('kode kedaluwarsa 3x menahan sesi dan berhenti minta kode', () => {
+  const f = createFlow()
+  f.emit('auth_qr')
+  f.emit('auth_pairing_required', { forceManual: true })
+  f.emit('auth_pairing_required', { forceManual: true })
+  assert.equal(f.stats().sent, MAX_CODES)
+  assert.equal(f.status(), 'pairing')
+  // kode ke-3 kedaluwarsa: hold, tidak ada permintaan baru
+  f.emit('auth_pairing_required', { forceManual: true })
+  assert.equal(f.status(), 'pairing_hold')
+  assert.equal(f.alerts(), 1)
+  f.emit('auth_qr')
+  f.emit('auth_pairing_required', { forceManual: true })
+  assert.equal(f.stats().sent, MAX_CODES)
+})
+
+test('watchdog tidak membangun ulang sesi yang ditahan', () => {
+  const f = createFlow()
+  f.emit('auth_qr')
+  f.emit('auth_pairing_required', { forceManual: true })
+  f.emit('auth_pairing_required', { forceManual: true })
+  f.emit('auth_pairing_required', { forceManual: true })
+  assert.equal(f.status(), 'pairing_hold')
+  // lewat 1 jam pun tidak rebuild
+  assert.equal(f.watchdogRebuild(60 * 60_000, 0), false)
+})
+
+test('SESION manual melepas hold dan meminta kode baru', () => {
+  const f = createFlow()
+  f.emit('auth_qr')
+  f.emit('auth_pairing_required', { forceManual: true })
+  f.emit('auth_pairing_required', { forceManual: true })
+  f.emit('auth_pairing_required', { forceManual: true })
+  assert.equal(f.status(), 'pairing_hold')
+  f.sesion()
+  assert.equal(f.status(), 'pairing')
+  assert.equal(f.stats().sent, MAX_CODES + 1)
+  // hold terlepas: watchdog kembali memakai ambang 15 menit
+  assert.equal(f.watchdogRebuild(16 * 60_000, 0), true)
 })
 
 // Mirrors the status set at startSession: `on` hanya kalau kredensial sudah

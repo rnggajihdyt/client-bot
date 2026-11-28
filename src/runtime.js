@@ -253,12 +253,15 @@ export function createRuntime(logger) {
     // request the code; without one, fall back to QR in the terminal.
     let requested = false
     let attempts = 0
+    let codes = 0
     let retryTimer = null
     const MAX_CODE_ATTEMPTS = 6
+    const MAX_CODES = 3
     const clearRetry = () => {
       if (retryTimer) clearTimeout(retryTimer)
       retryTimer = null
     }
+    const onHold = () => getSession(sessionId)?.status === 'pairing_hold'
 
     client.on('auth_qr', ({ qr, ttlMs }) => {
       if (!phone()) {
@@ -266,7 +269,7 @@ export function createRuntime(logger) {
         qrcode.generate(qr, { small: true })
         return
       }
-      if (requested) return
+      if (requested || onHold()) return
       requested = true
       attempts = 0
       void requestCode()
@@ -328,6 +331,7 @@ export function createRuntime(logger) {
       const p = phone()
       const text = `*Pairing ${sessionId}*\nNomor: ${p}\nKode: ${formatCode(code)}\n\nBuka WhatsApp di nomor itu → Perangkat tertaut → Tautkan dengan nomor telepon, lalu masukkan kode.`
       // Startup sessions have no owner chat: console only.
+      codes += 1
       logger.info({ sessionId }, `Pairing ${sessionId} nomor ${p}: ${formatCode(code)}`)
       if (notify) void notify(text)
       // Klien sesi bisa mati setelah kode terbit: kirim juga ke admin sesi.
@@ -336,10 +340,24 @@ export function createRuntime(logger) {
 
     // Re-arm: forceManual means the pending code died with its connection and
     // a fresh one must be requested; a plain refresh means it's still valid.
+    // Setelah MAX_CODES kode kedaluwarsa tanpa tertaut, sesi ditahan: menunggu
+    // admin siap, bukan mengirim kode baru terus-menerus.
     client.on('auth_pairing_required', ({ forceManual } = {}) => {
       if (!phone()) return
       if (forceManual) requested = false
       if (requested) return
+      if (onHold()) return
+      if (forceManual && codes >= MAX_CODES) {
+        setSessionStatus(sessionId, 'pairing_hold')
+        alertSent.delete(sessionId) // pesan "menunggu" jangan tertahan dedupe
+        logger.warn({ sessionId, codes }, 'kode pairing habis — menunggu SESION manual')
+        alertAdmin(
+          sessionId,
+          `Session ${sessionId} belum tertaut setelah ${codes} kode. Bot berhenti mengirim kode.\n` +
+            `Kirim SESION.${sessionId} saat siap menerima kode baru.`
+        )
+        return
+      }
       requested = true
       void requestCode({ force: true })
     })
@@ -347,6 +365,7 @@ export function createRuntime(logger) {
     client.on('auth_paired', ({ credentials }) => {
       requested = false
       attempts = 0
+      codes = 0
       rateLimitStrikes.delete(sessionId)
       clearRetry()
       setSessionStatus(sessionId, 'on')
@@ -364,6 +383,7 @@ export function createRuntime(logger) {
       if (!phone()) return
       clearRetry()
       attempts = 0
+      codes = 0
       rateLimitStrikes.delete(sessionId)
       requested = true
       void requestCode({ force: true })
@@ -422,7 +442,8 @@ export function createRuntime(logger) {
     // `pairing`. Kredensial setengah jadi (noise key saja) tetap dihitung belum
     // tertaut — itulah yang membuat FUAD/UMMUL dulu tampil `on`.
     const creds = await store.session(sessionId).auth.load().catch(() => null)
-    setSessionStatus(sessionId, creds?.meJid ? 'on' : 'pairing')
+    const held = getSession(sessionId)?.status === 'pairing_hold'
+    setSessionStatus(sessionId, creds?.meJid ? 'on' : held ? 'pairing_hold' : 'pairing')
 
     // connect() stays pending until paired; never await it here.
     client.connect().catch((err) => logger.error({ sessionId, err }, 'connect failed'))
@@ -442,8 +463,11 @@ export function createRuntime(logger) {
         continue
       }
       // Sesi menunggu taut ulang: jangan bangun ulang tiap 3 menit, cukup tiap
-      // 15 menit (maks 4x/jam), bukan 20x/menit.
-      if (getSession(sessionId)?.status === 'pairing' && now - h.since <= PAIRING_REBUILD_MS) continue
+      // 15 menit (maks 4x/jam), bukan 20x/menit. Status `pairing_hold` menunggu
+      // owner: watchdog tidak menyentuhnya sama sekali.
+      const status = getSession(sessionId)?.status
+      if (status === 'pairing_hold') continue
+      if (status === 'pairing' && now - h.since <= PAIRING_REBUILD_MS) continue
       if (now - h.since > GIVE_UP_MS) {
         logger.error({ sessionId }, 'watchdog: no stable connection, rebuilding client')
         health.delete(sessionId)

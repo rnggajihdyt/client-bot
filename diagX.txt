@@ -1,0 +1,25 @@
+﻿=== konteks tiap 401 ===
+--- sekitar baris 307
+2026-11-28T11:44:37: [11:44:36.242] INFO (1836605): received xmlstreamend stanza
+2026-11-28T11:44:37: [11:44:36.392] INFO (1836605): socket runtime closed
+2026-11-28T11:44:37:     code: 1006
+2026-11-28T11:44:37:     reason: ""
+2026-11-28T11:44:37:     wasClean: false
+2026-11-28T11:44:37: [11:44:36.392] INFO (1836605): socket closed, scheduling reconnect
+2026-11-28T11:44:37:     code: 1006
+2026-11-28T11:44:37:     reason: ""
+2026-11-28T11:44:37:     reconnectAfterMs: 2000
+2026-11-28T11:44:37:     reconnectAttempts: 0
+2026-11-28T11:44:37: [11:44:37.006] WARN (1836605): message publish attempt failed
+2026-11-28T11:44:37:     attempt: 1
+2026-11-28T11:44:37:     maxAttempts: 3
+2026-11-28T11:44:37:     nackRetryable: false
+2026-11-28T11:44:37:     message: "negative publish ack: tag=ack id=3EB072F61131B010D1B4BE class=message error=401"
+2026-11-28T11:44:37: [11:44:37.007] WARN (1836605): send failed
+2026-11-28T11:44:37:     sessionId: "ICS"
+2026-11-28T11:44:39: [11:44:38.393] INFO (1836605): socket open start
+2026-11-28T11:44:39:     urls: 2
+2026-11-28T11:44:39: [11:44:38.601] INFO (1836605): socket open success (race winner)
+2026-11-28T11:44:39:     url: "wss://web.whatsapp.com:5222/ws/chat"
+2026-11-28T11:44:39: [11:44:38.803] INFO (1836605): noise session established
+2026-11-28T11:44:39:     mode: "full"
